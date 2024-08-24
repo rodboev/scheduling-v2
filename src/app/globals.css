@@ -2,32 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
-
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-}
-
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* Button */
+.btn {
+  @apply flex h-10 w-fit items-center overflow-hidden rounded px-4 pb-2 pt-2.5 font-bold hover:bg-opacity-95 active:bg-opacity-100;
+}
+.btn-teal {
+  @apply btn bg-teal text-white;
+}
+.icon {
+  @apply h-8 w-8 fill-current;
+}
+
+/* Spinner */
+.loading-spinner {
+  .circular {
+    height: 25px;
+    width: 25px;
+    animation: loading-rotate 1.5s linear infinite;
+  }
+  .path {
+    animation: loading-dash 1.5s ease-in-out infinite;
+    stroke-dasharray: 90, 150;
+    stroke-width: 5;
+    stroke: currentColor;
+  }
+}
+@keyframes loading-rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes loading-dash {
+  0% {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+  }
+
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -40px;
+  }
+
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -120px;
+  }
+}
+
+/* TinyMCE */
+.tox-tinymce {
+  border: 2px solid #e5e7eb !important;
+}
+.tox .tox-edit-area::before {
+  border: 0 none !important;
+}
+.tox:not(.tox-tinymce-inline) .tox-editor-header {
+  box-shadow: none !important;
+  padding: 10px 0 0 0 !important;
+  margin-bottom: -5px;
+}
+.tox-tooltip {
+  display: none !important;
 }

@@ -1,5 +1,3 @@
-// src/app/hooks/useServiceSetups.js
-
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 
@@ -12,28 +10,24 @@ export function useServiceSetups() {
   const techData = [
     { tech: 'ALJADI', ids: [20286, 16805, 16807, 20838, 12707] },
     { tech: 'BAEK MALIK', ids: [21829] },
-    { tech: 'BLACK R.', ids: [17632, 19741, 20700, 20315, 18719, 15725, 15305] },
+    { tech: 'BLACK R.', ids: [17632, 19741, 20700] },
   ]
 
-  return useQuery({
-    queryKey: ['serviceSetups'],
-    queryFn: async () => {
-      const allIds = techData.flatMap(({ ids }) => ids)
-      const setups = await fetchServiceSetups(allIds)
+  const allIds = techData.flatMap(({ ids }) => ids)
 
-      const result = techData.flatMap(({ tech, ids }) =>
+  return useQuery({
+    queryKey: ['serviceSetups', allIds],
+    queryFn: () => fetchServiceSetups(allIds),
+    select: (data) => {
+      console.log('Raw service setups:', data)
+      return techData.flatMap(({ tech, ids }) =>
         ids
           .map((id) => {
-            const setup = setups.find((s) => s.id === id)
+            const setup = data.find((s) => s.id === id)
             return setup ? { ...setup, tech: { ...setup.tech, name: tech } } : null
           })
           .filter(Boolean),
       )
-
-      // Log the fetched objects
-      console.log('Fetched service setups:', JSON.stringify(result, null, 2))
-
-      return result
     },
   })
 }

@@ -1,9 +1,17 @@
+// src/app/utils/dayjs.js
+
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import dayOfYear from 'dayjs/plugin/dayOfYear'
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+dayjs.extend(dayOfYear)
+dayjs.extend(isSameOrBefore)
+
+export const dayjsInstance = dayjs
 
 export function convertToETTime(timeString) {
   if (!timeString) return null
