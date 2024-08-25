@@ -32,6 +32,7 @@
     "next": "^15.0.0-rc.0",
     "odbc": "^2.4.9",
     "react": "^19.0.0-rc-b57d2823-20240822",
+    "react-big-calendar": "^1.13.4",
     "react-dom": "^19.0.0-rc-b57d2823-20240822"
   },
   "devDependencies": {

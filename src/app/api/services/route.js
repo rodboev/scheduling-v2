@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server'
 import sql from 'mssql/msnodesqlv8.js'
 import { convertToETTime } from '@/app/utils/dayjs'
+import { parseTimeRange } from '@/app/utils/timeRange'
 
 sql.driver = 'FreeTDS'
 const config = {
@@ -91,6 +92,10 @@ function transformServiceSetup(setup) {
     return `${fname} ${lname.charAt(0)}.`
   }
 
+  const [rangeStart, rangeEnd] = setup.TimeRange
+    ? parseTimeRange(setup.TimeRange, setup.Duration)
+    : [null, null]
+
   return {
     id: setup.id,
     locationCode: setup.LocationCode,
@@ -106,13 +111,14 @@ function transformServiceSetup(setup) {
       id: setup.TechID1,
       code: setup.TechCode,
       name: formatTechName(setup.TechFName, setup.TechLName),
-      enforced: true,
+      enforced: false,
     },
     time: {
-      range: setup.TimeRange,
+      range: [rangeStart, rangeEnd],
       preferred: convertToETTime(setup.WorkTime),
-      enforced: true,
+      enforced: false,
       duration: setup.Duration,
+      originalRange: setup.TimeRange,
     },
     comments: {
       serviceSetup: setup.ServiceSetupComment,
