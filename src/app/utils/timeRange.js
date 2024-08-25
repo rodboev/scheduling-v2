@@ -116,7 +116,7 @@ export function parseTimeRange(timeRangeStr, duration) {
     return [null, null]
   }
 
-  console.log(`Parsing time range: ${timeRangeStr}`)
+  // console.log(`Parsing time range: ${timeRangeStr}`)
   let [startTime, endTime] = parseTimeRangeInterval(timeRangeStr)
   if (startTime === null || endTime === null) {
     return [null, null]

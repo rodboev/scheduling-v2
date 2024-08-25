@@ -20,7 +20,6 @@ const config = {
   },
   connectionString: `Driver={FreeTDS};Server=${process.env.SQL_SERVER || '127.0.0.1'},${process.env.SQL_PORT || 1433};Database=${process.env.SQL_DATABASE};Uid=${process.env.SQL_USERNAME};Pwd=${process.env.SQL_PASSWORD};TDS_Version=7.4;`,
 }
-console.log('Connection string:', config.connectionString)
 
 async function runQuery(pool, query) {
   try {

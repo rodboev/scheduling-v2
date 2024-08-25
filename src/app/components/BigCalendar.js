@@ -2,7 +2,7 @@
 
 'use client'
 
-import React, { useMemo, useCallback, useState } from 'react'
+import React, { useMemo, useCallback, useState, useEffect } from 'react'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
@@ -26,8 +26,36 @@ export default function BigCalendar() {
     return allocateEventsToResources(rawEvents)
   }, [serviceSetups])
 
+  const currentDateEvents = useMemo(() => {
+    return allocatedEvents.filter((event) => dayjs(event.start).isSame(date, 'day'))
+  }, [allocatedEvents, date])
+
+  useEffect(() => {
+    if (currentDateEvents.length > 0) {
+      const scheduleSummary = {}
+      currentDateEvents.forEach((event) => {
+        const resourceName =
+          resources.find((r) => r.id === event.resourceId)?.title || event.resourceId
+        const startTime = dayjs(event.start).format('h:mma')
+        const endTime = dayjs(event.end).format('h:mma')
+
+        if (!scheduleSummary[resourceName]) {
+          scheduleSummary[resourceName] = []
+        }
+
+        scheduleSummary[resourceName].push(`${event.title} is at ${startTime}-${endTime}`)
+      })
+
+      console.log(`Schedule Summary for ${dayjs(date).format('MMMM D, YYYY')}:`)
+      Object.entries(scheduleSummary).forEach(([resourceName, events]) => {
+        console.log(`${resourceName}:`)
+        events.forEach((event) => console.log(`  - ${event}`))
+      })
+    }
+  }, [currentDateEvents, resources, date])
+
   const handleNavigate = useCallback((newDate) => {
-    console.log('Navigating to:', newDate)
+    console.log('Navigating to:', dayjs(newDate).format('MMMM D, YYYY'))
     setDate(newDate)
   }, [])
 
@@ -172,6 +200,7 @@ function allocateEventsToResources(events) {
 
   const allocatedEvents = []
   const unallocatedEvents = []
+  const scheduleSummary = {}
 
   for (const event of events) {
     let allocated = false
@@ -188,8 +217,10 @@ function allocateEventsToResources(events) {
           allocatedEvents.filter((e) => e.resourceId === techId),
         )
       ) {
-        allocatedEvents.push(createAllocatedEvent(event, techId, allocatedEvents))
+        const allocatedEvent = createAllocatedEvent(event, techId, allocatedEvents)
+        allocatedEvents.push(allocatedEvent)
         allocated = true
+        addToScheduleSummary(scheduleSummary, allocatedEvent)
       } else {
         unallocatedEvents.push({ event, reason: 'Enforced tech, but time slot unavailable' })
       }
@@ -207,8 +238,10 @@ function allocateEventsToResources(events) {
             genericResources.push({ id: resourceId, title: resourceId })
             genericResourceCount++
           }
-          allocatedEvents.push(createAllocatedEvent(event, resourceId, allocatedEvents))
+          const allocatedEvent = createAllocatedEvent(event, resourceId, allocatedEvents)
+          allocatedEvents.push(allocatedEvent)
           allocated = true
+          addToScheduleSummary(scheduleSummary, allocatedEvent)
           break
         }
       }
@@ -225,7 +258,19 @@ function allocateEventsToResources(events) {
   })
 
   const resources = [...techResources.values(), ...genericResources]
-  return { allocatedEvents, resources, unallocatedEvents }
+  return { allocatedEvents, resources, unallocatedEvents, scheduleSummary }
+}
+
+function addToScheduleSummary(scheduleSummary, event) {
+  const resourceName = event.resourceId
+  const startTime = dayjs(event.start).format('h:mma')
+  const endTime = dayjs(event.end).format('h:mma')
+
+  if (!scheduleSummary[resourceName]) {
+    scheduleSummary[resourceName] = []
+  }
+
+  scheduleSummary[resourceName].push(`${event.title} is at ${startTime}-${endTime}`)
 }
 
 function createAllocatedEvent(event, resourceId, existingEvents) {
