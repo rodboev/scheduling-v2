@@ -9,15 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@fullcalendar/core": "^6.1.15",
-    "@fullcalendar/daygrid": "^6.1.15",
-    "@fullcalendar/interaction": "^6.1.15",
-    "@fullcalendar/premium-common": "^6.1.15",
-    "@fullcalendar/react": "^6.1.15",
-    "@fullcalendar/resource": "^6.1.15",
-    "@fullcalendar/resource-timeline": "^6.1.15",
-    "@fullcalendar/timegrid": "^6.1.15",
-    "@fullcalendar/timeline": "^6.1.15",
     "@tanstack/react-query": "^5.52.1",
     "@tanstack/react-query-devtools": "^5.52.1",
     "@tippyjs/react": "^4.2.6",
