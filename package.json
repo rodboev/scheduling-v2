@@ -9,22 +9,31 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@floating-ui/react": "^0.26.23",
+    "@radix-ui/react-checkbox": "^1.1.1",
+    "@radix-ui/react-dialog": "^1.1.1",
+    "@radix-ui/react-popover": "^1.1.1",
     "@tanstack/react-query": "^5.52.1",
     "@tanstack/react-query-devtools": "^5.52.1",
     "@tippyjs/react": "^4.2.6",
     "axios": "^1.7.5",
     "babel-plugin-react-compiler": "^0.0.0-experimental-48eb8f4-20240822",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "date-fns-tz": "^3.1.3",
     "dayjs": "^1.11.13",
     "firebase": "^10.13.0",
+    "lucide-react": "^0.436.0",
     "msnodesqlv8": "^4.2.1",
     "mssql": "^11.0.1",
     "next": "^15.0.0-rc.0",
     "odbc": "^2.4.9",
     "react": "^19.0.0-rc-b57d2823-20240822",
     "react-big-calendar": "^1.13.4",
-    "react-dom": "^19.0.0-rc-b57d2823-20240822"
+    "react-dom": "^19.0.0-rc-b57d2823-20240822",
+    "tailwind-merge": "^2.5.2",
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "eslint": "^8",

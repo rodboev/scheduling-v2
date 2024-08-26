@@ -2,19 +2,80 @@
 
 'use client'
 
-import React, { useMemo, useCallback, useState, useEffect } from 'react'
+import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { parseTime, formatTimeRange, formatParsedTimeRange } from '@/app/utils/timeRange'
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
+import { Checkbox } from '@/app/components/ui/checkbox'
 
 const localizer = dayjsLocalizer(dayjs)
 
+function EventTooltip({ event, handleEnforceTechChange }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const timeoutRef = useRef(null)
+
+  const handleMouseEnter = () => {
+    clearTimeout(timeoutRef.current)
+    setIsOpen(true)
+  }
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsOpen(false)
+    }, 300) // 300ms delay before closing
+  }
+
+  const handleCheckboxChange = (checked) => {
+    handleEnforceTechChange(event.id, checked)
+    setTimeout(() => setIsOpen(false), 100) // Close the popover after a small delay
+  }
+
+  return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+          <span>{event.title} </span>
+          <span className="text-sm">
+            ({formatParsedTimeRange(event.time.range[0], event.time.range[1])})
+          </span>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-80"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <h3 className="mb-2 font-bold">{event.title}</h3>
+        <p>Time: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
+        <p>Tech: {event.tech.name}</p>
+        <label className="mt-2 flex items-center space-x-2">
+          <Checkbox
+            checked={event.tech.enforced}
+            onCheckedChange={(checked) => handleCheckboxChange(checked)}
+          />
+          <span>Enforce Tech</span>
+        </label>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function BigCalendar() {
-  const { data: serviceSetups, isLoading, error } = useServiceSetups()
+  const {
+    data: serviceSetups,
+    isLoading,
+    error,
+    updateEnforced,
+    updateAllEnforced,
+  } = useServiceSetups()
   const [date, setDate] = useState(new Date(2024, 8, 2)) // September 2, 2024
   const [view, setView] = useState(Views.DAY)
+  const [enforceTechs, setEnforceTechs] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState(null)
+  const popoverRef = useRef(null)
 
   const { allocatedEvents, resources } = useMemo(() => {
     if (!serviceSetups) return { allocatedEvents: [], resources: [] }
@@ -23,62 +84,56 @@ export default function BigCalendar() {
       return generateEventsForYear(setup, 2024)
     })
 
-    return allocateEventsToResources(rawEvents)
-  }, [serviceSetups])
-
-  const currentDateEvents = useMemo(() => {
-    return allocatedEvents.filter((event) => dayjs(event.start).isSame(date, 'day'))
-  }, [allocatedEvents, date])
+    return allocateEventsToResources(rawEvents, enforceTechs)
+  }, [serviceSetups, enforceTechs])
 
   useEffect(() => {
-    if (currentDateEvents.length > 0) {
-      const scheduleSummary = {}
-      currentDateEvents.forEach((event) => {
-        const resourceName =
-          resources.find((r) => r.id === event.resourceId)?.title || event.resourceId
-        const startTime = dayjs(event.start).format('h:mma')
-        const endTime = dayjs(event.end).format('h:mma')
-
-        if (!scheduleSummary[resourceName]) {
-          scheduleSummary[resourceName] = []
-        }
-
-        scheduleSummary[resourceName].push(`${event.title} is at ${startTime}-${endTime}`)
-      })
-
-      console.log(`Schedule Summary for ${dayjs(date).format('MMMM D, YYYY')}:`)
-      Object.entries(scheduleSummary).forEach(([resourceName, events]) => {
-        console.log(`${resourceName}:`)
-        events.forEach((event) => console.log(`  - ${event}`))
-      })
+    if (serviceSetups) {
+      const allEnforced = serviceSetups.every((setup) => setup.tech.enforced)
+      setEnforceTechs(allEnforced)
     }
-  }, [currentDateEvents, resources, date])
+  }, [serviceSetups])
 
   const handleNavigate = useCallback((newDate) => {
-    console.log('Navigating to:', dayjs(newDate).format('MMMM D, YYYY'))
     setDate(newDate)
   }, [])
 
   const handleView = useCallback((newView) => {
-    console.log('Changing view to:', newView)
     setView(newView)
   }, [])
 
-  if (isLoading) return <div>Loading...</div>
-  if (error) return <div>Error: {error.message}</div>
+  const handleEnforceTechsChange = useCallback(
+    (checked) => {
+      setEnforceTechs(checked)
+      updateAllEnforced(checked)
+    },
+    [updateAllEnforced],
+  )
+
+  const handleEnforceTechChange = useCallback(
+    (id, checked) => {
+      console.log(`Updating enforced for ${id} to ${checked}`)
+      updateEnforced(id, checked)
+    },
+    [updateEnforced],
+  )
+
+  const handleSelectEvent = useCallback((event) => {
+    setSelectedEvent(event)
+  }, [])
 
   const EventComponent = ({ event }) => (
-    <>
-      <span>{event.title} </span>
-      <span className="text-sm">
-        ({/* {event.time.originalRange} ⇒{' '} */}
-        {formatParsedTimeRange(event.time.range[0], event.time.range[1])})
-      </span>
-    </>
+    <EventTooltip event={event} handleEnforceTechChange={handleEnforceTechChange} />
   )
 
   return (
     <div>
+      <div className="mb-4">
+        <label className="flex items-center space-x-2">
+          <Checkbox checked={enforceTechs} onCheckedChange={handleEnforceTechsChange} />
+          <span>Enforce Techs</span>
+        </label>
+      </div>
       <Calendar
         localizer={localizer}
         events={allocatedEvents}
@@ -100,6 +155,7 @@ export default function BigCalendar() {
         components={{
           event: EventComponent,
         }}
+        onSelectEvent={handleSelectEvent}
       />
     </div>
   )
@@ -116,11 +172,11 @@ function generateEventsForYear(setup, year) {
 
       const baseEvent = {
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
+        setupId: setup.id,
         title: setup.company,
         tech: {
+          ...setup.tech,
           enforced: setup.tech.enforced,
-          code: setup.tech.code,
-          name: setup.tech.name,
         },
         time: {
           ...setup.time,
@@ -166,30 +222,11 @@ function shouldEventOccur(scheduleString, date) {
   return scheduleString.charAt(dayOfYear) === '1'
 }
 
-function calculateEndTime(start, duration) {
-  const startTime = convertTo24Hour(start)
-  const [hours, minutes] = startTime.split(':').map(Number)
-
-  const endDate = dayjs().set('hour', hours).set('minute', minutes).add(duration, 'minute')
-  return endDate.format('HH:mm')
-}
-
-function convertTo24Hour(time) {
-  const [rawTime, period] = time.split(' ')
-  let [hours, minutes] = rawTime.split(':').map(Number)
-
-  if (period === 'PM' && hours !== 12) hours += 12
-  if (period === 'AM' && hours === 12) hours = 0
-
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-}
-
-function allocateEventsToResources(events) {
+function allocateEventsToResources(events, enforceTechs) {
   const techResources = new Map()
   const genericResources = []
   let genericResourceCount = 0
 
-  // Sort events: enforced techs and times first, then by start time
   events.sort((a, b) => {
     if (a.tech.enforced && !b.tech.enforced) return -1
     if (!a.tech.enforced && b.tech.enforced) return 1
@@ -205,8 +242,8 @@ function allocateEventsToResources(events) {
   for (const event of events) {
     let allocated = false
 
-    if (event.tech.enforced) {
-      // For enforced techs, use the specific tech
+    if (enforceTechs || event.tech.enforced) {
+      // Use the specific tech
       const techId = event.tech.code
       if (!techResources.has(techId)) {
         techResources.set(techId, { id: techId, title: event.tech.name })
