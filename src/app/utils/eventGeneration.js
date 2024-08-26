@@ -1,7 +1,7 @@
 // /src/app/utils/eventGeneration.js
 
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { parseTime } from '@/app/utils/timeRange'
+import { parseTime, parseTimeRange } from '@/app/utils/timeRange'
 
 export function generateEventsForYear(setup, year) {
   const events = []
@@ -10,8 +10,6 @@ export function generateEventsForYear(setup, year) {
 
   for (let date = startDate; date.isSameOrBefore(endDate); date = date.add(1, 'day')) {
     if (shouldEventOccur(setup.schedule.schedule, date)) {
-      const preferredTime = parseTime(setup.time.preferred)
-
       const baseEvent = {
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
         setupId: setup.id,
@@ -29,28 +27,17 @@ export function generateEventsForYear(setup, year) {
       if (setup.time.enforced) {
         events.push({
           ...baseEvent,
-          start: date.add(preferredTime, 'second').toDate(),
-          end: date.add(preferredTime + setup.time.duration * 60, 'second').toDate(),
-          time: {
-            ...baseEvent.time,
-            enforced: true,
-            preferred: preferredTime,
-            duration: setup.time.duration,
-          },
+          start: date.add(parseTime(setup.time.preferred), 'second').toDate(),
+          end: date
+            .add(parseTime(setup.time.preferred) + setup.time.duration * 60, 'second')
+            .toDate(),
         })
       } else {
-        const [rangeStart, rangeEnd] = setup.time.range
+        const [rangeStart, rangeEnd] = parseTimeRange(setup.time.originalRange, setup.time.duration)
         events.push({
           ...baseEvent,
           start: date.add(rangeStart, 'second').toDate(),
           end: date.add(rangeEnd, 'second').toDate(),
-          time: {
-            ...baseEvent.time,
-            enforced: false,
-            range: [rangeStart, rangeEnd],
-            preferred: preferredTime,
-            duration: setup.time.duration,
-          },
         })
       }
     }

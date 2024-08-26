@@ -69,7 +69,27 @@
 }
 
 @layer components {
+  .btn {
+    @apply flex h-10 w-fit items-center overflow-hidden rounded px-4 pb-2 pt-2.5 font-bold hover:bg-opacity-95 active:bg-opacity-100;
+  }
+  .btn-teal {
+    @apply btn bg-teal text-white;
+  }
+  .icon {
+    @apply h-8 w-8 fill-current;
+  }
+
   .checkbox-hover:hover button {
     @apply border-2 border-blue-600;
+  }
+
+  /* react-big-calendar overrides */
+  .rbc-event,
+  .rbc-day-slot .rbc-background-event {
+    @apply bg-teal;
+  }
+  .rbc-event.rbc-selected,
+  .rbc-day-slot .rbc-selected.rbc-background-event {
+    @apply bg-teal-80;
   }
 }

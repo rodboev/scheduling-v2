@@ -11,6 +11,8 @@ import { Checkbox } from '@/app/components/ui/checkbox'
 import { generateEventsForYear } from '@/app/utils/eventGeneration'
 import { allocateEventsToResources } from '@/app/utils/eventAllocation'
 import EventTooltip from '@/app/components/EventTooltip'
+import UnallocatedEvents from '@/app/components/UnallocatedEvents'
+import ChangedEvents from '@/app/components/ChangedEvents'
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -28,8 +30,9 @@ export default function BigCalendar() {
   const [selectedEvent, setSelectedEvent] = useState(null)
   const popoverRef = useRef(null)
 
-  const { allocatedEvents, resources } = useMemo(() => {
-    if (!serviceSetups) return { allocatedEvents: [], resources: [] }
+  const { allocatedEvents, resources, unallocatedEvents, changedEvents } = useMemo(() => {
+    if (!serviceSetups)
+      return { allocatedEvents: [], resources: [], unallocatedEvents: [], changedEvents: [] }
 
     const rawEvents = serviceSetups.flatMap((setup) => {
       return generateEventsForYear(setup, 2024)
@@ -77,37 +80,70 @@ export default function BigCalendar() {
     <EventTooltip event={event} handleEnforceTechChange={handleEnforceTechChange} />
   )
 
+  const [currentViewRange, setCurrentViewRange] = useState({
+    start: date,
+    end: date,
+  })
+
+  const filteredUnallocatedEvents = useMemo(() => {
+    return unallocatedEvents.filter((unallocatedEvent) => {
+      const eventDate = dayjs(unallocatedEvent.event.start)
+      return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
+    })
+  }, [unallocatedEvents, currentViewRange])
+
+  const filteredChangedEvents = useMemo(() => {
+    return changedEvents.filter((changedEvent) => {
+      const eventDate = dayjs(changedEvent.event.start)
+      return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
+    })
+  }, [changedEvents, currentViewRange])
+
+  const handleRangeChange = useCallback((range) => {
+    setCurrentViewRange({
+      start: range.start,
+      end: range.end,
+    })
+  }, [])
+
   return (
-    <div>
-      <div className="mb-4">
-        <label className="checkbox-hover flex cursor-pointer items-center space-x-2">
-          <Checkbox checked={enforceTechs} onCheckedChange={handleEnforceTechsChange} />
-          <span>Enforce Techs</span>
-        </label>
+    <div className="flex">
+      <div className="w-64 overflow-auto">
+        <UnallocatedEvents events={filteredUnallocatedEvents} />
+        <ChangedEvents events={filteredChangedEvents} />
       </div>
-      <Calendar
-        localizer={localizer}
-        events={allocatedEvents}
-        resources={resources}
-        resourceIdAccessor="id"
-        resourceTitleAccessor={(resource) => resource.title}
-        defaultView={Views.DAY}
-        view={view}
-        onView={handleView}
-        date={date}
-        onNavigate={handleNavigate}
-        views={['day', 'work_week', 'month']}
-        step={15}
-        timeslots={4}
-        defaultDate={new Date(2024, 8, 2)} // September 2, 2024
-        min={new Date(2024, 8, 2, 5, 0, 0)} // 7:00 AM
-        max={new Date(2024, 8, 2, 23, 0, 0)} // 7:00 PM
-        toolbar={true}
-        components={{
-          event: EventComponent,
-        }}
-        onSelectEvent={handleSelectEvent}
-      />
+      <div className="flex-grow">
+        <div className="mb-4">
+          <label className="checkbox-hover flex cursor-pointer items-center space-x-2">
+            <Checkbox checked={enforceTechs} onCheckedChange={handleEnforceTechsChange} />
+            <span>Enforce Techs</span>
+          </label>
+        </div>
+        <Calendar
+          localizer={localizer}
+          events={allocatedEvents}
+          resources={resources}
+          resourceIdAccessor="id"
+          resourceTitleAccessor={(resource) => resource.title}
+          defaultView={Views.DAY}
+          view={view}
+          onView={handleView}
+          date={date}
+          onNavigate={handleNavigate}
+          views={['day', 'work_week', 'month']}
+          step={15}
+          timeslots={4}
+          defaultDate={new Date(2024, 8, 2)} // September 2, 2024
+          min={new Date(2024, 8, 2, 5, 0, 0)} // 7:00 AM
+          max={new Date(2024, 8, 2, 23, 0, 0)} // 7:00 PM
+          onRangeChange={handleRangeChange}
+          onSelectEvent={handleSelectEvent}
+          toolbar={true}
+          components={{
+            event: EventComponent,
+          }}
+        />
+      </div>
     </div>
   )
 }
