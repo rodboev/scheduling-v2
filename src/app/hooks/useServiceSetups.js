@@ -5,7 +5,7 @@ import axios from 'axios'
 import { useState, useCallback, useEffect } from 'react'
 
 const fetchServiceSetups = async (ids) => {
-  const { data } = await axios.get(`http://localhost:3000/api/services?ids=${ids.join(',')}`)
+  const { data } = await axios.get(`/api/services?ids=${ids.join(',')}`)
   return data
 }
 
