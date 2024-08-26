@@ -14,11 +14,10 @@ export function useServiceSetups() {
   const [localEnforced, setLocalEnforced] = useState({})
 
   const techData = [
-    { tech: 'ALJADI', ids: [20286, 16805, 16807, 20838, 12707, 117691] },
-    { tech: 'BAEK MALIK', ids: [21829] },
-    { tech: 'BLACK R.', ids: [17632, 19741, 20315, 18719, 20700, 15725, 15305] },
+    { ids: [20286, 16805, 16807, 20838, 12707, 117691] },
+    { ids: [21829] },
+    { ids: [17632, 19741, 20315, 18719, 20700, 15725, 15305] },
     {
-      tech: 'BORDEAU S',
       ids: [21473, 11760, 12059, 19635, 20552, 21419, 3349, 3597, 3369, 14397, 12150, 12149, 21029],
     },
   ]

@@ -67,3 +67,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .checkbox-hover:hover button {
+    @apply border-2 border-blue-600;
+  }
+}
