@@ -33,7 +33,9 @@ export default function BigCalendar() {
 
     const rawEvents = serviceSetups.flatMap((setup) => generateEventsForYear(setup, 2024))
 
-    return allocateEventsToResources(rawEvents, enforceTechs)
+    const result = allocateEventsToResources(rawEvents, enforceTechs)
+    console.log('Allocation result:', result) // Add this line for debugging
+    return result
   }, [serviceSetups, enforceTechs])
 
   useEffect(() => {
@@ -73,10 +75,13 @@ export default function BigCalendar() {
   })
 
   const filteredUnallocatedEvents = useMemo(() => {
-    return unallocatedEvents.filter((unallocatedEvent) => {
+    console.log('Unallocated events before filtering:', unallocatedEvents) // Add this line
+    const filtered = unallocatedEvents.filter((unallocatedEvent) => {
       const eventDate = dayjs(unallocatedEvent.event.start)
       return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
     })
+    console.log('Filtered unallocated events:', filtered) // Add this line
+    return filtered
   }, [unallocatedEvents, currentViewRange])
 
   const handleRangeChange = useCallback((range) => {
@@ -97,6 +102,8 @@ export default function BigCalendar() {
     ),
     [handleEnforceTechChange],
   )
+
+  console.log('Rendering UnallocatedEvents with:', filteredUnallocatedEvents)
 
   return (
     <div className="flex">

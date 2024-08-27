@@ -11,17 +11,9 @@ export function generateEventsForYear(setup, year) {
   for (let date = startDate; date.isSameOrBefore(endDate); date = date.add(1, 'day')) {
     if (shouldEventOccur(setup.schedule.schedule, date)) {
       const baseEvent = {
+        ...setup, // Spread all properties from the API
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
-        setupId: setup.id,
-        title: setup.company,
-        tech: {
-          ...setup.tech,
-          enforced: setup.tech.enforced,
-        },
-        time: {
-          ...setup.time,
-          originalRange: setup.time.originalRange,
-        },
+        date: date.toDate(),
       }
 
       if (setup.time.enforced) {
