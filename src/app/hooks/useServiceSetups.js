@@ -6,6 +6,20 @@ import { fetchServiceSetups } from '@/app/utils/api'
 
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 
+const ALLOWED_TECHS = [
+  'CORA JOSE',
+  'MADERA M.',
+  'HUNTLEY E.',
+  // PELLICER A',
+  'RIVERS',
+  'LOPEZ A.',
+  'FORD J.',
+  'CAPPA T.',
+  'BAEZ MALIK',
+  'BLAKAJ A.',
+  'VASTA RICK',
+]
+
 export const useServiceSetups = (startDate, endDate) => {
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
@@ -15,7 +29,9 @@ export const useServiceSetups = (startDate, endDate) => {
     queryFn: () => fetchServiceSetups(startDate, endDate),
     select: useCallback(
       (data) => {
-        return data.flatMap((setup) =>
+        const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
+
+        return filteredData.flatMap((setup) =>
           generateEventsForDateRange(setup, startDate, endDate).map((event) => ({
             ...event,
             tech: {

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import sql from 'mssql/msnodesqlv8.js'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { parseTimeRange } from '@/app/utils/timeRange'
+import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 
 sql.driver = 'FreeTDS'
 const config = {
@@ -139,6 +140,13 @@ export async function GET(request) {
   console.log('Start Date:', startDate)
   console.log('End Date:', endDate)
 
+  // Try to read from disk cache first
+  const cachedData = await readFromDiskCache(new Date(startDate), new Date(endDate))
+  if (cachedData) {
+    console.log('Returning cached data')
+    return NextResponse.json(cachedData)
+  }
+
   let pool
   try {
     console.log('Fetching service setups from database...')
@@ -183,6 +191,10 @@ export async function GET(request) {
     }
 
     console.log(`Retrieved ${filteredSetups.length} service setups`)
+
+    // Write the fetched and filtered data to disk cache
+    await writeToDiskCache(new Date(startDate), new Date(endDate), filteredSetups)
+
     return NextResponse.json(filteredSetups)
   } catch (error) {
     console.error('Error in GET function:', error)
