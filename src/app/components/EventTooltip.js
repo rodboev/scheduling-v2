@@ -3,7 +3,8 @@
 import React, { useState, useRef } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { Checkbox } from '@/app/components/ui/checkbox'
-import { formatParsedTimeRange } from '@/app/utils/timeRange'
+import { formatTimeRange, formatParsedTimeRange } from '@/app/utils/timeRange'
+import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
 export default function EventTooltip({ event, handleEnforceTechChange }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -25,7 +26,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
       <PopoverTrigger asChild>
         <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
           <span>{event.company} </span>
-          <span className="text-sm">({formatParsedTimeRange(event.start, event.end)})</span>
+          <span className="text-sm">({formatTimeRange(event.start, event.end)})</span>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -36,28 +37,35 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <h3 className="mb-2 flex items-center justify-between font-bold">
+        <h3 className="mb-2 flex items-center space-x-4 font-bold">
           <span>{event.company}</span>
-          <span className="text-sm font-semibold text-gray-600">{event.locationCode}</span>
+          <span className="font-semibold">#{event.locationCode}</span>
         </h3>
-        <p>Scheduled: {formatParsedTimeRange(event.start, event.end)}</p>
+        <p>Scheduled: {formatTimeRange(event.start, event.end)}</p>
+        <p>Preferred Time: {event.time.preferred || 'N/A'}</p>
+        <p>Duration: {event.time.duration || 'N/A'} min</p>
         <p>Original Range: {event.time.originalRange || 'N/A'}</p>
-        <p>Tech: {event.tech.code || 'N/A'}</p>
+        <p>Calculated to: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
         {event.comments && (
-          <div className="mt-2">
-            <p className="text-sm">
-              <div className="font-semibold">Service Setup:</div>
-              {event.comments.serviceSetup || 'N/A'}
-            </p>
-            {event.comments.location && event.comments.location.trim() !== '' && (
-              <p className="text-sm">
-                <div className="font-semibold">Location:</div>
-                {event.comments.location}
+          <>
+            <div className="my-2">
+              <p className="break-words text-sm">
+                <div className="font-semibold">Service Setup comments:</div>
+                {event.comments.serviceSetup || 'N/A'}
               </p>
+            </div>
+            {event.comments.location && event.comments.location.trim() !== '' && (
+              <div className="my-2">
+                <p className="break-words text-sm">
+                  <div className="font-semibold">Location comments:</div>
+                  {event.comments.location}
+                </p>
+              </div>
             )}
-          </div>
+          </>
         )}
-        <label className="checkbox-hover mt-2 flex cursor-pointer items-center space-x-2">
+        <div>Tech: {event.tech.code || 'N/A'}</div>
+        <label className="checkbox-hover my-1 flex cursor-pointer items-center space-x-2">
           <Checkbox
             checked={event.tech.enforced || false}
             onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
