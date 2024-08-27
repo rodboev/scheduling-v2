@@ -1,16 +1,13 @@
 // src/app/hooks/useServiceSetups.js
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, useCallback, useMemo } from 'react'
+import { useState } from 'react'
 import { fetchServiceSetups } from '@/app/utils/api'
-
-import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 
 const ALLOWED_TECHS = [
   'CORA JOSE',
   'MADERA M.',
   'HUNTLEY E.',
-  // PELLICER A',
   'RIVERS',
   'LOPEZ A.',
   'FORD J.',
@@ -24,55 +21,50 @@ export const useServiceSetups = (startDate, endDate) => {
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
 
-  const { data, isLoading, error } = useQuery({
+  const {
+    data: serviceSetups,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['serviceSetups', startDate, endDate],
     queryFn: () => fetchServiceSetups(startDate, endDate),
-    select: useCallback(
-      (data) => {
-        const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
-
-        return filteredData.flatMap((setup) =>
-          generateEventsForDateRange(setup, startDate, endDate).map((event) => ({
-            ...event,
-            tech: {
-              ...event.tech,
-              enforced: localEnforced[event.id] ?? event.tech.enforced,
-            },
-          })),
-        )
-      },
-      [localEnforced, startDate, endDate],
-    ),
+    select: (data) => {
+      const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
+      console.log('Filtered service setups:', filteredData.length)
+      return filteredData.map((setup) => ({
+        ...setup,
+        tech: {
+          ...setup.tech,
+          enforced: localEnforced[setup.id] ?? setup.tech.enforced,
+        },
+      }))
+    },
   })
 
-  const updateEnforced = useCallback(
-    (id, enforced) => {
-      const setupId = id.includes('-') ? id.split('-')[0] : id
-      setLocalEnforced((prev) => ({
-        ...prev,
-        [setupId]: enforced,
-      }))
-      queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
-    },
-    [queryClient, startDate, endDate],
-  )
+  function updateEnforced(id, enforced) {
+    const setupId = id.includes('-') ? id.split('-')[0] : id
+    setLocalEnforced((prev) => {
+      const newLocalEnforced = { ...prev, [setupId]: enforced }
+      console.log('New localEnforced state:', newLocalEnforced)
+      return newLocalEnforced
+    })
+    // Return the updated setupId and enforced value
+    return { setupId, enforced }
+  }
 
-  const updateAllEnforced = useCallback(
-    (enforced) => {
-      if (data) {
-        const newLocalEnforced = data.reduce((acc, setup) => {
-          acc[setup.id] = enforced
-          return acc
-        }, {})
-        setLocalEnforced(newLocalEnforced)
-        queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
-      }
-    },
-    [data, queryClient, startDate, endDate],
-  )
+  function updateAllEnforced(enforced) {
+    if (serviceSetups) {
+      const newLocalEnforced = serviceSetups.reduce((acc, setup) => {
+        acc[setup.id] = enforced
+        return acc
+      }, {})
+      setLocalEnforced(newLocalEnforced)
+      queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
+    }
+  }
 
   return {
-    data,
+    data: serviceSetups,
     isLoading,
     error,
     updateEnforced,

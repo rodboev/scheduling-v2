@@ -2,17 +2,17 @@
 
 import { createAllocatedEvent, canAllocateToResource } from './timeSlotFinding'
 
-export function allocateToResource(
-  event,
-  allocatedEvents,
-  enforceTechs,
-  techResources,
-  genericResources,
-) {
-  if (enforceTechs || event.tech.enforced) {
+export function allocateToResource(event, allocatedEvents, techResources, genericResources) {
+  console.log('Allocating event:', event.id, 'Event tech enforced:', event.tech.enforced)
+  if (event.tech.enforced) {
     return allocateToTechResource(event, allocatedEvents, techResources)
   } else {
-    return allocateToGenericResource(event, allocatedEvents, genericResources)
+    const genericResult = allocateToGenericResource(event, allocatedEvents, genericResources)
+    if (genericResult.allocated) {
+      return genericResult
+    }
+    // If we can't allocate to a generic resource, try the tech resource as a fallback
+    return allocateToTechResource(event, allocatedEvents, techResources)
   }
 }
 

@@ -2,7 +2,7 @@
 
 'use client'
 
-import React, { useMemo, useCallback, useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
@@ -25,7 +25,11 @@ export default function BigCalendar() {
     end.setHours(23, 59, 59, 999)
     return { start, end }
   })
-  const [enforceTechs, setEnforceTechs] = useState(false)
+  const [enforcedUpdates, setEnforcedUpdates] = useState({})
+  const [allocatedEvents, setAllocatedEvents] = useState([])
+  const [resources, setResources] = useState([])
+  const [unallocatedEvents, setUnallocatedEvents] = useState([])
+  const [summaryText, setSummaryText] = useState('')
 
   const {
     data: serviceSetups,
@@ -35,36 +39,44 @@ export default function BigCalendar() {
     updateAllEnforced,
   } = useServiceSetups(currentViewRange.start, currentViewRange.end)
 
-  const { allocatedEvents, resources, unallocatedEvents, summaryText } = useMemo(() => {
-    if (!serviceSetups)
-      return { allocatedEvents: [], resources: [], unallocatedEvents: [], summaryText: '' }
-
-    const rawEvents = serviceSetups.flatMap((setup) =>
-      generateEventsForDateRange(setup, currentViewRange.start, currentViewRange.end),
-    )
-
-    const result = allocateEventsToResources(rawEvents, enforceTechs)
-    console.log('Allocation result:', result) // Add this line for debugging
-    return result
-  }, [serviceSetups, enforceTechs, currentViewRange])
-
   useEffect(() => {
     if (serviceSetups) {
-      const allEnforced = serviceSetups.every((setup) => setup.tech.enforced)
-      setEnforceTechs(allEnforced)
-    }
-  }, [serviceSetups])
+      const rawEvents = serviceSetups.flatMap((setup) => {
+        const enforced = enforcedUpdates.hasOwnProperty(setup.id)
+          ? enforcedUpdates[setup.id]
+          : setup.tech.enforced
+        return generateEventsForDateRange(
+          { ...setup, tech: { ...setup.tech, enforced } },
+          currentViewRange.start,
+          currentViewRange.end,
+        )
+      })
 
-  const handleNavigate = useCallback((newDate) => {
+      // console.log('Raw events generated:', rawEvents.length)
+
+      const result = allocateEventsToResources(rawEvents)
+      // console.log('Allocation result:', result)
+
+      setAllocatedEvents(result.allocatedEvents)
+      setResources(result.resources)
+      setUnallocatedEvents(result.unallocatedEvents)
+      setSummaryText(result.summaryText)
+    }
+  }, [serviceSetups, enforcedUpdates, currentViewRange])
+
+  const allTechsEnforced =
+    allocatedEvents.length > 0 && allocatedEvents.every((event) => event.tech.enforced)
+
+  function handleNavigate(newDate) {
     setDate(newDate)
     const start = new Date(newDate)
     start.setHours(0, 0, 0, 0)
     const end = new Date(newDate)
     end.setHours(23, 59, 59, 999)
     setCurrentViewRange({ start, end })
-  }, [])
+  }
 
-  const handleRangeChange = useCallback((range) => {
+  function handleRangeChange(range) {
     let start, end
     if (Array.isArray(range)) {
       // For work week and month views
@@ -77,50 +89,57 @@ export default function BigCalendar() {
       end = new Date(range.start.setHours(23, 59, 59, 999))
     }
     setCurrentViewRange({ start, end })
-  }, [])
+  }
 
-  const handleView = useCallback((newView) => {
+  function handleView(newView) {
     setView(newView)
-  }, [])
+  }
 
-  const handleEnforceTechsChange = useCallback(
-    (checked) => {
-      setEnforceTechs(checked)
-      updateAllEnforced(checked)
-    },
-    [updateAllEnforced],
-  )
+  function handleEnforceTechsChange(checked) {
+    updateAllEnforced(checked)
+    setEnforcedUpdates({}) // Reset all individual enforced states
+    // Force a re-render of the calendar
+    setDate(new Date(date))
+  }
 
-  const handleEnforceTechChange = useCallback(
-    (id, checked) => {
-      console.log(`Updating enforced for ${id} to ${checked}`)
-      updateEnforced(id, checked)
-    },
-    [updateEnforced],
-  )
-
-  const filteredUnallocatedEvents = useMemo(() => {
-    console.log('Unallocated events before filtering:', unallocatedEvents) // Add this line
-    const filtered = unallocatedEvents.filter((unallocatedEvent) => {
-      const eventDate = dayjs(unallocatedEvent.event.start)
-      return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
+  function handleEnforceTechChange(id, checked) {
+    console.log(`BigCalendar: Updating enforced for ${id} to ${checked}`)
+    const { setupId, enforced } = updateEnforced(id, checked)
+    setEnforcedUpdates((prev) => {
+      const newUpdates = { ...prev, [setupId]: enforced }
+      console.log('New enforcedUpdates:', newUpdates)
+      return newUpdates
     })
-    console.log('Filtered unallocated events:', filtered) // Add this line
-    return filtered
-  }, [unallocatedEvents, currentViewRange])
+    // Force a re-render of the calendar
+    setDate(new Date(date))
+  }
 
-  const EventComponent = useCallback(
-    ({ event }) => (
+  const filteredUnallocatedEvents = unallocatedEvents.filter((unallocatedEvent) => {
+    const eventDate = dayjs(unallocatedEvent.event.start)
+    return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
+  })
+
+  function EventComponent({ event }) {
+    const setupId = event.id.split('-')[0]
+    const enforced = enforcedUpdates.hasOwnProperty(setupId)
+      ? enforcedUpdates[setupId]
+      : event.tech.enforced
+
+    return (
       <EventTooltip
-        event={event}
-        handleEnforceTechChange={(checked) => {
-          handleEnforceTechChange(event.id, checked)
+        event={{
+          ...event,
+          tech: {
+            ...event.tech,
+            enforced: enforced,
+          },
         }}
+        handleEnforceTechChange={handleEnforceTechChange}
       />
-    ),
-    [handleEnforceTechChange],
-  )
+    )
+  }
 
+  console.log('Current view range:', currentViewRange.start, currentViewRange.end)
   console.log('Rendering UnallocatedEvents with:', filteredUnallocatedEvents)
 
   return (
@@ -131,7 +150,7 @@ export default function BigCalendar() {
       <div className="flex-grow">
         <div className="mb-4">
           <label className="checkbox-hover flex cursor-pointer items-center space-x-2">
-            <Checkbox checked={enforceTechs} onCheckedChange={handleEnforceTechsChange} />
+            <Checkbox checked={allTechsEnforced} onCheckedChange={handleEnforceTechsChange} />
             <span>Enforce All Techs</span>
           </label>
         </div>

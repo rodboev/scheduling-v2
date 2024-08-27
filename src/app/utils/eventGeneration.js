@@ -8,6 +8,8 @@ export function generateEventsForDateRange(setup, startDate, endDate) {
   const start = dayjs(startDate)
   const end = dayjs(endDate)
 
+  // console.log(`Generating events for setup ${setup.id} from ${start.format()} to ${end.format()}`)
+
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
     if (shouldEventOccur(setup.schedule.string, date)) {
       const baseEvent = {
@@ -32,13 +34,22 @@ export function generateEventsForDateRange(setup, startDate, endDate) {
           end: date.add(rangeEnd, 'second').toDate(),
         })
       }
+
+      // Ensure the tech.enforced property is carried over
+      events[events.length - 1].tech.enforced = setup.tech.enforced
     }
   }
 
+  // console.log(`Generated ${events.length} events for setup ${setup.id}`)
   return events
 }
 
 function shouldEventOccur(scheduleString, date) {
   const dayOfYear = date.dayOfYear()
-  return scheduleString.charAt(dayOfYear) === '1'
+  const scheduleIndex = dayOfYear
+  const shouldOccur = scheduleString[scheduleIndex] === '1'
+  // console.log(
+  //   `Date: ${date.format('YYYY-MM-DD')}, Day of year: ${dayOfYear}, Schedule value: ${scheduleString[scheduleIndex]}, Should occur: ${shouldOccur}`,
+  // )
+  return shouldOccur
 }

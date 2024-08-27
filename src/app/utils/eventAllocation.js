@@ -6,28 +6,25 @@ import { addToScheduleSummary, generateScheduleSummaryText } from './scheduleSum
 import { findConflictingEvents } from './eventConflicts'
 import { dayjsInstance as dayjs } from './dayjs'
 
-export function allocateEventsToResources(events, enforceTechs) {
-  const { techResources, genericResources } = initializeResources(events, enforceTechs)
+export function allocateEventsToResources(events) {
+  // console.log('Allocating events:', events.length)
+  const { techResources, genericResources } = initializeResources(events)
 
   const allocatedEvents = []
   const unallocatedEvents = []
   const changedEvents = []
   const scheduleSummary = {}
+  const usedResources = new Set()
 
   events.sort(sortEventsPriority)
 
   for (const event of events) {
-    const result = allocateToResource(
-      event,
-      allocatedEvents,
-      enforceTechs,
-      techResources,
-      genericResources,
-    )
+    const result = allocateToResource(event, allocatedEvents, techResources, genericResources)
 
     if (result.allocated) {
       allocatedEvents.push(result.allocatedEvent)
       addToScheduleSummary(scheduleSummary, result.allocatedEvent)
+      usedResources.add(result.allocatedEvent.resourceId)
       if (result.changed) {
         changedEvents.push(createChangedEventEntry(result.allocatedEvent, event))
       }
@@ -38,7 +35,13 @@ export function allocateEventsToResources(events, enforceTechs) {
 
   logAllocationResults(allocatedEvents, unallocatedEvents, changedEvents)
 
-  const resources = [...techResources.values(), ...genericResources]
+  const resources = [...usedResources]
+    .map(
+      (resourceId) =>
+        techResources.get(resourceId) || genericResources.find((r) => r.id === resourceId),
+    )
+    .filter(Boolean)
+
   const summaryText = generateScheduleSummaryText(scheduleSummary)
 
   return { allocatedEvents, resources, unallocatedEvents, changedEvents, summaryText }
@@ -48,11 +51,9 @@ function initializeResources(events, enforceTechs) {
   const techResources = new Map()
   const genericResources = []
   events.forEach((event) => {
-    if (enforceTechs || event.tech.enforced) {
-      const techId = event.tech.code
-      if (!techResources.has(techId)) {
-        techResources.set(techId, { id: techId, title: event.tech.code })
-      }
+    const techId = event.tech.code
+    if (!techResources.has(techId)) {
+      techResources.set(techId, { id: techId, title: event.tech.code })
     }
   })
   return { techResources, genericResources }
