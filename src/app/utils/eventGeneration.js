@@ -3,15 +3,15 @@
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { parseTime, parseTimeRange } from '@/app/utils/timeRange'
 
-export function generateEventsForYear(setup, year) {
+export function generateEventsForDateRange(setup, startDate, endDate) {
   const events = []
-  const startDate = dayjs(`${year}-01-01`)
-  const endDate = dayjs(`${year}-12-31`)
+  const start = dayjs(startDate)
+  const end = dayjs(endDate)
 
-  for (let date = startDate; date.isSameOrBefore(endDate); date = date.add(1, 'day')) {
-    if (shouldEventOccur(setup.schedule.schedule, date)) {
+  for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
+    if (shouldEventOccur(setup.schedule.string, date)) {
       const baseEvent = {
-        ...setup, // Spread all properties from the API
+        ...setup,
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
         date: date.toDate(),
       }

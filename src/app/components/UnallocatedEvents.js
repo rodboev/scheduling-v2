@@ -26,10 +26,10 @@ export default function UnallocatedEvents({ events }) {
                   <PopoverContent className="w-96" side="right">
                     <h3 className="mb-2 font-bold">{event.company}</h3>
                     <p>
-                      <strong>Intended Time:</strong> {event.time.originalRange || 'Not specified'}
+                      <strong>Range:</strong> {event.time.originalRange || 'Not specified'}
                     </p>
                     <p>
-                      <strong>Preferred Time:</strong> {event.time.preferred}
+                      <strong>Time:</strong> {event.time.preferred}
                     </p>
                     <p>
                       <strong>Tech:</strong> {event.tech.code}
@@ -40,6 +40,9 @@ export default function UnallocatedEvents({ events }) {
                     <p>
                       <strong>Reason:</strong> {unallocatedEvent.reason}
                     </p>
+                    <p>Code: {event.schedule.code}</p>
+                    <p>description: {event.schedule.description}</p>
+                    <p>Tech: {event.tech.code}</p>
                   </PopoverContent>
                 </Popover>
               </li>

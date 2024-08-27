@@ -31,9 +31,24 @@ export function generateScheduleSummaryText(scheduleSummary) {
 
   for (const [resourceName, events] of Object.entries(scheduleSummary)) {
     summaryText += `${resourceName}:\n`
-    events.forEach((event, index) => {
-      summaryText += `  ${index + 1}. ${event}\n`
-    })
+    if (Array.isArray(events)) {
+      events.forEach((event, index) => {
+        summaryText += `  ${index + 1}. ${event}\n`
+      })
+    } else if (typeof events === 'object' && events !== null) {
+      // Handle the case where events is an object
+      if ('totalHours' in events) {
+        summaryText += `  Total Hours: ${Number(events.totalHours).toFixed(2)}\n`
+      }
+      if ('eventCount' in events) {
+        summaryText += `  Event Count: ${events.eventCount}\n`
+      }
+      if (!('totalHours' in events) && !('eventCount' in events)) {
+        summaryText += `  Event details not available\n`
+      }
+    } else {
+      summaryText += `  No events data available\n`
+    }
     summaryText += '\n'
   }
 

@@ -165,7 +165,7 @@ export function parseTimeRangeInterval(timeRangeStr) {
   let endTime = parseTime(endStr, 'AM')
 
   if (startTime === null || endTime === null) {
-    console.error(`Error parsing time range: '${timeRangeStr}'`)
+    console.log(`Error parsing time range: '${timeRangeStr}'`)
     return [null, null]
   }
 

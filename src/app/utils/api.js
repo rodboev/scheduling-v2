@@ -15,11 +15,17 @@ export const techData = [
     ids: [21473, 11760, 12059, 19635, 20552, 21419, 3349, 3597, 3369, 14397, 12150, 12149, 21029],
   },
 ]
+const allIds = techData.flatMap((tech) => tech.ids)
 
-export const fetchServiceSetups = async () => {
+export const fetchServiceSetups = async (startDate, endDate) => {
   try {
-    const allIds = techData.flatMap((tech) => tech.ids)
     const { data } = await api.get(`/services?ids=${allIds.join(',')}`)
+    // const { data } = await api.get('/services', {
+    //   params: {
+    //     startDate,
+    //     endDate,
+    //   },
+    // })
     return data
   } catch (error) {
     console.error('Error fetching service setups:', error)

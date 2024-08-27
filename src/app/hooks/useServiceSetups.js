@@ -4,24 +4,28 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useCallback, useMemo } from 'react'
 import { fetchServiceSetups } from '@/app/utils/api'
 
-export function useServiceSetups() {
+import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
+
+export const useServiceSetups = (startDate, endDate) => {
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
 
-  const query = useQuery({
-    queryKey: ['serviceSetups'],
-    queryFn: fetchServiceSetups,
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['serviceSetups', startDate, endDate],
+    queryFn: () => fetchServiceSetups(startDate, endDate),
     select: useCallback(
       (data) => {
-        return data.map((setup) => ({
-          ...setup,
-          tech: {
-            ...setup.tech,
-            enforced: localEnforced[setup.id] ?? setup.tech.enforced,
-          },
-        }))
+        return data.flatMap((setup) =>
+          generateEventsForDateRange(setup, startDate, endDate).map((event) => ({
+            ...event,
+            tech: {
+              ...event.tech,
+              enforced: localEnforced[event.id] ?? event.tech.enforced,
+            },
+          })),
+        )
       },
-      [localEnforced],
+      [localEnforced, startDate, endDate],
     ),
   })
 
@@ -32,27 +36,29 @@ export function useServiceSetups() {
         ...prev,
         [setupId]: enforced,
       }))
-      queryClient.invalidateQueries(['serviceSetups'])
+      queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
     },
-    [queryClient],
+    [queryClient, startDate, endDate],
   )
 
   const updateAllEnforced = useCallback(
     (enforced) => {
-      if (query.data) {
-        const newLocalEnforced = query.data.reduce((acc, setup) => {
+      if (data) {
+        const newLocalEnforced = data.reduce((acc, setup) => {
           acc[setup.id] = enforced
           return acc
         }, {})
         setLocalEnforced(newLocalEnforced)
-        queryClient.invalidateQueries(['serviceSetups'])
+        queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
       }
     },
-    [query.data, queryClient],
+    [data, queryClient, startDate, endDate],
   )
 
   return {
-    ...query,
+    data,
+    isLoading,
+    error,
     updateEnforced,
     updateAllEnforced,
   }
