@@ -35,6 +35,8 @@ const BASE_QUERY = `
       ServiceSetups.WorkTime,
       ServiceSetups.TimeRange,
       ServiceSetups.Duration,
+      ServiceSetups.RouteOptTime1Beg,
+      ServiceSetups.RouteOptTime1End,
       Locations.Company,
       Locations.LocationCode,
       Schedules.ScheduleID AS ScheduleID,
@@ -66,28 +68,6 @@ async function runQuery(pool, query) {
   }
 }
 
-async function getServiceSetups(pool, ids) {
-  try {
-    // Create a temporary table to hold the IDs
-    await pool.request().query(`
-      CREATE TABLE #TempIds (ID INT);
-      ${ids.map((id) => `INSERT INTO #TempIds (ID) VALUES (${id});`).join('\n')}
-    `)
-
-    const query = `
-      ${BASE_QUERY}
-      AND ServiceSetups.SetupID IN (SELECT ID FROM #TempIds);
-
-      DROP TABLE #TempIds;
-    `
-
-    return await runQuery(pool, query)
-  } catch (error) {
-    console.error('Error in getServiceSetups:', error)
-    throw error
-  }
-}
-
 function transformServiceSetup(setup) {
   const formatTechName = (fname, lname) => {
     if (!fname) return ''
@@ -99,6 +79,12 @@ function transformServiceSetup(setup) {
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
 
+  const formatRouteTime = (dateTimeString) => {
+    if (!dateTimeString) return null
+    const date = new Date(dateTimeString)
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  }
+
   return {
     id: setup.id,
     locationCode: setup.LocationCode,
@@ -108,7 +94,6 @@ function transformServiceSetup(setup) {
       code: setup.ScheduleCode,
       description: setup.ScheduleDescription,
       string: setup.ScheduleString,
-      // schedule: setup.ScheduleString,
     },
     tech: {
       id: setup.TechID1,
@@ -123,6 +108,7 @@ function transformServiceSetup(setup) {
       duration: setup.Duration,
       originalRange: setup.TimeRange,
     },
+    routeTimes: [formatRouteTime(setup.RouteOptTime1Beg), formatRouteTime(setup.RouteOptTime1End)],
     comments: {
       serviceSetup: setup.ServiceSetupComment,
       location: setup.LocationComment,
@@ -141,75 +127,73 @@ export async function GET(request) {
   console.log('End Date:', endDate)
 
   // Try to read from disk cache first
-  const cachedData = await readFromDiskCache(new Date(startDate), new Date(endDate))
-  if (cachedData) {
-    console.log('Returning cached data')
-    return NextResponse.json(cachedData)
-  }
+  let serviceSetups = await readFromDiskCache()
 
-  let pool
-  try {
-    console.log('Fetching service setups from database...')
-    pool = await sql.connect(config)
+  if (!serviceSetups) {
+    let pool
+    try {
+      console.log('Fetching service setups from database...')
+      pool = await sql.connect(config)
 
-    const serviceSetups = await runQuery(pool, BASE_QUERY)
-    console.log('Total service setups fetched:', serviceSetups.length)
+      serviceSetups = await runQuery(pool, BASE_QUERY)
+      console.log('Total service setups fetched:', serviceSetups.length)
 
-    // Transform all service setups immediately
-    const transformedSetups = serviceSetups.map(transformServiceSetup)
-    console.log('Transformed setups:', transformedSetups.length)
+      // Transform all service setups immediately
+      serviceSetups = serviceSetups.map(transformServiceSetup)
+      console.log('Transformed setups:', serviceSetups.length)
 
-    // Then filter the transformed setups based on the date range
-    const filteredSetups = transformedSetups.filter((setup) => {
-      const scheduleArray = setup.schedule.string.split('')
-      const start = dayjs(startDate).subtract(1, 'day') // Start from the day before
-      const end = dayjs(endDate).add(1, 'day') // End on the day after
-
-      let currentDate = start
-
-      while (currentDate.isBefore(end)) {
-        const dayOfWeek = currentDate.day()
-        const scheduleIndex = (dayOfWeek + 6) % 7
-        const nextDayOfWeek = (dayOfWeek + 1) % 7
-        const nextScheduleIndex = (nextDayOfWeek + 6) % 7
-
-        if (scheduleArray[scheduleIndex] === '1' || scheduleArray[nextScheduleIndex] === '1') {
-          // console.log(`Setup ${setup.id} matched for date ${currentDate.format('YYYY-MM-DD')}`)
-          return true
+      // Write all fetched and transformed data to disk cache
+      await writeToDiskCache(serviceSetups)
+    } catch (error) {
+      console.error('Error fetching from database:', error)
+      return NextResponse.json(
+        { error: 'Internal Server Error', details: error.message, stack: error.stack },
+        { status: 500 },
+      )
+    } finally {
+      if (pool) {
+        try {
+          await pool.close()
+          console.log('Database connection closed')
+        } catch (closeErr) {
+          console.error('Error closing database connection:', closeErr)
         }
-        currentDate = currentDate.add(1, 'day')
-      }
-      // console.log(`Setup ${setup.id} did not match any dates in the range`)
-      return false
-    })
-
-    console.log('Filtered setups:', filteredSetups.length)
-
-    if (filteredSetups.length === 0) {
-      console.log('No service setups found for the given date range')
-      return NextResponse.json({ message: 'No service setups found' }, { status: 404 })
-    }
-
-    console.log(`Retrieved ${filteredSetups.length} service setups`)
-
-    // Write the fetched and filtered data to disk cache
-    await writeToDiskCache(new Date(startDate), new Date(endDate), filteredSetups)
-
-    return NextResponse.json(filteredSetups)
-  } catch (error) {
-    console.error('Error in GET function:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: error.message, stack: error.stack },
-      { status: 500 },
-    )
-  } finally {
-    if (pool) {
-      try {
-        await pool.close()
-        console.log('Database connection closed')
-      } catch (closeErr) {
-        console.error('Error closing database connection:', closeErr)
       }
     }
+  } else {
+    console.log('Using cached data, total setups:', serviceSetups.length)
   }
+
+  // Filter the setups based on the date range
+  const filteredSetups = serviceSetups.filter((setup) => {
+    const scheduleArray = setup.schedule.string.split('')
+    const start = dayjs(startDate).subtract(1, 'day') // Start from the day before
+    const end = dayjs(endDate).add(1, 'day') // End on the day after
+
+    let currentDate = start
+
+    while (currentDate.isBefore(end)) {
+      const dayOfWeek = currentDate.day()
+      const scheduleIndex = (dayOfWeek + 6) % 7
+      const nextDayOfWeek = (dayOfWeek + 1) % 7
+      const nextScheduleIndex = (nextDayOfWeek + 6) % 7
+
+      if (scheduleArray[scheduleIndex] === '1' || scheduleArray[nextScheduleIndex] === '1') {
+        return true
+      }
+      currentDate = currentDate.add(1, 'day')
+    }
+    return false
+  })
+
+  console.log('Filtered setups:', filteredSetups.length)
+
+  if (filteredSetups.length === 0) {
+    console.log('No service setups found for the given date range')
+    return NextResponse.json({ message: 'No service setups found' }, { status: 404 })
+  }
+
+  console.log(`Retrieved ${filteredSetups.length} service setups`)
+
+  return NextResponse.json(filteredSetups)
 }

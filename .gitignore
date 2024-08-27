@@ -37,3 +37,6 @@ next-env.d.ts
 
 # envfile
 .env
+
+# data
+src/app/data

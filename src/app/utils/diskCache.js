@@ -1,59 +1,71 @@
 // src/app/utils/diskCache.js
 
-import fs from 'fs'
+import fs from 'fs/promises'
 import path from 'path'
 
-const CACHE_DIR = path.join(process.cwd(), 'src', 'app', 'data')
+const CACHE_FILE = path.join(process.cwd(), 'src', 'app', 'data', 'serviceSetups.json')
+const CACHE_VALIDITY_HOURS = 4
 
-function formatDate(date) {
-  const d = new Date(date)
-  const month = (d.getMonth() + 1).toString().padStart(2, '0')
-  const day = d.getDate().toString().padStart(2, '0')
-  const year = d.getFullYear().toString().slice(-2)
-  return `${month}${day}${year}`
-}
+function formatCacheAge(ageInHours) {
+  const hours = Math.floor(ageInHours)
+  const minutes = Math.round((ageInHours - hours) * 60)
 
-function ensureCacheDirectoryExists() {
-  if (!fs.existsSync(CACHE_DIR)) {
-    try {
-      fs.mkdirSync(CACHE_DIR, { recursive: true })
-      console.log(`Cache directory created: ${CACHE_DIR}`)
-    } catch (error) {
-      console.error(`Error creating cache directory: ${error.message}`)
-      throw error
-    }
+  if (hours === 0) {
+    return `${minutes} min`
+  } else if (minutes === 0) {
+    return `${hours} hr`
+  } else {
+    return `${hours} hr ${minutes} min`
   }
 }
 
-export function readFromDiskCache(start, end) {
-  ensureCacheDirectoryExists()
-  const fileName = `services-${formatDate(start)}-${formatDate(end)}.json`
-  const filePath = path.join(CACHE_DIR, fileName)
-
+export async function readFromDiskCache() {
   try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8')
-      console.log(`Cache read successfully: ${filePath}`)
-      return JSON.parse(data)
+    const data = await fs.readFile(CACHE_FILE, 'utf-8')
+    const { timestamp, serviceSetups } = JSON.parse(data)
+
+    if (!timestamp || !serviceSetups) {
+      console.log('Cache data is invalid')
+      return null
     }
-    console.log(`Cache file not found: ${filePath}`)
-    return null
+
+    const now = Date.now()
+    const cacheTime = new Date(timestamp).getTime()
+
+    if (isNaN(cacheTime)) {
+      console.log('Invalid cache timestamp')
+      return null
+    }
+
+    const cacheAgeHours = (now - cacheTime) / (1000 * 60 * 60) // age in hours
+    const formattedAge = formatCacheAge(cacheAgeHours)
+
+    if (cacheAgeHours < CACHE_VALIDITY_HOURS) {
+      console.log(`Using valid cache, age: ${formattedAge}`)
+      return serviceSetups
+    } else {
+      console.log(`Cache expired, age: ${formattedAge}`)
+      return null
+    }
   } catch (error) {
-    console.error(`Error reading from cache: ${error.message}`)
-    return null
+    if (error.code === 'ENOENT') {
+      console.log('Cache file not found')
+      return null // File doesn't exist
+    }
+    console.error('Error reading cache file:', error)
+    return null // Return null for any other errors
   }
 }
 
-export function writeToDiskCache(start, end, data) {
-  ensureCacheDirectoryExists()
-  const fileName = `services-${formatDate(start)}-${formatDate(end)}.json`
-  const filePath = path.join(CACHE_DIR, fileName)
-
+export async function writeToDiskCache(data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data), 'utf-8')
-    console.log(`Cache written successfully: ${filePath}`)
+    const cacheData = {
+      timestamp: Date.now(), // Use milliseconds since epoch
+      serviceSetups: data,
+    }
+    await fs.writeFile(CACHE_FILE, JSON.stringify(cacheData, null, 2), 'utf-8')
+    console.log('Cache written successfully')
   } catch (error) {
-    console.error(`Error writing to cache: ${error.message}`)
-    throw error
+    console.error('Error writing to cache file:', error)
   }
 }
