@@ -2,7 +2,7 @@
 
 'use client'
 
-import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react'
+import React, { useMemo, useCallback, useState, useEffect } from 'react'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
@@ -26,8 +26,6 @@ export default function BigCalendar() {
   const [date, setDate] = useState(new Date(2024, 8, 2)) // September 2, 2024
   const [view, setView] = useState(Views.DAY)
   const [enforceTechs, setEnforceTechs] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState(null)
-  const popoverRef = useRef(null)
 
   const { allocatedEvents, resources, unallocatedEvents, summaryText } = useMemo(() => {
     if (!serviceSetups)
@@ -69,14 +67,6 @@ export default function BigCalendar() {
     [updateEnforced],
   )
 
-  const handleSelectEvent = useCallback((event) => {
-    setSelectedEvent(event)
-  }, [])
-
-  const EventComponent = ({ event }) => (
-    <EventTooltip event={event} handleEnforceTechChange={handleEnforceTechChange} />
-  )
-
   const [currentViewRange, setCurrentViewRange] = useState({
     start: date,
     end: date,
@@ -95,6 +85,18 @@ export default function BigCalendar() {
       end: range.end,
     })
   }, [])
+
+  const EventComponent = useCallback(
+    ({ event }) => (
+      <EventTooltip
+        event={event}
+        handleEnforceTechChange={(checked) => {
+          handleEnforceTechChange(event.id, checked)
+        }}
+      />
+    ),
+    [handleEnforceTechChange],
+  )
 
   return (
     <div className="flex">
@@ -126,7 +128,6 @@ export default function BigCalendar() {
           min={new Date(2024, 8, 2, 5, 0, 0)} // 5:00 AM
           max={new Date(2024, 8, 2, 23, 0, 0)} // 11:00 PM
           onRangeChange={handleRangeChange}
-          onSelectEvent={handleSelectEvent}
           toolbar={true}
           components={{
             event: EventComponent,

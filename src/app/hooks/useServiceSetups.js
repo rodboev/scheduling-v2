@@ -1,52 +1,25 @@
 // src/app/hooks/useServiceSetups.js
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
-import { useState, useCallback, useEffect } from 'react'
-
-const fetchServiceSetups = async (ids) => {
-  const { data } = await axios.get(`/api/services?ids=${ids.join(',')}`)
-  return data
-}
+import { useState, useCallback, useMemo } from 'react'
+import { fetchServiceSetups } from '@/app/utils/api'
 
 export function useServiceSetups() {
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
 
-  const techData = [
-    { ids: [20286, 16805, 16807, 20838, 12707, 117691] },
-    { ids: [21829] },
-    { ids: [17632, 19741, 20315, 18719, 20700, 15725, 15305] },
-    {
-      ids: [21473, 11760, 12059, 19635, 20552, 21419, 3349, 3597, 3369, 14397, 12150, 12149, 21029],
-    },
-  ]
-
-  const allIds = techData.flatMap(({ ids }) => ids)
-
   const query = useQuery({
-    queryKey: ['serviceSetups', allIds],
-    queryFn: () => fetchServiceSetups(allIds),
+    queryKey: ['serviceSetups'],
+    queryFn: fetchServiceSetups,
     select: useCallback(
       (data) => {
-        console.log('Raw service setups:', data)
-        return techData.flatMap(({ tech, ids }) =>
-          ids
-            .map((id) => {
-              const setup = data.find((s) => s.id === id)
-              return setup
-                ? {
-                    ...setup,
-                    tech: {
-                      ...setup.tech,
-                      name: tech,
-                      enforced: localEnforced[id] ?? setup.tech.enforced,
-                    },
-                  }
-                : null
-            })
-            .filter(Boolean),
-        )
+        return data.map((setup) => ({
+          ...setup,
+          tech: {
+            ...setup.tech,
+            enforced: localEnforced[setup.id] ?? setup.tech.enforced,
+          },
+        }))
       },
       [localEnforced],
     ),
@@ -54,32 +27,29 @@ export function useServiceSetups() {
 
   const updateEnforced = useCallback(
     (id, enforced) => {
-      const setupId = id.split('-')[0] // Extract the setup ID from the event ID
-      setLocalEnforced((prev) => {
-        const newState = { ...prev, [setupId]: enforced }
-        console.log('New localEnforced state:', newState)
-        return newState
-      })
-      queryClient.invalidateQueries(['serviceSetups', allIds])
+      const setupId = id.includes('-') ? id.split('-')[0] : id
+      setLocalEnforced((prev) => ({
+        ...prev,
+        [setupId]: enforced,
+      }))
+      queryClient.invalidateQueries(['serviceSetups'])
     },
-    [queryClient, allIds],
+    [queryClient],
   )
 
   const updateAllEnforced = useCallback(
     (enforced) => {
-      const newLocalEnforced = allIds.reduce((acc, id) => {
-        acc[id] = enforced
-        return acc
-      }, {})
-      setLocalEnforced(newLocalEnforced)
-      queryClient.invalidateQueries(['serviceSetups', allIds])
+      if (query.data) {
+        const newLocalEnforced = query.data.reduce((acc, setup) => {
+          acc[setup.id] = enforced
+          return acc
+        }, {})
+        setLocalEnforced(newLocalEnforced)
+        queryClient.invalidateQueries(['serviceSetups'])
+      }
     },
-    [queryClient, allIds],
+    [query.data, queryClient],
   )
-
-  useEffect(() => {
-    console.log('localEnforced state:', localEnforced)
-  }, [localEnforced])
 
   return {
     ...query,
