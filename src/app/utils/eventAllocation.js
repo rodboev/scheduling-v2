@@ -2,12 +2,12 @@
 
 import { allocateToResource } from './resourceManagement'
 import { findBestTimeSlotBasedOnPreferred } from './timeSlotFinding'
-import { addToScheduleSummary } from './scheduleSummary'
+import { addToScheduleSummary, generateScheduleSummaryText } from './scheduleSummary'
 import { findConflictingEvents } from './eventConflicts'
 import { dayjsInstance as dayjs } from './dayjs'
 
 export function allocateEventsToResources(events, enforceTechs) {
-  const { techResources, genericResources } = initializeResources(events)
+  const { techResources, genericResources } = initializeResources(events, enforceTechs)
 
   const allocatedEvents = []
   const unallocatedEvents = []
@@ -39,14 +39,16 @@ export function allocateEventsToResources(events, enforceTechs) {
   logAllocationResults(allocatedEvents, unallocatedEvents, changedEvents)
 
   const resources = [...techResources.values(), ...genericResources]
-  return { allocatedEvents, resources, unallocatedEvents, changedEvents, scheduleSummary }
+  const summaryText = generateScheduleSummaryText(scheduleSummary)
+
+  return { allocatedEvents, resources, unallocatedEvents, changedEvents, summaryText }
 }
 
-function initializeResources(events) {
+function initializeResources(events, enforceTechs) {
   const techResources = new Map()
   const genericResources = []
   events.forEach((event) => {
-    if (event.tech.enforced) {
+    if (enforceTechs || event.tech.enforced) {
       const techId = event.tech.code
       if (!techResources.has(techId)) {
         techResources.set(techId, { id: techId, title: event.tech.code })

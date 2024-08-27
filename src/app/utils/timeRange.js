@@ -92,7 +92,7 @@ export function parseTime(timeStr, defaultPeriod = null) {
   }
 
   if (isNaN(hours) || isNaN(minutes)) {
-    console.error(`Invalid time format: '${timeStr}'`)
+    // console.error(`Invalid time format: '${timeStr}'`)
     return null
   }
 
@@ -103,7 +103,7 @@ export function parseTime(timeStr, defaultPeriod = null) {
   const totalSeconds = hours * 3600 + minutes * 60
 
   if (totalSeconds >= 86400) {
-    console.error(`Invalid time '${timeStr}' calculated to ${totalSeconds}: exceeds 24 hours.`)
+    // console.error(`Invalid time '${timeStr}' calculated to ${totalSeconds}: exceeds 24 hours.`)
     return null
   }
 
@@ -112,7 +112,7 @@ export function parseTime(timeStr, defaultPeriod = null) {
 
 export function parseTimeRange(timeRangeStr, duration) {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
-    console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
+    // console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
     return [null, null]
   }
 
@@ -135,13 +135,13 @@ export function parseTimeRange(timeRangeStr, duration) {
 
 export function parseTimeRangeInterval(timeRangeStr) {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
-    console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
+    // console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
     return [null, null]
   }
 
   const parts = timeRangeStr.split('-')
   if (parts.length !== 2) {
-    console.error(`Invalid time range format: ${timeRangeStr}`)
+    // console.error(`Invalid time range format: ${timeRangeStr}`)
     return [null, null]
   }
 
@@ -174,7 +174,7 @@ export function parseTimeRangeInterval(timeRangeStr) {
     const startPeriod = startStr.toUpperCase().includes('P') ? 'PM' : 'AM'
     const endPeriod = endStr.toUpperCase().includes('P') ? 'PM' : 'AM'
     if (startPeriod === endPeriod && endTime <= startTime) {
-      console.error(`Invalid time range: '${timeRangeStr}'`)
+      // console.error(`Invalid time range: '${timeRangeStr}'`)
       return [null, null]
     }
   }

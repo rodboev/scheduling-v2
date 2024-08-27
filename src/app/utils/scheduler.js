@@ -1,7 +1,7 @@
 // src/app/utils/scheduler.js
 
 import { dayjsInstance as dayjs } from './dayjs'
-import { parseTimeRange } from './timeRange'
+import { parseTime, parseTimeRange } from './timeRange'
 
 export function scheduleEvents(events, resources, enforceTechs) {
   const scheduledEvents = []
@@ -21,7 +21,7 @@ export function scheduleEvents(events, resources, enforceTechs) {
     if (enforceTechs) {
       const techResource = resources.find((r) => r.id === event.tech.code)
       if (techResource) {
-        const slot = findAvailableSlot(
+        const slot = findEarliestAvailableSlot(
           scheduledEvents,
           event,
           rangeStart,
@@ -35,7 +35,13 @@ export function scheduleEvents(events, resources, enforceTechs) {
       }
     } else {
       for (const resource of resources) {
-        const slot = findAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resource.id)
+        const slot = findEarliestAvailableSlot(
+          scheduledEvents,
+          event,
+          rangeStart,
+          rangeEnd,
+          resource.id,
+        )
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, resource.id))
           scheduled = true
@@ -49,10 +55,18 @@ export function scheduleEvents(events, resources, enforceTechs) {
     }
   })
 
+  // After scheduling, apply compaction
+  resources.forEach((resource) => {
+    const resourceEvents = scheduledEvents.filter((event) => event.resourceId === resource.id)
+    console.log(`Compacting events for ${resource.id}, ${resourceEvents.length} events`)
+    compactEvents(resourceEvents)
+  })
+  console.log(`Total scheduled events after compaction: ${scheduledEvents.length}`)
+
   return { scheduledEvents, unscheduledEvents }
 }
 
-function findAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourceId) {
+function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourceId) {
   const eventDate = dayjs(event.start)
   const dayStart = eventDate.startOf('day')
   const existingEvents = scheduledEvents.filter(
@@ -75,7 +89,7 @@ function findAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourc
       return { start: currentTime, end: potentialEnd }
     }
 
-    currentTime = currentTime.add(15, 'minute') // Move to next 15-minute slot
+    currentTime = currentTime.add(1, 'minute') // Move to next minute
   }
 
   return null
@@ -87,5 +101,95 @@ function createScheduledEvent(event, slot, resourceId) {
     start: slot.start.toDate(),
     end: slot.end.toDate(),
     resourceId: resourceId,
+  }
+}
+
+function compactEvents(events) {
+  console.log(`Compacting ${events.length} events`)
+  events.sort((a, b) => a.start - b.start)
+
+  for (let i = 0; i < events.length; i++) {
+    const currentEvent = events[i]
+    const [rangeStart, rangeEnd] = parseTimeRange(
+      currentEvent.time.originalRange,
+      currentEvent.time.duration,
+    )
+    const preferredTime = parseTime(currentEvent.time.preferred)
+    const currentEventDayStart = dayjs(currentEvent.start).startOf('day')
+
+    // Calculate the earliest possible start time
+    let earliestPossibleStart
+    if (i === 0) {
+      earliestPossibleStart = currentEventDayStart.add(rangeStart, 'second')
+    } else {
+      const previousEvent = events[i - 1]
+      earliestPossibleStart = dayjs(previousEvent.end)
+    }
+
+    // Calculate the latest possible end time
+    const latestPossibleEnd = currentEventDayStart.add(rangeEnd, 'second')
+
+    // Try to move the event as close to the preferred time as possible
+    let newStart = dayjs.max(
+      earliestPossibleStart,
+      currentEventDayStart.add(preferredTime, 'second'),
+    )
+
+    // If the new start time exceeds the range end, set it to the earliest possible start
+    if (newStart.isAfter(latestPossibleEnd.subtract(currentEvent.time.duration, 'minute'))) {
+      newStart = earliestPossibleStart
+    }
+
+    const newEnd = newStart.add(currentEvent.time.duration, 'minute')
+
+    // Ensure the new end time doesn't exceed the event's allowed range and doesn't overlap with the next event
+    if (newEnd.isBefore(latestPossibleEnd) || newEnd.isSame(latestPossibleEnd)) {
+      if (i === events.length - 1 || newEnd.isBefore(dayjs(events[i + 1].start))) {
+        if (!dayjs(currentEvent.start).isSame(newStart)) {
+          console.log(
+            `Moving event ${currentEvent.title} from ${dayjs(currentEvent.start).format('HH:mm')} to ${newStart.format('HH:mm')}`,
+          )
+          currentEvent.start = newStart.toDate()
+          currentEvent.end = newEnd.toDate()
+        }
+      }
+    }
+  }
+
+  // Second pass: Try to move events later if there's space
+  for (let i = events.length - 1; i >= 0; i--) {
+    const currentEvent = events[i]
+    const [rangeStart, rangeEnd] = parseTimeRange(
+      currentEvent.time.originalRange,
+      currentEvent.time.duration,
+    )
+    const currentEventDayStart = dayjs(currentEvent.start).startOf('day')
+
+    // Calculate the latest possible end time
+    const latestPossibleEnd = currentEventDayStart.add(rangeEnd, 'second')
+
+    // Calculate the latest start time that doesn't overlap with the next event
+    let latestStartTime
+    if (i === events.length - 1) {
+      latestStartTime = latestPossibleEnd.subtract(currentEvent.time.duration, 'minute')
+    } else {
+      const nextEvent = events[i + 1]
+      latestStartTime = dayjs.min(
+        latestPossibleEnd.subtract(currentEvent.time.duration, 'minute'),
+        dayjs(nextEvent.start).subtract(currentEvent.time.duration, 'minute'),
+      )
+    }
+
+    // Try to move the event later if possible
+    if (latestStartTime.isAfter(dayjs(currentEvent.start))) {
+      const newStart = latestStartTime
+      const newEnd = newStart.add(currentEvent.time.duration, 'minute')
+
+      console.log(
+        `Moving event ${currentEvent.title} later from ${dayjs(currentEvent.start).format('HH:mm')} to ${newStart.format('HH:mm')}`,
+      )
+      currentEvent.start = newStart.toDate()
+      currentEvent.end = newEnd.toDate()
+    }
   }
 }

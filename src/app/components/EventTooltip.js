@@ -39,12 +39,12 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         onMouseLeave={handleMouseLeave}
       >
         <h3 className="mb-2 font-bold">{event.title}</h3>
-        <p>Time: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
+        <p>Range: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
         <p>Tech: {event.tech.code}</p>
         <label className="checkbox-hover mt-2 flex cursor-pointer items-center space-x-2">
           <Checkbox
             checked={event.tech.enforced}
-            onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
+            onCheckedChange={(checked) => handleEnforceTechChange(event.tech.code, checked)}
           />
           <span>Enforce Tech</span>
         </label>
