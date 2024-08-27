@@ -36,6 +36,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         sideOffset={-30}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        animate={{}}
       >
         <h3 className="mb-2 flex items-center space-x-4 font-bold">
           <span>{event.company}</span>
@@ -46,6 +47,10 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         <p>Duration: {event.time.duration || 'N/A'} min</p>
         <p>Original Range: {event.time.originalRange || 'N/A'}</p>
         <p>Calculated to: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
+        <div className="border-rounded-lg rounded-lg border-2 border-dashed border-gray-300 p-2">
+          <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
+          <p>Route Days: {event.route.days || 'N/A'}</p>
+        </div>
         {event.comments && (
           <>
             <div className="my-2">

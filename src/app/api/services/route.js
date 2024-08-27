@@ -37,6 +37,7 @@ const BASE_QUERY = `
       ServiceSetups.Duration,
       ServiceSetups.RouteOptTime1Beg,
       ServiceSetups.RouteOptTime1End,
+			ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
       Locations.LocationCode,
       Schedules.ScheduleID AS ScheduleID,
@@ -79,12 +80,6 @@ function transformServiceSetup(setup) {
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
 
-  const formatRouteTime = (dateTimeString) => {
-    if (!dateTimeString) return null
-    const date = new Date(dateTimeString)
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  }
-
   return {
     id: setup.id,
     locationCode: setup.LocationCode,
@@ -108,7 +103,10 @@ function transformServiceSetup(setup) {
       duration: setup.Duration,
       originalRange: setup.TimeRange,
     },
-    routeTimes: [formatRouteTime(setup.RouteOptTime1Beg), formatRouteTime(setup.RouteOptTime1End)],
+    route: {
+      time: [convertToETTime(setup.RouteOptTime1Beg), convertToETTime(setup.RouteOptTime1End)],
+      days: setup.RouteOptIncludeDays,
+    },
     comments: {
       serviceSetup: setup.ServiceSetupComment,
       location: setup.LocationComment,
