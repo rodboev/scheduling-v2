@@ -2,10 +2,14 @@
 
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange } from './timeRange'
+
+const MAX_WORK_HOURS = 8 * 60 * 60
+
 export function scheduleEvents(events, resources, enforceTechs, visibleStart, visibleEnd) {
   let scheduledEvents = []
   let unscheduledEvents = []
   let allConflicts = []
+  let unscheduledDueToCompaction = []
 
   console.log(`Total events to schedule: ${events.length}`)
   console.log(`Resources available: ${resources.length}`)
@@ -21,10 +25,14 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
   // Sort events by start time of their range
   visibleEvents.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
 
+  // Keep track of work time for each resource
+  const resourceWorkTime = {}
+
   visibleEvents.forEach((event) => {
     const [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
     let scheduled = false
     let conflictingEvents = []
+    let exceedsWorkHours = false
 
     if (event.tech.enforced) {
       // For enforced techs, schedule at the preferred time without optimization
@@ -52,58 +60,89 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
           scheduled = true
         } else {
           conflictingEvents = conflicts
-          allConflicts.push({ event, conflicts })
         }
       }
     } else if (enforceTechs) {
       const techResource = resources.find((r) => r.id === event.tech.code)
       if (techResource) {
-        const { slot, conflicts } = findEarliestAvailableSlot(
+        const {
+          slot,
+          conflicts,
+          exceedsWorkHours: resourceExceedsWorkHours,
+        } = findEarliestAvailableSlot(
           scheduledEvents,
           event,
           rangeStart,
           rangeEnd,
           techResource.id,
+          resourceWorkTime[techResource.id],
         )
-        if (slot) {
+        if (slot && !resourceExceedsWorkHours) {
           scheduledEvents.push(createScheduledEvent(event, slot, techResource.id))
           scheduled = true
         } else {
           conflictingEvents = conflicts
-          allConflicts.push({ event, conflicts })
+          exceedsWorkHours = resourceExceedsWorkHours
         }
       }
     } else {
       for (const resource of resources) {
-        const { slot, conflicts } = findEarliestAvailableSlot(
+        const {
+          slot,
+          conflicts,
+          exceedsWorkHours: resourceExceedsWorkHours,
+        } = findEarliestAvailableSlot(
           scheduledEvents,
           event,
           rangeStart,
           rangeEnd,
           resource.id,
+          resourceWorkTime[resource.id],
         )
-        if (slot) {
-          scheduledEvents.push(createScheduledEvent(event, slot, resource.id))
+        if (slot && !resourceExceedsWorkHours) {
+          const scheduledEvent = createScheduledEvent(event, slot, resource.id)
+          scheduledEvents.push(scheduledEvent)
+
+          // Update resource work time
+          if (!resourceWorkTime[resource.id]) {
+            resourceWorkTime[resource.id] = { start: slot.start, end: slot.end }
+          } else {
+            resourceWorkTime[resource.id].start = dayjs.min(
+              resourceWorkTime[resource.id].start,
+              slot.start,
+            )
+            resourceWorkTime[resource.id].end = dayjs.max(
+              resourceWorkTime[resource.id].end,
+              slot.end,
+            )
+          }
+
           scheduled = true
           break
         } else {
           conflictingEvents = conflicts
+          exceedsWorkHours = resourceExceedsWorkHours
         }
-      }
-      if (!scheduled) {
-        allConflicts.push({ event, conflicts: conflictingEvents })
       }
     }
 
     if (!scheduled) {
-      unscheduledEvents.push({
-        ...event,
-        reason:
-          conflictingEvents.length > 0
-            ? `Conflicts with: ${conflictingEvents.map((e) => e.title).join(', ')}`
-            : "No available slot within the event's time range",
+      let reason
+      if (exceedsWorkHours) {
+        reason = "No available slot within the tech's 8-hour work limit"
+      } else if (conflictingEvents.length > 0) {
+        const conflictingTitles = conflictingEvents.map((e) => e.title).join(', ')
+        reason = `Couldn't schedule because of conflict with ${conflictingTitles}`
+      } else {
+        reason = "No available slot within the event's time range"
+      }
+
+      unscheduledEvents.push({ ...event, reason })
+      allConflicts.push({
+        event,
+        conflicts: conflictingEvents,
+        reason,
       })
-      allConflicts.push({ event, conflicts: conflictingEvents })
     }
   })
 
@@ -116,19 +155,17 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
     console.log(`Compacting events for ${resource.id}, ${resourceEvents.length} events`)
     const { compacted, unscheduled } = compactEvents(resourceEvents)
     compactedEvents = compactedEvents.concat(compacted)
-    unscheduledEvents = unscheduledEvents.concat(
+
+    unscheduledDueToCompaction = unscheduledDueToCompaction.concat(
       unscheduled.map((event) => ({
         ...event,
         reason: 'Unscheduled due to compaction',
       })),
     )
-    allConflicts = allConflicts.concat(
-      unscheduled.map((event) => ({
-        event,
-        conflicts: [{ title: 'Unscheduled due to compaction' }],
-      })),
-    )
   })
+
+  // Add unscheduled events due to compaction to the main unscheduled events list
+  unscheduledEvents = unscheduledEvents.concat(unscheduledDueToCompaction)
 
   // Replace non-enforced scheduled events with compacted events
   scheduledEvents = scheduledEvents.filter((event) => event.tech.enforced).concat(compactedEvents)
@@ -136,8 +173,14 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
   console.log(`Total scheduled events after compaction: ${scheduledEvents.length}`)
   console.log(`Total unscheduled events: ${unscheduledEvents.length}`)
   console.log(`Total conflicts: ${allConflicts.length}`)
+  console.log(`Unscheduled due to compaction: ${unscheduledDueToCompaction.length}`)
 
-  return { scheduledEvents, unscheduledEvents, conflicts: allConflicts }
+  return {
+    scheduledEvents,
+    unscheduledEvents,
+    conflicts: allConflicts,
+    unscheduledDueToCompaction,
+  }
 }
 
 function findConflicts(scheduledEvents, start, end, resourceId) {
@@ -163,34 +206,59 @@ function createScheduledEvent(event, slot, resourceId) {
   }
 }
 
-function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourceId) {
+function findEarliestAvailableSlot(
+  scheduledEvents,
+  event,
+  rangeStart,
+  rangeEnd,
+  resourceId,
+  resourceWorkTime,
+) {
   const eventDate = dayjs(event.start)
   const dayStart = eventDate.startOf('day')
-  const existingEvents = scheduledEvents.filter(
-    (e) => e.resourceId === resourceId && dayjs(e.start).isSame(eventDate, 'day'),
-  )
 
   let currentTime = dayStart.add(rangeStart, 'second')
-  const endTime = dayStart.add(rangeEnd, 'second')
+  const endTime = dayjs.min(dayStart.add(rangeEnd, 'second'), dayStart.add(1, 'day'))
+  let exceedsWorkHours = false
   let conflicts = []
 
   while (currentTime.isBefore(endTime)) {
     const potentialEnd = currentTime.add(event.time.duration, 'minute')
 
-    conflicts = existingEvents.filter((existingEvent) => {
-      const existingStart = dayjs(existingEvent.start)
-      const existingEnd = dayjs(existingEvent.end)
-      return currentTime.isBefore(existingEnd) && potentialEnd.isAfter(existingStart)
-    })
+    const { conflicts: currentConflicts } = findConflicts(
+      scheduledEvents,
+      currentTime,
+      potentialEnd,
+      resourceId,
+    )
 
-    if (conflicts.length === 0) {
-      return { slot: { start: currentTime, end: potentialEnd }, conflicts: [] }
+    if (currentConflicts.length === 0) {
+      // Check if this slot would exceed the 8-hour work limit
+      if (resourceWorkTime) {
+        const workStart = dayjs.min(resourceWorkTime.start, currentTime)
+        const workEnd = dayjs.max(resourceWorkTime.end, potentialEnd)
+        const workDuration = workEnd.diff(workStart, 'second')
+        if (workDuration > MAX_WORK_HOURS) {
+          exceedsWorkHours = true
+          break
+        }
+      }
+      return {
+        slot: { start: currentTime, end: potentialEnd },
+        conflicts: [],
+        exceedsWorkHours: false,
+      }
     }
 
+    conflicts = currentConflicts
     currentTime = currentTime.add(1, 'minute') // Move to next minute
   }
 
-  return { slot: null, conflicts }
+  return {
+    slot: null,
+    conflicts,
+    exceedsWorkHours,
+  }
 }
 
 function compactEvents(events) {
