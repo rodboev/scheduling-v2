@@ -1,53 +1,39 @@
 // src/app/utils/timeRange.js
 
-import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import {
+  dayjsInstance as dayjs,
+  secondsSinceMidnight,
+  dateFromSecondsSinceMidnight,
+} from '@/app/utils/dayjs'
 
-function formatTime(date) {
-  const hours = date.hour()
+function formatTime(input) {
+  let date
+  if (typeof input === 'number') {
+    date = dateFromSecondsSinceMidnight(input)
+  } else {
+    date = dayjs(input)
+  }
+
+  const hours = date.hour() % 12 || 12
   const minutes = date.minute()
-  const ampm = hours >= 12 ? 'pm' : 'am'
-  const formattedHours = hours % 12 || 12
+  const ampm = date.format('a')
 
   if (minutes === 0) {
-    return `${formattedHours}${ampm}`
+    return `${hours}${ampm}`
   } else {
-    return `${formattedHours}:${minutes.toString().padStart(2, '0')}${ampm}`
+    return `${hours}:${minutes.toString().padStart(2, '0')}${ampm}`
   }
 }
 
 export function formatTimeRange(start, end) {
-  const startTime = dayjs(start)
-  const endTime = dayjs(end)
+  console.log(`formatTimeRange`, start, end)
+  const startTime = typeof start === 'number' ? dateFromSecondsSinceMidnight(start) : dayjs(start)
+  const endTime = typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
 
   const startFormatted = formatTime(startTime)
   const endFormatted = formatTime(endTime)
 
   if (startTime.format('a') === endTime.format('a')) {
-    return `${startFormatted.slice(0, -2)}-${endFormatted}`
-  } else {
-    return `${startFormatted}-${endFormatted}`
-  }
-}
-
-export function formatParsedTimeRange(rangeStart, rangeEnd) {
-  const formatTime = (seconds) => {
-    const date = dayjs().startOf('day').add(seconds, 'second')
-    const hours = date.hour()
-    const minutes = date.minute()
-    const ampm = hours >= 12 ? 'pm' : 'am'
-    const formattedHours = hours % 12 || 12
-
-    if (minutes === 0) {
-      return `${formattedHours}${ampm}`
-    } else {
-      return `${formattedHours}:${minutes.toString().padStart(2, '0')}${ampm}`
-    }
-  }
-
-  const startFormatted = formatTime(rangeStart)
-  const endFormatted = formatTime(rangeEnd)
-
-  if (startFormatted.slice(-2) === endFormatted.slice(-2)) {
     return `${startFormatted.slice(0, -2)}-${endFormatted}`
   } else {
     return `${startFormatted}-${endFormatted}`

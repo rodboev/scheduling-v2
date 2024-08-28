@@ -13,19 +13,29 @@ dayjs.extend(isSameOrBefore)
 
 export const dayjsInstance = dayjs
 
+// Set the default timezone to 'America/New_York'
+dayjs.tz.setDefault('America/New_York')
+
+export const startOfDay = (date) => dayjs(date).tz('America/New_York').startOf('day')
+export const endOfDay = (date) => dayjs(date).tz('America/New_York').endOf('day')
+
 export function convertToETTime(timeString) {
   if (!timeString) return null
+  return dayjs(timeString).tz('America/New_York').format('h:mm A')
+}
 
-  // Parse the time without timezone information
-  const time = dayjs(timeString).utc()
+export function createDateRange(start, end) {
+  return {
+    start: startOfDay(start).toDate(),
+    end: endOfDay(end).toDate(),
+  }
+}
 
-  // Extract hours and minutes
-  const hours = time.hour()
-  const minutes = time.minute()
+export function secondsSinceMidnight(date) {
+  const midnight = startOfDay(date)
+  return dayjs(date).diff(midnight, 'second')
+}
 
-  // Create a new dayjs object with today's date and the extracted time
-  const today = dayjs().tz('America/New_York').startOf('day')
-  const etDate = today.hour(hours).minute(minutes)
-
-  return etDate.format('h:mm A')
+export function dateFromSecondsSinceMidnight(seconds) {
+  return startOfDay().add(seconds, 'second')
 }

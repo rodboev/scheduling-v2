@@ -3,7 +3,7 @@
 import { createAllocatedEvent, canAllocateToResource } from './timeSlotFinding'
 
 export function allocateToResource(event, allocatedEvents, techResources, genericResources) {
-  console.log('Allocating event:', event.id, 'Event tech enforced:', event.tech.enforced)
+  // console.log('Allocating event:', event.id, 'Event tech enforced:', event.tech.enforced)
   if (event.tech.enforced) {
     return allocateToTechResource(event, allocatedEvents, techResources)
   } else {

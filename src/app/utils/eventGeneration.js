@@ -41,7 +41,17 @@ export function generateEventsForDateRange(setup, startDate, endDate) {
   }
 
   // console.log(`Generated ${events.length} events for setup ${setup.id}`)
-  return events
+  return events.map((event) => {
+    let eventEnd = dayjs(event.end)
+    if (eventEnd.isBefore(event.start)) {
+      // If the end time is before the start time, it means the event spans past midnight
+      eventEnd = eventEnd.add(1, 'day')
+    }
+    return {
+      ...event,
+      end: eventEnd.toDate(),
+    }
+  })
 }
 
 function shouldEventOccur(scheduleString, date) {

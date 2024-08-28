@@ -6,8 +6,7 @@ import React, { useState, useEffect } from 'react'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
-import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { Checkbox } from '@/app/components/ui/checkbox'
+import { dayjsInstance as dayjs, createDateRange } from '@/app/utils/dayjs'
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 import { allocateEventsToResources } from '@/app/utils/eventAllocation'
 import EventTooltip from '@/app/components/EventTooltip'
@@ -22,13 +21,7 @@ const localizer = dayjsLocalizer(dayjs)
 export default function BigCalendar() {
   const [date, setDate] = useState(new Date(2024, 8, 2)) // September 2, 2024
   const [view, setView] = useState(Views.DAY)
-  const [currentViewRange, setCurrentViewRange] = useState(() => {
-    const start = new Date(date)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(date)
-    end.setHours(23, 59, 59, 999)
-    return { start, end }
-  })
+  const [currentViewRange, setCurrentViewRange] = useState(() => createDateRange(date, date))
   const [enforcedUpdates, setEnforcedUpdates, syncEnforcedUpdates] = useLocalStorage(
     'enforcedUpdates',
     {},
@@ -77,32 +70,23 @@ export default function BigCalendar() {
       enforcedUpdates.hasOwnProperty(setup.id) ? enforcedUpdates[setup.id] : setup.tech.enforced,
     )
 
+  function handleView(newView) {
+    setView(newView)
+  }
+
   function handleNavigate(newDate) {
     setDate(newDate)
-    const start = new Date(newDate)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(newDate)
-    end.setHours(23, 59, 59, 999)
-    setCurrentViewRange({ start, end })
+    setCurrentViewRange(createDateRange(newDate, newDate))
   }
 
   function handleRangeChange(range) {
-    let start, end
-    if (Array.isArray(range)) {
-      // For work week and month views
-      ;[start, end] = range
-      start = new Date(start.setHours(0, 0, 0, 0))
-      end = new Date(end.setHours(23, 59, 59, 999))
-    } else {
-      // For day view
-      start = new Date(range.start.setHours(0, 0, 0, 0))
-      end = new Date(range.start.setHours(23, 59, 59, 999))
-    }
-    setCurrentViewRange({ start, end })
-  }
+    const [start, end] = Array.isArray(range)
+      ? [range[0], range[range.length - 1]]
+      : [range.start, range.start]
 
-  function handleView(newView) {
-    setView(newView)
+    const newRange = createDateRange(start, end)
+
+    setCurrentViewRange(newRange)
   }
 
   function handleEnforceTechsChange(checked) {
@@ -155,9 +139,6 @@ export default function BigCalendar() {
     )
   }
 
-  console.log('Current view range:', currentViewRange.start, currentViewRange.end)
-  console.log('Rendering UnallocatedEvents with:', filteredUnallocatedEvents)
-
   return (
     <div className="flex h-screen">
       <div className="w-64 border-r">
@@ -205,8 +186,8 @@ export default function BigCalendar() {
             step={15}
             timeslots={4}
             defaultDate={new Date(2024, 8, 2)}
-            min={new Date(2024, 8, 2, 5, 0, 0)}
-            max={new Date(2024, 8, 2, 23, 0, 0)}
+            min={new Date(2024, 8, 2, 0, 0, 0)}
+            max={new Date(2024, 8, 2, 23, 59, 0)}
             onRangeChange={handleRangeChange}
             toolbar={true}
             components={{
