@@ -64,49 +64,38 @@ export default function BigCalendar() {
         )
       })
 
-      let resourcesTemp = []
-      if (allTechsEnforced) {
-        resourcesTemp = [...new Set(rawEvents.map((event) => event.tech.code))].map((tech) => ({
+      // Create a resource for each unique tech code
+      const allResources = [...new Set(rawEvents.map((event) => event.tech.code))].map(
+        (tech, index) => ({
           id: tech,
-          title: tech,
-        }))
-      } else {
-        // Start with no resources and add them as needed
-        let remainingEvents = [...rawEvents]
-        let techCounter = 1
+          title: allTechsEnforced ? tech : `Tech ${index + 1}`,
+        }),
+      )
 
-        while (remainingEvents.length > 0 && techCounter <= 10) {
-          // Limit to 10 techs max
-          const newResource = { id: `Tech ${techCounter}`, title: `Tech ${techCounter}` }
-          resourcesTemp.push(newResource)
-
-          const result = scheduleEvents(remainingEvents, [newResource], false)
-          remainingEvents = result.unscheduledEvents
-
-          if (result.scheduledEvents.length === 0) {
-            // If no events were scheduled with this new resource, remove it and break
-            resourcesTemp.pop()
-            break
-          }
-
-          techCounter++
-        }
-      }
+      console.log('All possible resources:', allResources)
 
       const { scheduledEvents, unscheduledEvents } = scheduleEvents(
         rawEvents,
-        resourcesTemp,
+        allResources,
         allTechsEnforced,
       )
 
+      // Determine which resources were actually used in scheduled events
+      const usedResourceIds = new Set(scheduledEvents.map((event) => event.resourceId))
+      const finalResources = allResources.filter((resource) => usedResourceIds.has(resource.id))
+
+      console.log('Final resources:', finalResources)
+      console.log('Scheduled events:', scheduledEvents.length)
+      console.log('Unscheduled events:', unscheduledEvents.length)
+
       setAllocatedEvents(scheduledEvents)
-      setResources(resourcesTemp)
+      setResources(finalResources)
       setUnallocatedEvents(unscheduledEvents)
       setSummaryText(
         `Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}`,
       )
     }
-  }, [serviceSetups, enforcedUpdates, currentViewRange])
+  }, [serviceSetups, enforcedUpdates, currentViewRange, allTechsEnforced])
 
   function handleEnforceTechChange(id, checked) {
     const { setupId, enforced } = updateEnforced(id, checked)

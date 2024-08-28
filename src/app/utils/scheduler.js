@@ -7,6 +7,9 @@ export function scheduleEvents(events, resources, enforceTechs) {
   const scheduledEvents = []
   const unscheduledEvents = []
 
+  console.log(`Total events to schedule: ${events.length}`)
+  console.log(`Resources available: ${resources.length}`)
+  console.log(`Enforce techs: ${enforceTechs}`)
   // Sort events by start time of their range
   events.sort((a, b) => {
     const [aStart] = parseTimeRange(a.time.originalRange, a.time.duration)
@@ -19,7 +22,39 @@ export function scheduleEvents(events, resources, enforceTechs) {
     let scheduled = false
     let conflictingEvents = []
 
-    if (enforceTechs) {
+    if (event.tech.enforced) {
+      // For enforced techs, schedule at the preferred time without optimization
+      const techResource = resources.find((r) => r.id === event.tech.code)
+      if (techResource) {
+        const preferredTime = parseTime(event.time.preferred)
+        const preferredStart = dayjs(event.start).startOf('day').add(preferredTime, 'second')
+        const preferredEnd = preferredStart.add(event.time.duration, 'minute')
+
+        const { conflicts } = findConflicts(
+          scheduledEvents,
+          preferredStart,
+          preferredEnd,
+          techResource.id,
+        )
+
+        if (conflicts.length === 0) {
+          scheduledEvents.push(
+            createScheduledEvent(
+              event,
+              { start: preferredStart, end: preferredEnd },
+              techResource.id,
+            ),
+          )
+          scheduled = true
+          console.log(
+            `Enforced tech event scheduled at preferred time: ${preferredStart.format('HH:mm')} - ${preferredEnd.format('HH:mm')}`,
+          )
+        } else {
+          conflictingEvents = conflicts
+          console.log(`Conflicts found for enforced tech event: ${conflicts.length}`)
+        }
+      }
+    } else if (enforceTechs) {
       const techResource = resources.find((r) => r.id === event.tech.code)
       if (techResource) {
         const { slot, conflicts } = findEarliestAvailableSlot(
@@ -32,6 +67,9 @@ export function scheduleEvents(events, resources, enforceTechs) {
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, techResource.id))
           scheduled = true
+          console.log(
+            `Event scheduled with enforced tech: ${slot.start.format('HH:mm')} - ${slot.end.format('HH:mm')}`,
+          )
         } else {
           conflictingEvents = conflicts
         }
@@ -48,6 +86,9 @@ export function scheduleEvents(events, resources, enforceTechs) {
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, resource.id))
           scheduled = true
+          console.log(
+            `Event scheduled with resource ${resource.id}: ${slot.start.format('HH:mm')} - ${slot.end.format('HH:mm')}`,
+          )
           break
         } else {
           conflictingEvents = conflicts
@@ -63,18 +104,35 @@ export function scheduleEvents(events, resources, enforceTechs) {
             ? `Conflicts with: ${conflictingEvents.map((e) => e.title).join(', ')}`
             : "No available slot within the event's time range",
       })
+      console.log(
+        `Event unscheduled. Reason: ${unscheduledEvents[unscheduledEvents.length - 1].reason}`,
+      )
     }
   })
 
-  // After scheduling, apply compaction
+  // After scheduling, apply compaction only to non-enforced events
   resources.forEach((resource) => {
-    const resourceEvents = scheduledEvents.filter((event) => event.resourceId === resource.id)
+    const resourceEvents = scheduledEvents.filter(
+      (event) => event.resourceId === resource.id && !event.tech.enforced,
+    )
     console.log(`Compacting events for ${resource.id}, ${resourceEvents.length} events`)
     compactEvents(resourceEvents)
   })
   console.log(`Total scheduled events after compaction: ${scheduledEvents.length}`)
+  console.log(`Total unscheduled events: ${unscheduledEvents.length}`)
 
   return { scheduledEvents, unscheduledEvents }
+}
+
+function findConflicts(scheduledEvents, start, end, resourceId) {
+  const conflicts = scheduledEvents.filter((existingEvent) => {
+    return (
+      existingEvent.resourceId === resourceId &&
+      ((start.isBefore(dayjs(existingEvent.end)) && end.isAfter(dayjs(existingEvent.start))) ||
+        start.isSame(dayjs(existingEvent.start)))
+    )
+  })
+  return { conflicts }
 }
 
 function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourceId) {
