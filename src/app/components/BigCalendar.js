@@ -190,6 +190,7 @@ export default function BigCalendar() {
         <div className="flex-grow p-4">
           <Calendar
             localizer={localizer}
+            dayLayoutAlgorithm="no-overlap"
             events={allocatedEvents}
             resources={resources}
             resourceIdAccessor="id"
