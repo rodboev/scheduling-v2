@@ -2,22 +2,26 @@
 
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange } from './timeRange'
-
-export function scheduleEvents(events, resources, enforceTechs) {
-  const scheduledEvents = []
-  const unscheduledEvents = []
+export function scheduleEvents(events, resources, enforceTechs, visibleStart, visibleEnd) {
+  let scheduledEvents = []
+  let unscheduledEvents = []
+  let allConflicts = []
 
   console.log(`Total events to schedule: ${events.length}`)
   console.log(`Resources available: ${resources.length}`)
   console.log(`Enforce techs: ${enforceTechs}`)
-  // Sort events by start time of their range
-  events.sort((a, b) => {
-    const [aStart] = parseTimeRange(a.time.originalRange, a.time.duration)
-    const [bStart] = parseTimeRange(b.time.originalRange, b.time.duration)
-    return aStart - bStart
-  })
 
-  events.forEach((event) => {
+  // Filter events to only those within the visible range
+  const visibleEvents = events.filter(
+    (event) =>
+      dayjs(event.start).isBetween(visibleStart, visibleEnd, null, '[]') ||
+      dayjs(event.end).isBetween(visibleStart, visibleEnd, null, '[]'),
+  )
+
+  // Sort events by start time of their range
+  visibleEvents.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+
+  visibleEvents.forEach((event) => {
     const [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
     let scheduled = false
     let conflictingEvents = []
@@ -46,12 +50,9 @@ export function scheduleEvents(events, resources, enforceTechs) {
             ),
           )
           scheduled = true
-          console.log(
-            `Enforced tech event scheduled at preferred time: ${preferredStart.format('HH:mm')} - ${preferredEnd.format('HH:mm')}`,
-          )
         } else {
           conflictingEvents = conflicts
-          console.log(`Conflicts found for enforced tech event: ${conflicts.length}`)
+          allConflicts.push({ event, conflicts })
         }
       }
     } else if (enforceTechs) {
@@ -67,11 +68,9 @@ export function scheduleEvents(events, resources, enforceTechs) {
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, techResource.id))
           scheduled = true
-          console.log(
-            `Event scheduled with enforced tech: ${slot.start.format('HH:mm')} - ${slot.end.format('HH:mm')}`,
-          )
         } else {
           conflictingEvents = conflicts
+          allConflicts.push({ event, conflicts })
         }
       }
     } else {
@@ -86,13 +85,13 @@ export function scheduleEvents(events, resources, enforceTechs) {
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, resource.id))
           scheduled = true
-          console.log(
-            `Event scheduled with resource ${resource.id}: ${slot.start.format('HH:mm')} - ${slot.end.format('HH:mm')}`,
-          )
           break
         } else {
           conflictingEvents = conflicts
         }
+      }
+      if (!scheduled) {
+        allConflicts.push({ event, conflicts: conflictingEvents })
       }
     }
 
@@ -104,24 +103,41 @@ export function scheduleEvents(events, resources, enforceTechs) {
             ? `Conflicts with: ${conflictingEvents.map((e) => e.title).join(', ')}`
             : "No available slot within the event's time range",
       })
-      console.log(
-        `Event unscheduled. Reason: ${unscheduledEvents[unscheduledEvents.length - 1].reason}`,
-      )
+      allConflicts.push({ event, conflicts: conflictingEvents })
     }
   })
 
   // After scheduling, apply compaction only to non-enforced events
+  let compactedEvents = []
   resources.forEach((resource) => {
     const resourceEvents = scheduledEvents.filter(
       (event) => event.resourceId === resource.id && !event.tech.enforced,
     )
     console.log(`Compacting events for ${resource.id}, ${resourceEvents.length} events`)
-    compactEvents(resourceEvents)
+    const { compacted, unscheduled } = compactEvents(resourceEvents)
+    compactedEvents = compactedEvents.concat(compacted)
+    unscheduledEvents = unscheduledEvents.concat(
+      unscheduled.map((event) => ({
+        ...event,
+        reason: 'Unscheduled due to compaction',
+      })),
+    )
+    allConflicts = allConflicts.concat(
+      unscheduled.map((event) => ({
+        event,
+        conflicts: [{ title: 'Unscheduled due to compaction' }],
+      })),
+    )
   })
+
+  // Replace non-enforced scheduled events with compacted events
+  scheduledEvents = scheduledEvents.filter((event) => event.tech.enforced).concat(compactedEvents)
+
   console.log(`Total scheduled events after compaction: ${scheduledEvents.length}`)
   console.log(`Total unscheduled events: ${unscheduledEvents.length}`)
+  console.log(`Total conflicts: ${allConflicts.length}`)
 
-  return { scheduledEvents, unscheduledEvents }
+  return { scheduledEvents, unscheduledEvents, conflicts: allConflicts }
 }
 
 function findConflicts(scheduledEvents, start, end, resourceId) {
@@ -133,6 +149,18 @@ function findConflicts(scheduledEvents, start, end, resourceId) {
     )
   })
   return { conflicts }
+}
+
+function createScheduledEvent(event, slot, resourceId) {
+  const startTime = dayjs(slot.start)
+  const endTime = startTime.add(event.time.duration, 'minute')
+  console.log(`createScheduledEvent`, startTime, endTime)
+  return {
+    ...event,
+    start: startTime.toDate(),
+    end: endTime.toDate(),
+    resourceId: resourceId,
+  }
 }
 
 function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd, resourceId) {
@@ -165,18 +193,12 @@ function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd,
   return { slot: null, conflicts }
 }
 
-function createScheduledEvent(event, slot, resourceId) {
-  return {
-    ...event,
-    start: slot.start.toDate(),
-    end: slot.end.toDate(),
-    resourceId: resourceId,
-  }
-}
-
 function compactEvents(events) {
   console.log(`Compacting ${events.length} events`)
-  events.sort((a, b) => a.start - b.start)
+  events.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+
+  let compacted = []
+  let unscheduled = []
 
   for (let i = 0; i < events.length; i++) {
     const currentEvent = events[i]
@@ -192,7 +214,7 @@ function compactEvents(events) {
     if (i === 0) {
       earliestPossibleStart = currentEventDayStart.add(rangeStart, 'second')
     } else {
-      const previousEvent = events[i - 1]
+      const previousEvent = compacted[compacted.length - 1]
       earliestPossibleStart = dayjs(previousEvent.end)
     }
 
@@ -212,54 +234,17 @@ function compactEvents(events) {
 
     const newEnd = newStart.add(currentEvent.time.duration, 'minute')
 
-    // Ensure the new end time doesn't exceed the event's allowed range and doesn't overlap with the next event
-    if (newEnd.isBefore(latestPossibleEnd) || newEnd.isSame(latestPossibleEnd)) {
-      if (i === events.length - 1 || newEnd.isBefore(dayjs(events[i + 1].start))) {
-        if (!dayjs(currentEvent.start).isSame(newStart)) {
-          console.log(
-            `Moving event ${currentEvent.title} from ${dayjs(currentEvent.start).format('HH:mm')} to ${newStart.format('HH:mm')}`,
-          )
-          currentEvent.start = newStart.toDate()
-          currentEvent.end = newEnd.toDate()
-        }
-      }
-    }
-  }
-
-  // Second pass: Try to move events later if there's space
-  for (let i = events.length - 1; i >= 0; i--) {
-    const currentEvent = events[i]
-    const [rangeStart, rangeEnd] = parseTimeRange(
-      currentEvent.time.originalRange,
-      currentEvent.time.duration,
-    )
-    const currentEventDayStart = dayjs(currentEvent.start).startOf('day')
-
-    // Calculate the latest possible end time
-    const latestPossibleEnd = currentEventDayStart.add(rangeEnd, 'second')
-
-    // Calculate the latest start time that doesn't overlap with the next event
-    let latestStartTime
-    if (i === events.length - 1) {
-      latestStartTime = latestPossibleEnd.subtract(currentEvent.time.duration, 'minute')
+    // If the event can't be scheduled within its allowed range, add it to unscheduled
+    if (newEnd.isAfter(latestPossibleEnd)) {
+      unscheduled.push(currentEvent)
     } else {
-      const nextEvent = events[i + 1]
-      latestStartTime = dayjs.min(
-        latestPossibleEnd.subtract(currentEvent.time.duration, 'minute'),
-        dayjs(nextEvent.start).subtract(currentEvent.time.duration, 'minute'),
-      )
-    }
-
-    // Try to move the event later if possible
-    if (latestStartTime.isAfter(dayjs(currentEvent.start))) {
-      const newStart = latestStartTime
-      const newEnd = newStart.add(currentEvent.time.duration, 'minute')
-
-      console.log(
-        `Moving event ${currentEvent.title} later from ${dayjs(currentEvent.start).format('HH:mm')} to ${newStart.format('HH:mm')}`,
-      )
-      currentEvent.start = newStart.toDate()
-      currentEvent.end = newEnd.toDate()
+      compacted.push({
+        ...currentEvent,
+        start: newStart.toDate(),
+        end: newEnd.toDate(),
+      })
     }
   }
+
+  return { compacted, unscheduled }
 }

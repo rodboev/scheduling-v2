@@ -7,6 +7,7 @@ import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
 import { dayjsInstance as dayjs, createDateRange } from '@/app/utils/dayjs'
+import { parseTime } from '@/app/utils/timeRange'
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 import { scheduleEvents } from '@/app/utils/scheduler'
 import EventTooltip from '@/app/components/EventTooltip'
@@ -53,14 +54,18 @@ export default function BigCalendar() {
 
   useEffect(() => {
     if (serviceSetups) {
+      // Only generate events for the visible range
+      const visibleStart = dayjs(currentViewRange.start).startOf('day')
+      const visibleEnd = dayjs(currentViewRange.end).endOf('day')
+
       const rawEvents = serviceSetups.flatMap((setup) => {
         const enforced = enforcedUpdates.hasOwnProperty(setup.id)
           ? enforcedUpdates[setup.id]
           : setup.tech.enforced
         return generateEventsForDateRange(
           { ...setup, tech: { ...setup.tech, enforced } },
-          currentViewRange.start,
-          currentViewRange.end,
+          visibleStart,
+          visibleEnd,
         )
       })
 
@@ -74,26 +79,47 @@ export default function BigCalendar() {
 
       console.log('All possible resources:', allResources)
 
-      const { scheduledEvents, unscheduledEvents } = scheduleEvents(
-        rawEvents,
-        allResources,
-        allTechsEnforced,
-      )
+      if (allTechsEnforced) {
+        const scheduledEvents = rawEvents.map((event) => {
+          const preferredTime = parseTime(event.time.preferred)
+          const startDate = dayjs(event.start).startOf('day').add(preferredTime, 'second')
+          return {
+            ...event,
+            resourceId: event.tech.code,
+            start: startDate.toDate(),
+            end: startDate.add(event.time.duration, 'minute').toDate(),
+          }
+        })
+        setAllocatedEvents(scheduledEvents)
+        setResources(allResources)
+        setUnallocatedEvents([])
+        setSummaryText(`Scheduled: ${scheduledEvents.length}, Unscheduled: 0`)
+      } else {
+        const { scheduledEvents, unscheduledEvents } = scheduleEvents(
+          rawEvents,
+          allResources,
+          false,
+          visibleStart,
+          visibleEnd,
+        )
 
-      // Determine which resources were actually used in scheduled events
-      const usedResourceIds = new Set(scheduledEvents.map((event) => event.resourceId))
-      const finalResources = allResources.filter((resource) => usedResourceIds.has(resource.id))
+        // Determine which resources were actually used in scheduled events
+        const usedResourceIds = new Set(scheduledEvents.map((event) => event.resourceId))
+        const finalResources = allResources.filter((resource) => usedResourceIds.has(resource.id))
 
-      console.log('Final resources:', finalResources)
-      console.log('Scheduled events:', scheduledEvents.length)
-      console.log('Unscheduled events:', unscheduledEvents.length)
-
-      setAllocatedEvents(scheduledEvents)
-      setResources(finalResources)
-      setUnallocatedEvents(unscheduledEvents)
-      setSummaryText(
-        `Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}`,
-      )
+        setAllocatedEvents(
+          scheduledEvents.map((event) => ({
+            ...event,
+            start: new Date(event.start),
+            end: new Date(event.end),
+          })),
+        )
+        setResources(finalResources)
+        setUnallocatedEvents(unscheduledEvents)
+        setSummaryText(
+          `Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}`,
+        )
+      }
     }
   }, [serviceSetups, enforcedUpdates, currentViewRange, allTechsEnforced])
 
