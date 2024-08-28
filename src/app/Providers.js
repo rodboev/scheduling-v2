@@ -2,7 +2,6 @@
 
 'use client'
 
-import { NextUIProvider } from '@nextui-org/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 
@@ -19,9 +18,5 @@ export default function Providers({ children }) {
       }),
   )
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <NextUIProvider theme={theme}>{children}</NextUIProvider>
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
