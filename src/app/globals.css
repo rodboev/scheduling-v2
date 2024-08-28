@@ -2,16 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* react-big-calendar overrides */
+.rbc-calendar .rbc-day-slot .rbc-event,
+.rbc-calendar .rbc-day-slot .rbc-background-event {
+  @apply !border-teal bg-teal/85;
+}
+.rbc-calendar .rbc-day-slot .rbc-event.rbc-selected,
+.rbc-calendar .rbc-day-slot .rbc-selected.rbc-background-event {
+  @apply bg-teal/80;
+}
+/* .rbc-events-container .rbc-event-label {
+  @apply text-teal-light;
+}
+.rbc-events-container .rbc-event-content {
+  @apply text-teal-light;
+}
+.rbc-event {
+  background-color: hsl(var(--teal));
+} */
+
 @layer base {
   :root {
+    * {
+      @apply border-border;
+    }
+    body {
+      @apply bg-background text-foreground;
+    }
+
+    --teal: 186 54% 20%;
+    --teal-light: 196 40% 88%;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: var(--teal);
+    --primary-foreground: var(--teal-light);
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -32,14 +60,15 @@
   }
 
   .dark {
+    --teal: 186 54% 30%;
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: var(--teal);
+    --primary-foreground: var(--teal-light);
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -59,15 +88,6 @@
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
 @layer components {
   .btn {
     @apply flex h-10 w-fit items-center overflow-hidden rounded px-4 pb-2 pt-2.5 font-bold hover:bg-opacity-95 active:bg-opacity-100;
@@ -82,14 +102,11 @@
   .checkbox-hover:hover button {
     @apply border-2 border-blue-600;
   }
+}
 
-  /* react-big-calendar overrides */
-  .rbc-event,
-  .rbc-day-slot .rbc-background-event {
-    @apply bg-teal;
-  }
-  .rbc-event.rbc-selected,
-  .rbc-day-slot .rbc-selected.rbc-background-event {
-    @apply bg-teal-80;
+@layer utilities {
+  .animate-none {
+    animation: none !important;
+    transition: none !important;
   }
 }

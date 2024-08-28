@@ -12,6 +12,9 @@ import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 import { allocateEventsToResources } from '@/app/utils/eventAllocation'
 import EventTooltip from '@/app/components/EventTooltip'
 import UnallocatedEvents from '@/app/components/UnallocatedEvents'
+import { Switch } from '@/app/components/ui/switch'
+import { Label } from '@/app/components/ui/label'
+import { Card, CardContent } from '@/app/components/ui/card'
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -143,17 +146,26 @@ export default function BigCalendar() {
   console.log('Rendering UnallocatedEvents with:', filteredUnallocatedEvents)
 
   return (
-    <div className="flex">
-      <div className="w-64 overflow-auto">
+    <div className="flex h-screen">
+      <div className="w-64 border-r">
         <UnallocatedEvents events={filteredUnallocatedEvents} />
       </div>
-      <div className="flex-grow">
-        <div className="mb-4">
-          <label className="checkbox-hover flex cursor-pointer items-center space-x-2">
-            <Checkbox checked={allTechsEnforced} onCheckedChange={handleEnforceTechsChange} />
-            <span>Enforce All Techs</span>
-          </label>
-        </div>
+      <div className="m-4 flex-grow">
+        <Card className="mb-4 w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
+          <CardContent className="p-0">
+            <Label
+              htmlFor="enforce-all-techs"
+              className="flex cursor-pointer items-center space-x-3 p-3 px-4"
+            >
+              <Switch
+                checked={allTechsEnforced}
+                onCheckedChange={handleEnforceTechsChange}
+                id="enforce-all-techs"
+              />
+              <span>Enforce All Techs</span>
+            </Label>
+          </CardContent>
+        </Card>
         <Calendar
           localizer={localizer}
           events={allocatedEvents}

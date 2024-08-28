@@ -2,9 +2,10 @@
 
 import React, { useState, useRef } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
-import { Checkbox } from '@/app/components/ui/checkbox'
+import { Switch } from '@/app/components/ui/switch'
 import { formatTimeRange, formatParsedTimeRange } from '@/app/utils/timeRange'
-import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import { Label } from '@/app/components/ui/label'
+import { Card, CardContent } from '@/app/components/ui/card'
 
 export default function EventTooltip({ event, handleEnforceTechChange }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -30,27 +31,47 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         </div>
       </PopoverTrigger>
       <PopoverContent
-        className="w-96"
+        className="w-full max-w-sm text-sm leading-relaxed"
         side="top"
         align="center"
         sideOffset={-30}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        animate={{}}
       >
-        <h3 className="mb-2 flex items-center space-x-4 font-bold">
-          <span>{event.company}</span>
-          <span className="font-semibold">#{event.locationCode}</span>
+        <div className="float-right mb-2 ml-4">
+          <Card className="mb-2 w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
+            <CardContent className="w-fit p-0">
+              <Label
+                htmlFor={`enforce-tech-${event.id}`}
+                className="flex cursor-pointer items-center space-x-3 p-3 px-4"
+              >
+                <Switch
+                  checked={event.tech.enforced || false}
+                  onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
+                  id={`enforce-tech-${event.id}`}
+                />
+                <span className="whitespace-nowrap">Enforce Tech</span>
+              </Label>
+            </CardContent>
+          </Card>
+          <div className="text-center">Tech: {event.tech.code || 'N/A'}</div>
+        </div>
+
+        <h3 className="mb-2 flex flex-col items-start font-bold">
+          <div>{event.company}</div>
+          <div className="text-sm font-semibold">#{event.locationCode}</div>
         </h3>
+
         <p>Scheduled: {formatTimeRange(event.start, event.end)}</p>
         <p>Preferred Time: {event.time.preferred || 'N/A'}</p>
         <p>Duration: {event.time.duration || 'N/A'} min</p>
         <p>Original Range: {event.time.originalRange || 'N/A'}</p>
         <p>Calculated to: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
-        <div className="border-rounded-lg rounded-lg border-2 border-dashed border-gray-300 p-2">
+        <div className="border-rounded-lg my-2 w-fit rounded-lg border-2 border-dashed border-gray-300 p-2">
           <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
           <p>Route Days: {event.route.days || 'N/A'}</p>
         </div>
+
         {event.comments && (
           <>
             <div className="my-2">
@@ -69,14 +90,6 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
             )}
           </>
         )}
-        <div>Tech: {event.tech.code || 'N/A'}</div>
-        <label className="checkbox-hover my-1 flex cursor-pointer items-center space-x-2">
-          <Checkbox
-            checked={event.tech.enforced || false}
-            onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
-          />
-          <span>Enforce Tech</span>
-        </label>
       </PopoverContent>
     </Popover>
   )
