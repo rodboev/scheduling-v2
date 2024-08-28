@@ -163,45 +163,55 @@ export default function BigCalendar() {
       <div className="w-64 border-r">
         <UnallocatedEvents events={filteredUnallocatedEvents} />
       </div>
-      <div className="m-4 flex-grow">
-        <Card className="mb-4 w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
-          <CardContent className="p-0">
-            <Label
-              htmlFor="enforce-all-techs"
-              className="flex cursor-pointer items-center space-x-3 p-3 px-4"
-            >
-              <Switch
-                checked={allTechsEnforced}
-                onCheckedChange={handleEnforceTechsChange}
-                id="enforce-all-techs"
-              />
-              <span>Enforce All Techs</span>
-            </Label>
-          </CardContent>
-        </Card>
-        <Calendar
-          localizer={localizer}
-          events={allocatedEvents}
-          resources={resources}
-          resourceIdAccessor="id"
-          resourceTitleAccessor={(resource) => resource.title}
-          defaultView={Views.DAY}
-          view={view}
-          onView={handleView}
-          date={date}
-          onNavigate={handleNavigate}
-          views={['day', 'work_week', 'month']}
-          step={15}
-          timeslots={4}
-          defaultDate={new Date(2024, 8, 2)} // September 2, 2024
-          min={new Date(2024, 8, 2, 5, 0, 0)} // 5:00 AM
-          max={new Date(2024, 8, 2, 23, 0, 0)} // 11:00 PM
-          onRangeChange={handleRangeChange}
-          toolbar={true}
-          components={{
-            event: EventComponent,
-          }}
-        />
+      <div className="flex flex-grow flex-col">
+        <div className="flex items-center justify-between border-b p-4">
+          <Card className="w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
+            <CardContent className="p-0">
+              <Label
+                htmlFor="enforce-all-techs"
+                className="flex cursor-pointer items-center space-x-3 p-3 px-4"
+              >
+                <Switch
+                  checked={allTechsEnforced}
+                  onCheckedChange={handleEnforceTechsChange}
+                  id="enforce-all-techs"
+                />
+                <span>Enforce All Techs</span>
+              </Label>
+            </CardContent>
+          </Card>
+          <div className="logo flex-grow text-center tracking-tighter">
+            <span className="display-inline mx-1 text-5xl font-bold text-teal-500">liberty</span>
+            <span className="display-inline mx-1 text-2xl">schedule</span>
+          </div>
+          <div className="w-[200px]"></div> {/* Placeholder to balance the layout */}
+        </div>
+
+        <div className="flex-grow p-4">
+          <Calendar
+            localizer={localizer}
+            events={allocatedEvents}
+            resources={resources}
+            resourceIdAccessor="id"
+            resourceTitleAccessor={(resource) => resource.title}
+            defaultView={Views.DAY}
+            view={view}
+            onView={handleView}
+            date={date}
+            onNavigate={handleNavigate}
+            views={['day', 'work_week', 'month']}
+            step={15}
+            timeslots={4}
+            defaultDate={new Date(2024, 8, 2)}
+            min={new Date(2024, 8, 2, 5, 0, 0)}
+            max={new Date(2024, 8, 2, 23, 0, 0)}
+            onRangeChange={handleRangeChange}
+            toolbar={true}
+            components={{
+              event: EventComponent,
+            }}
+          />
+        </div>
       </div>
     </div>
   )
