@@ -26,7 +26,8 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-          <span>{event.company} </span>
+          <span className="text-sm">{formatTimeRange(event.start, event.end)}</span>
+          <span> {event.company} </span>
           <span className="text-sm">
             ({formatTimeRange(event.time.range[0], event.time.range[1])})
           </span>

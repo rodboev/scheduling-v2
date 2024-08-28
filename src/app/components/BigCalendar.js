@@ -183,6 +183,9 @@ export default function BigCalendar() {
             max={new Date(2024, 8, 2, 23, 59, 0)}
             onRangeChange={handleRangeChange}
             toolbar={true}
+            formats={{
+              eventTimeRangeFormat: () => null, // This disables the default time display
+            }}
             components={{
               event: EventComponent,
             }}
