@@ -39,6 +39,14 @@ export default function BigCalendar() {
     updateAllEnforced,
   } = useServiceSetups(currentViewRange.start, currentViewRange.end)
 
+  const allTechsEnforced =
+    allocatedEvents.length > 0 &&
+    allocatedEvents.every((event) =>
+      enforcedUpdates.hasOwnProperty(event.id.split('-')[0])
+        ? enforcedUpdates[event.id.split('-')[0]]
+        : event.tech.enforced,
+    )
+
   useEffect(() => {
     syncEnforcedUpdates()
   }, [])
@@ -63,12 +71,22 @@ export default function BigCalendar() {
     }
   }, [serviceSetups, enforcedUpdates, currentViewRange])
 
-  const allTechsEnforced =
-    serviceSetups &&
-    serviceSetups.length > 0 &&
-    serviceSetups.every((setup) =>
-      enforcedUpdates.hasOwnProperty(setup.id) ? enforcedUpdates[setup.id] : setup.tech.enforced,
-    )
+  function handleEnforceTechChange(id, checked) {
+    const { setupId, enforced } = updateEnforced(id, checked)
+    setEnforcedUpdates((prev) => {
+      const newUpdates = { ...prev, [setupId]: enforced }
+      return newUpdates
+    })
+  }
+
+  function handleEnforceTechsChange(checked) {
+    const newEnforcedUpdates = serviceSetups.reduce((acc, setup) => {
+      acc[setup.id] = checked
+      return acc
+    }, {})
+    setEnforcedUpdates(newEnforcedUpdates)
+    updateAllEnforced(checked)
+  }
 
   function handleView(newView) {
     setView(newView)
@@ -87,31 +105,6 @@ export default function BigCalendar() {
     const newRange = createDateRange(start, end)
 
     setCurrentViewRange(newRange)
-  }
-
-  function handleEnforceTechsChange(checked) {
-    if (checked) {
-      const newEnforcedUpdates = serviceSetups.reduce((acc, setup) => {
-        acc[setup.id] = true
-        return acc
-      }, {})
-      setEnforcedUpdates(newEnforcedUpdates)
-    } else {
-      setEnforcedUpdates({})
-    }
-    updateAllEnforced(checked)
-    setDate(new Date(date))
-  }
-
-  function handleEnforceTechChange(id, checked) {
-    console.log(`BigCalendar: Updating enforced for ${id} to ${checked}`)
-    const { setupId, enforced } = updateEnforced(id, checked)
-    setEnforcedUpdates((prev) => {
-      const newUpdates = { ...prev, [setupId]: enforced }
-      console.log('New enforcedUpdates:', newUpdates)
-      return newUpdates
-    })
-    setDate(new Date(date))
   }
 
   const filteredUnallocatedEvents = unallocatedEvents.filter((unallocatedEvent) => {

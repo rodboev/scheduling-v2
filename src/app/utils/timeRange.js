@@ -26,7 +26,6 @@ function formatTime(input) {
 }
 
 export function formatTimeRange(start, end) {
-  console.log(`formatTimeRange`, start, end)
   const startTime = typeof start === 'number' ? dateFromSecondsSinceMidnight(start) : dayjs(start)
   const endTime = typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
 
