@@ -46,6 +46,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
                 className="flex cursor-pointer items-center space-x-3 p-3 px-4"
               >
                 <Switch
+                  className="focus-visible:ring-transparent"
                   checked={event.tech.enforced || false}
                   onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
                   id={`enforce-tech-${event.id}`}
@@ -67,7 +68,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         <p>Duration: {event.time.duration || 'N/A'} min</p>
         <p>Original Range: {event.time.originalRange || 'N/A'}</p>
         <p>Calculated to: {formatParsedTimeRange(event.time.range[0], event.time.range[1])}</p>
-        <div className="border-rounded-lg my-2 w-fit rounded-lg border-2 border-dashed border-gray-300 p-2">
+        <div className="border-rounded-lg my-1 w-fit rounded-lg border-2 border-dashed border-gray-300 px-2 py-1">
           <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
           <p>Route Days: {event.route.days || 'N/A'}</p>
         </div>

@@ -172,6 +172,7 @@ export default function BigCalendar() {
                 className="flex cursor-pointer items-center space-x-3 p-3 px-4"
               >
                 <Switch
+                  className="focus-visible:ring-transparent"
                   checked={allTechsEnforced}
                   onCheckedChange={handleEnforceTechsChange}
                   id="enforce-all-techs"
