@@ -15,6 +15,7 @@ import UnallocatedEvents from '@/app/components/UnallocatedEvents'
 import { Switch } from '@/app/components/ui/switch'
 import { Label } from '@/app/components/ui/label'
 import { Card, CardContent } from '@/app/components/ui/card'
+import { useLocalStorage } from '@/app/hooks/useLocalStorage'
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -28,7 +29,10 @@ export default function BigCalendar() {
     end.setHours(23, 59, 59, 999)
     return { start, end }
   })
-  const [enforcedUpdates, setEnforcedUpdates] = useState({})
+  const [enforcedUpdates, setEnforcedUpdates, syncEnforcedUpdates] = useLocalStorage(
+    'enforcedUpdates',
+    {},
+  )
   const [allocatedEvents, setAllocatedEvents] = useState([])
   const [resources, setResources] = useState([])
   const [unallocatedEvents, setUnallocatedEvents] = useState([])
@@ -43,6 +47,10 @@ export default function BigCalendar() {
   } = useServiceSetups(currentViewRange.start, currentViewRange.end)
 
   useEffect(() => {
+    syncEnforcedUpdates()
+  }, [])
+
+  useEffect(() => {
     if (serviceSetups) {
       const rawEvents = serviceSetups.flatMap((setup) => {
         const enforced = enforcedUpdates.hasOwnProperty(setup.id)
@@ -54,12 +62,7 @@ export default function BigCalendar() {
           currentViewRange.end,
         )
       })
-
-      // console.log('Raw events generated:', rawEvents.length)
-
       const result = allocateEventsToResources(rawEvents)
-      // console.log('Allocation result:', result)
-
       setAllocatedEvents(result.allocatedEvents)
       setResources(result.resources)
       setUnallocatedEvents(result.unallocatedEvents)
@@ -68,7 +71,11 @@ export default function BigCalendar() {
   }, [serviceSetups, enforcedUpdates, currentViewRange])
 
   const allTechsEnforced =
-    allocatedEvents.length > 0 && allocatedEvents.every((event) => event.tech.enforced)
+    serviceSetups &&
+    serviceSetups.length > 0 &&
+    serviceSetups.every((setup) =>
+      enforcedUpdates.hasOwnProperty(setup.id) ? enforcedUpdates[setup.id] : setup.tech.enforced,
+    )
 
   function handleNavigate(newDate) {
     setDate(newDate)
@@ -99,9 +106,16 @@ export default function BigCalendar() {
   }
 
   function handleEnforceTechsChange(checked) {
+    if (checked) {
+      const newEnforcedUpdates = serviceSetups.reduce((acc, setup) => {
+        acc[setup.id] = true
+        return acc
+      }, {})
+      setEnforcedUpdates(newEnforcedUpdates)
+    } else {
+      setEnforcedUpdates({})
+    }
     updateAllEnforced(checked)
-    setEnforcedUpdates({}) // Reset all individual enforced states
-    // Force a re-render of the calendar
     setDate(new Date(date))
   }
 
@@ -113,7 +127,6 @@ export default function BigCalendar() {
       console.log('New enforcedUpdates:', newUpdates)
       return newUpdates
     })
-    // Force a re-render of the calendar
     setDate(new Date(date))
   }
 

@@ -34,7 +34,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         className="w-full max-w-sm text-sm leading-relaxed"
         side="top"
         align="center"
-        sideOffset={-30}
+        sideOffset={-300}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
