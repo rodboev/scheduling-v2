@@ -17,11 +17,12 @@ export function scheduleEvents(events, resources, enforceTechs) {
   events.forEach((event) => {
     const [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
     let scheduled = false
+    let conflictingEvents = []
 
     if (enforceTechs) {
       const techResource = resources.find((r) => r.id === event.tech.code)
       if (techResource) {
-        const slot = findEarliestAvailableSlot(
+        const { slot, conflicts } = findEarliestAvailableSlot(
           scheduledEvents,
           event,
           rangeStart,
@@ -31,11 +32,13 @@ export function scheduleEvents(events, resources, enforceTechs) {
         if (slot) {
           scheduledEvents.push(createScheduledEvent(event, slot, techResource.id))
           scheduled = true
+        } else {
+          conflictingEvents = conflicts
         }
       }
     } else {
       for (const resource of resources) {
-        const slot = findEarliestAvailableSlot(
+        const { slot, conflicts } = findEarliestAvailableSlot(
           scheduledEvents,
           event,
           rangeStart,
@@ -46,12 +49,20 @@ export function scheduleEvents(events, resources, enforceTechs) {
           scheduledEvents.push(createScheduledEvent(event, slot, resource.id))
           scheduled = true
           break
+        } else {
+          conflictingEvents = conflicts
         }
       }
     }
 
     if (!scheduled) {
-      unscheduledEvents.push(event)
+      unscheduledEvents.push({
+        ...event,
+        reason:
+          conflictingEvents.length > 0
+            ? `Conflicts with: ${conflictingEvents.map((e) => e.title).join(', ')}`
+            : "No available slot within the event's time range",
+      })
     }
   })
 
@@ -75,24 +86,25 @@ function findEarliestAvailableSlot(scheduledEvents, event, rangeStart, rangeEnd,
 
   let currentTime = dayStart.add(rangeStart, 'second')
   const endTime = dayStart.add(rangeEnd, 'second')
+  let conflicts = []
 
   while (currentTime.isBefore(endTime)) {
     const potentialEnd = currentTime.add(event.time.duration, 'minute')
 
-    const conflict = existingEvents.some((existingEvent) => {
+    conflicts = existingEvents.filter((existingEvent) => {
       const existingStart = dayjs(existingEvent.start)
       const existingEnd = dayjs(existingEvent.end)
       return currentTime.isBefore(existingEnd) && potentialEnd.isAfter(existingStart)
     })
 
-    if (!conflict) {
-      return { start: currentTime, end: potentialEnd }
+    if (conflicts.length === 0) {
+      return { slot: { start: currentTime, end: potentialEnd }, conflicts: [] }
     }
 
     currentTime = currentTime.add(1, 'minute') // Move to next minute
   }
 
-  return null
+  return { slot: null, conflicts }
 }
 
 function createScheduledEvent(event, slot, resourceId) {

@@ -8,7 +8,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
 import { dayjsInstance as dayjs, createDateRange } from '@/app/utils/dayjs'
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
-import { allocateEventsToResources } from '@/app/utils/eventAllocation'
+import { scheduleEvents } from '@/app/utils/scheduler'
 import EventTooltip from '@/app/components/EventTooltip'
 import UnallocatedEvents from '@/app/components/UnallocatedEvents'
 import { Switch } from '@/app/components/ui/switch'
@@ -63,11 +63,48 @@ export default function BigCalendar() {
           currentViewRange.end,
         )
       })
-      const result = allocateEventsToResources(rawEvents)
-      setAllocatedEvents(result.allocatedEvents)
-      setResources(result.resources)
-      setUnallocatedEvents(result.unallocatedEvents)
-      setSummaryText(result.summaryText)
+
+      let resourcesTemp = []
+      if (allTechsEnforced) {
+        resourcesTemp = [...new Set(rawEvents.map((event) => event.tech.code))].map((tech) => ({
+          id: tech,
+          title: tech,
+        }))
+      } else {
+        // Start with no resources and add them as needed
+        let remainingEvents = [...rawEvents]
+        let techCounter = 1
+
+        while (remainingEvents.length > 0 && techCounter <= 10) {
+          // Limit to 10 techs max
+          const newResource = { id: `Tech ${techCounter}`, title: `Tech ${techCounter}` }
+          resourcesTemp.push(newResource)
+
+          const result = scheduleEvents(remainingEvents, [newResource], false)
+          remainingEvents = result.unscheduledEvents
+
+          if (result.scheduledEvents.length === 0) {
+            // If no events were scheduled with this new resource, remove it and break
+            resourcesTemp.pop()
+            break
+          }
+
+          techCounter++
+        }
+      }
+
+      const { scheduledEvents, unscheduledEvents } = scheduleEvents(
+        rawEvents,
+        resourcesTemp,
+        allTechsEnforced,
+      )
+
+      setAllocatedEvents(scheduledEvents)
+      setResources(resourcesTemp)
+      setUnallocatedEvents(unscheduledEvents)
+      setSummaryText(
+        `Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}`,
+      )
     }
   }, [serviceSetups, enforcedUpdates, currentViewRange])
 
@@ -107,10 +144,20 @@ export default function BigCalendar() {
     setCurrentViewRange(newRange)
   }
 
-  const filteredUnallocatedEvents = unallocatedEvents.filter((unallocatedEvent) => {
-    const eventDate = dayjs(unallocatedEvent.event.start)
-    return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
-  })
+  const filteredUnallocatedEvents = unallocatedEvents
+    .filter((unallocatedEvent) => {
+      const eventDate = dayjs(unallocatedEvent.start)
+      return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
+    })
+    .map((event) => ({
+      ...event,
+      company: event.company || 'Unknown Company',
+      title: event.title || 'Untitled Event',
+      start: event.start || new Date(),
+      end: event.end || new Date(),
+      // Don't overwrite the reason if it exists
+      reason: event.reason || 'No reason provided',
+    }))
 
   function EventComponent({ event }) {
     const setupId = event.id.split('-')[0]
