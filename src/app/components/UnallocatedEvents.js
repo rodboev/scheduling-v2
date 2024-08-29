@@ -52,14 +52,12 @@ function EventPopover({ event }) {
             <p className="text-neutral-500"></p>
           </div>
           <div className="py-4">
-            <p>Scheduled: {formatTimeRange(event.start, event.end)}</p>
             <p>Preferred Time: {event.time.preferred || 'N/A'}</p>
             <p>Duration: {event.time.duration || 'N/A'} min</p>
-            <p>Calc Range: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
             <p>Tech: {event.tech.code || 'N/A'}</p>
+            <p>Calc Range: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
           </div>
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
-            <p>Original Range: {event.time.originalRange || 'N/A'}</p>
             <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
             <p>Route Days: {event.route.days || 'N/A'}</p>
             <p>Sched code: {event.schedule.code || 'N/A'}</p>

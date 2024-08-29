@@ -21,7 +21,7 @@ export const endOfDay = (date) => dayjs(date).tz('America/New_York').endOf('day'
 
 export function convertToETTime(timeString) {
   if (!timeString) return null
-  return dayjs(timeString).tz('America/New_York').format('h:mm A')
+  return dayjs(timeString).tz('America/New_York').add(5, 'hours').format('h:mma')
 }
 
 export function createDateRange(start, end) {

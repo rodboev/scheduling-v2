@@ -23,9 +23,6 @@ export default function ChangedEvents({ events }) {
                   <strong>Reason:</strong> {event.reason}
                 </p>
                 <p>
-                  <strong>Original Range:</strong> {event.originalRange || 'Not specified'}
-                </p>
-                <p>
                   <strong>New Range:</strong> {event.newRange}
                 </p>
                 <p>

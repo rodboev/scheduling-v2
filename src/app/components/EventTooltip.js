@@ -77,7 +77,6 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         <p className="whitespace-nowrap">Scheduled: {formatTimeRange(event.start, event.end)}</p>
         <p className="whitespace-nowrap">Preferred Time: {event.time.preferred || 'N/A'}</p>
         <p>Duration: {event.time.duration || 'N/A'} min</p>
-        <p>Original Range: {event.time.originalRange || 'N/A'}</p>
         <p>Calculated to: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
