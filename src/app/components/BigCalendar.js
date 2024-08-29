@@ -16,6 +16,7 @@ import { Switch } from '@/app/components/ui/switch'
 import { Label } from '@/app/components/ui/label'
 import { Card, CardContent } from '@/app/components/ui/card'
 import { useLocalStorage } from '@/app/hooks/useLocalStorage'
+import { capitalize } from '@/app/utils/capitalize'
 
 const localizer = dayjsLocalizer(dayjs)
 

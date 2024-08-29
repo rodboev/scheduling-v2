@@ -36,8 +36,9 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
       <PopoverContent
         className="w-full max-w-sm text-sm leading-relaxed"
         side="top"
-        align="center"
-        sideOffset={-300}
+        align="right"
+        sideOffset={-380}
+        alignOffset={250}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >

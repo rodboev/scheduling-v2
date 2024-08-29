@@ -1,37 +1,20 @@
 // src/app/utils/capitalize.js
 
 export function capitalize(companyName) {
+  if (!companyName) return ''
+
   // Convert to lowercase first
   let result = companyName.toLowerCase()
 
   // List of words that should always be uppercase
-  const alwaysUppercase = ['llc', 'lp', 'llp', 'inc', 'co', 'ltd', 'scf', 'tr', 'fbo', 'dba']
-
-  // Capitalize first letter of each word, except for common words
-  const commonWords = /^(a|an|and|as|at|but|by|en|for|if|in|nor|of|on|or|per|the|to|vs\.?|via)$/i
+  const alwaysUppercase = ['llc', 'lp', 'llp', 'ltd', 'scf', 'tr', 'fbo', 'dba', 'lic', 'nyc']
 
   result = result.replace(/\S+/g, function (word) {
     if (alwaysUppercase.includes(word)) {
       return word.toUpperCase()
     }
-    if (commonWords.test(word)) {
-      return word
-    }
-    // Handle words with apostrophes
-    return word.replace(
-      /(?:^|\s)(\S)(\S*?)(?:'(\S)(\S*?))?(?=\s|$)/g,
-      (match, firstChar, restOfWord, afterApostrophe, afterApostropheRest) => {
-        let capitalized = firstChar.toUpperCase() + restOfWord
-        if (afterApostrophe) {
-          capitalized +=
-            "'" +
-            (afterApostropheRest
-              ? afterApostrophe.toUpperCase() + afterApostropheRest
-              : afterApostrophe)
-        }
-        return capitalized
-      },
-    )
+    // Capitalize first letter of each word, including common words
+    return word.charAt(0).toUpperCase() + word.slice(1)
   })
 
   // Handle specific cases
