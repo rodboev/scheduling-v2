@@ -11,8 +11,13 @@ import { capitalize } from '@/app/utils/capitalize'
 export default function EventTooltip({ event, handleEnforceTechChange }) {
   const [isOpen, setIsOpen] = useState(false)
   const timeoutRef = useRef(null)
+  const [offset, setOffset] = useState(0)
 
-  const handleMouseEnter = () => {
+  const pageHeight = document.documentElement.scrollHeight
+
+  const handleMouseEnter = (e) => {
+    const cursorY = e.clientY + window.scrollY
+    setOffset(pageHeight - cursorY)
     clearTimeout(timeoutRef.current)
     setIsOpen(true)
   }
@@ -23,10 +28,12 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
     }, 300)
   }
 
+  const cursorY = e.clientY + window.scrollY
+
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} className="h-full">
+        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
           <span className="inline-block text-sm leading-none">
             {formatTimeRange(event.start, event.end)} —
           </span>
@@ -37,8 +44,8 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         className="w-full max-w-sm text-sm leading-relaxed"
         side="top"
         align="right"
-        sideOffset={-380}
-        alignOffset={250}
+        sideOffset={offset < 300 ? -50 : -300}
+        alignOffset={260}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
