@@ -78,10 +78,10 @@ export default function BigCalendar() {
         }),
       )
 
-      console.log('All possible resources:', allResources)
+      let scheduledEvents, unscheduledEvents
 
       if (allTechsEnforced) {
-        const scheduledEvents = rawEvents.map((event) => {
+        scheduledEvents = rawEvents.map((event) => {
           const preferredTime = parseTime(event.time.preferred)
           const startDate = dayjs(event.start).startOf('day').add(preferredTime, 'second')
           return {
@@ -91,18 +91,14 @@ export default function BigCalendar() {
             end: startDate.add(event.time.duration, 'minute').toDate(),
           }
         })
+        unscheduledEvents = []
         setAllocatedEvents(scheduledEvents)
         setResources(allResources)
         setUnallocatedEvents([])
-        setSummaryText(`Scheduled: ${scheduledEvents.length}, Unscheduled: 0`)
       } else {
-        const { scheduledEvents, unscheduledEvents } = scheduleEvents(
-          rawEvents,
-          allResources,
-          false,
-          visibleStart,
-          visibleEnd,
-        )
+        const result = scheduleEvents(rawEvents, allResources, false, visibleStart, visibleEnd)
+        scheduledEvents = result.scheduledEvents
+        unscheduledEvents = result.unscheduledEvents
 
         // Determine which resources were actually used in scheduled events
         const usedResourceIds = new Set(scheduledEvents.map((event) => event.resourceId))
@@ -117,10 +113,11 @@ export default function BigCalendar() {
         )
         setResources(finalResources)
         setUnallocatedEvents(unscheduledEvents)
-        setSummaryText(
-          `Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}`,
-        )
       }
+
+      const summaryText = `Date: ${visibleStart.format('YYYY-MM-DD')}, Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}, Total filtered events: ${rawEvents.length}`
+      setSummaryText(summaryText)
+      console.log(summaryText) // Log the summary text to the console
     }
   }, [serviceSetups, enforcedUpdates, currentViewRange, allTechsEnforced])
 
