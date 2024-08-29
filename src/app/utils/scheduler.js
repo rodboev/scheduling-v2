@@ -26,20 +26,34 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
 
-  // Schedule enforced events first
-  events
-    .filter((event) => event.tech.enforced)
-    .forEach((event) => {
-      scheduleEventIfNotScheduled(event, event.tech.code, techSchedules, scheduledEventIdsByDate)
-    })
+  // Schedule all events
+  events.forEach((event) => {
+    let scheduled = false
+    if (event.tech.enforced) {
+      scheduled = scheduleEventWithRespectToWorkHours(
+        event,
+        event.tech.code,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+    } else {
+      for (const techId in techSchedules) {
+        if (
+          scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
+        ) {
+          scheduled = true
+          break
+        }
+      }
+    }
 
-  // Schedule non-enforced events
-  events
-    .filter((event) => !event.tech.enforced)
-    .forEach((event) => {
-      scheduleEventWithExistingOrNewTech(event, techSchedules, scheduledEventIdsByDate, nextTechId)
-      nextTechId++
-    })
+    // If not scheduled, create a new tech and try again
+    if (!scheduled) {
+      const newTechId = `Tech ${nextTechId++}`
+      techSchedules[newTechId] = []
+      scheduleEventWithRespectToWorkHours(event, newTechId, techSchedules, scheduledEventIdsByDate)
+    }
+  })
 
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -51,7 +65,7 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
     })),
   )
 
-  // Check for any remaining unallocated events (this should be rare or none)
+  // Check for any remaining unallocated events
   const unallocatedEvents = events.filter((event) => {
     const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
     const eventKey = `${event.id}-${eventDate}`
@@ -67,37 +81,29 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
   return { scheduledEvents, unscheduledEvents: unallocatedEvents, scheduleSummary }
 }
 
-function scheduleEventWithExistingOrNewTech(
+function scheduleEventWithRespectToWorkHours(
   event,
+  techId,
   techSchedules,
   scheduledEventIdsByDate,
-  nextTechId,
 ) {
-  let scheduled = false
-  for (const techId in techSchedules) {
-    if (scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate)) {
-      scheduled = true
-      break
-    }
-  }
-  if (!scheduled) {
-    const newTechId = `Tech ${nextTechId}`
-    techSchedules[newTechId] = []
-    scheduleEventIfNotScheduled(event, newTechId, techSchedules, scheduledEventIdsByDate)
-  }
-}
-
-function scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate) {
   const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
   const eventKey = `${event.id}-${eventDate}`
 
   if (!scheduledEventIdsByDate.has(eventKey)) {
-    const [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
+    let [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
+    if (isNaN(rangeStart) || isNaN(rangeEnd)) {
+      // Handle invalid time ranges
+      rangeStart = 0 // Start of day
+      rangeEnd = 24 * 60 * 60 - 1 // End of day
+    }
     const startTime = dayjs(event.start).startOf('day').add(rangeStart, 'second')
     const endTime = dayjs(event.start).startOf('day').add(rangeEnd, 'second')
     const duration = event.time.duration * 60 // duration in seconds
 
-    if (tryScheduleEvent(event, techId, startTime, endTime, duration, techSchedules)) {
+    if (
+      tryScheduleEventWithinWorkHours(event, techId, startTime, endTime, duration, techSchedules)
+    ) {
       scheduledEventIdsByDate.set(eventKey, techId)
       return true
     }
@@ -105,7 +111,14 @@ function scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEven
   return false
 }
 
-function tryScheduleEvent(event, techId, startTime, endTime, duration, techSchedules) {
+function tryScheduleEventWithinWorkHours(
+  event,
+  techId,
+  startTime,
+  endTime,
+  duration,
+  techSchedules,
+) {
   if (!techSchedules[techId]) techSchedules[techId] = []
 
   const schedule = techSchedules[techId]
@@ -123,12 +136,7 @@ function tryScheduleEvent(event, techId, startTime, endTime, duration, techSched
       )
     ) {
       const dayStart = potentialStart.startOf('day')
-      const dayEnd = potentialStart.endOf('day')
-      const dayEvents = schedule.filter(
-        (slot) =>
-          (dayjs(slot.start).isSameOrAfter(dayStart) && dayjs(slot.start).isBefore(dayEnd)) ||
-          (dayjs(slot.end).isAfter(dayStart) && dayjs(slot.end).isSameOrBefore(dayEnd)),
-      )
+      const dayEvents = schedule.filter((slot) => dayjs(slot.start).isSame(dayStart, 'day'))
       const updatedDayEvents = [...dayEvents, { start: potentialStart, end: potentialEnd }]
 
       if (
@@ -154,87 +162,42 @@ function tryScheduleEvent(event, techId, startTime, endTime, duration, techSched
   return false
 }
 
-function tryFillGaps(events, techSchedules, scheduledEventIdsByDate) {
-  events.forEach((event) => {
-    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
-    const eventKey = `${event.id}-${eventDate}`
-    if (!scheduledEventIdsByDate.has(eventKey)) {
-      for (const techId in techSchedules) {
-        if (scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate)) {
-          break
-        }
-      }
-    }
-  })
-}
-
-function optimizeSchedule(techSchedules, scheduledEventIdsByDate) {
-  const allEvents = Object.values(techSchedules).flat()
-  allEvents.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
-
-  const optimizedSchedules = {}
-
-  allEvents.forEach((event) => {
-    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
-    const eventKey = `${event.id}-${eventDate}`
-
-    if (scheduledEventIdsByDate.has(eventKey)) {
-      const currentTechId = scheduledEventIdsByDate.get(eventKey)
-      scheduledEventIdsByDate.delete(eventKey)
-
-      let scheduled = false
-      for (const techId in optimizedSchedules) {
-        if (
-          tryScheduleEvent(
-            event,
-            techId,
-            event.start,
-            event.end,
-            event.time.duration * 60,
-            optimizedSchedules,
-          )
-        ) {
-          scheduledEventIdsByDate.set(eventKey, techId)
-          scheduled = true
-          break
-        }
-      }
-
-      if (!scheduled) {
-        tryScheduleEvent(
-          event,
-          currentTechId,
-          event.start,
-          event.end,
-          event.time.duration * 60,
-          optimizedSchedules,
-        )
-        scheduledEventIdsByDate.set(eventKey, currentTechId)
-      }
-    }
-  })
-
-  Object.assign(techSchedules, optimizedSchedules)
-}
-
-function scheduleEvent(event, techId, start, end, techSchedules) {
+// Modify tryScheduleEvent to always schedule the event, even if it exceeds MAX_WORK_HOURS
+function tryScheduleEvent(event, techId, startTime, endTime, duration, techSchedules) {
   if (!techSchedules[techId]) techSchedules[techId] = []
+
+  const schedule = techSchedules[techId]
+  let potentialStart = startTime
+
+  while (potentialStart.add(duration, 'second').isSameOrBefore(endTime)) {
+    const potentialEnd = potentialStart.add(duration, 'second')
+
+    if (
+      !schedule.some(
+        (existingEvent) =>
+          (potentialStart.isBefore(existingEvent.end) &&
+            potentialEnd.isAfter(existingEvent.start)) ||
+          potentialStart.isSame(existingEvent.start),
+      )
+    ) {
+      techSchedules[techId].push({
+        ...event,
+        start: potentialStart,
+        end: potentialEnd,
+      })
+      return true
+    }
+
+    potentialStart = potentialStart.add(1, 'minute')
+  }
+
+  // If we couldn't find a slot, schedule it at the original start time anyway
   techSchedules[techId].push({
     ...event,
-    start,
-    end,
+    start: startTime,
+    end: startTime.add(duration, 'second'),
   })
-}
-
-function isEventScheduledForDate(eventId, date, scheduledEventIdsByDate) {
-  return scheduledEventIdsByDate.has(date) && scheduledEventIdsByDate.get(date).has(eventId)
-}
-
-function addScheduledEventForDate(eventId, date, scheduledEventIdsByDate) {
-  if (!scheduledEventIdsByDate.has(date)) {
-    scheduledEventIdsByDate.set(date, new Set())
-  }
-  scheduledEventIdsByDate.get(date).add(eventId)
+  return true
 }
 
 // Generate detailed summary
