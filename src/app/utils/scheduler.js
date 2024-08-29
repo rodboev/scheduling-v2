@@ -26,34 +26,58 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
 
-  // Schedule all events
-  events.forEach((event) => {
-    let scheduled = false
+  // Function to attempt scheduling an event
+  const attemptSchedule = (event) => {
     if (event.tech.enforced) {
-      scheduled = scheduleEventWithRespectToWorkHours(
+      return scheduleEventWithRespectToWorkHours(
         event,
         event.tech.code,
         techSchedules,
         scheduledEventIdsByDate,
       )
-    } else {
-      for (const techId in techSchedules) {
-        if (
-          scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
-        ) {
-          scheduled = true
-          break
-        }
+    }
+
+    // Try to schedule with existing techs
+    for (const techId in techSchedules) {
+      if (
+        scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
+      ) {
+        return true
       }
     }
 
     // If not scheduled, create a new tech and try again
-    if (!scheduled) {
-      const newTechId = `Tech ${nextTechId++}`
-      techSchedules[newTechId] = []
-      scheduleEventWithRespectToWorkHours(event, newTechId, techSchedules, scheduledEventIdsByDate)
-    }
+    const newTechId = `Tech ${nextTechId++}`
+    techSchedules[newTechId] = []
+    return scheduleEventWithRespectToWorkHours(
+      event,
+      newTechId,
+      techSchedules,
+      scheduledEventIdsByDate,
+    )
+  }
+
+  // Schedule all events
+  events.forEach(attemptSchedule)
+
+  // Check for any remaining unallocated events
+  let unallocatedEvents = events.filter((event) => {
+    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
+    const eventKey = `${event.id}-${eventDate}`
+    return !scheduledEventIdsByDate.has(eventKey)
   })
+
+  // Attempt to schedule unallocated events
+  while (unallocatedEvents.length > 0) {
+    const initialUnallocatedCount = unallocatedEvents.length
+    unallocatedEvents = unallocatedEvents.filter((event) => !attemptSchedule(event))
+
+    // If we couldn't schedule any more events, break to avoid an infinite loop
+    if (unallocatedEvents.length === initialUnallocatedCount) {
+      console.warn(`Unable to schedule ${unallocatedEvents.length} events:`, unallocatedEvents)
+      break
+    }
+  }
 
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -64,13 +88,6 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
       resourceId: techId,
     })),
   )
-
-  // Check for any remaining unallocated events
-  const unallocatedEvents = events.filter((event) => {
-    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
-    const eventKey = `${event.id}-${eventDate}`
-    return !scheduledEventIdsByDate.has(eventKey)
-  })
 
   const scheduleSummary = createScheduleSummary(techSchedules, unallocatedEvents)
 
@@ -92,7 +109,7 @@ function scheduleEventWithRespectToWorkHours(
 
   if (!scheduledEventIdsByDate.has(eventKey)) {
     let [rangeStart, rangeEnd] = parseTimeRange(event.time.originalRange, event.time.duration)
-    if (isNaN(rangeStart) || isNaN(rangeEnd)) {
+    if (isNaN(rangeStart) || isNaN(rangeEnd) || rangeEnd <= rangeStart) {
       // Handle invalid time ranges
       rangeStart = 0 // Start of day
       rangeEnd = 24 * 60 * 60 - 1 // End of day
