@@ -11,15 +11,9 @@
 .rbc-calendar .rbc-day-slot .rbc-selected.rbc-background-event {
   @apply bg-teal/80;
 }
-/* .rbc-events-container .rbc-event-label {
-  @apply text-teal-light;
+.rbc-time-header .rbc-row-segment .rbc-event-content {
+  white-space: normal;
 }
-.rbc-events-container .rbc-event-content {
-  @apply text-teal-light;
-}
-.rbc-event {
-  background-color: hsl(var(--teal));
-} */
 
 @layer base {
   :root {
