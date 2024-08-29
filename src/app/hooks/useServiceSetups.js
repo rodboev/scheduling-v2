@@ -17,7 +17,8 @@ const ALLOWED_TECHS = [
   'VASTA RICK',
 ]
 
-export const useServiceSetups = (startDate, endDate) => {
+export const useServiceSetups = () => {
+  // Remove startDate and endDate parameters
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
 
@@ -26,8 +27,8 @@ export const useServiceSetups = (startDate, endDate) => {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['serviceSetups', startDate, endDate],
-    queryFn: () => fetchServiceSetups(startDate, endDate),
+    queryKey: ['serviceSetups'], // Remove startDate and endDate from queryKey
+    queryFn: () => fetchServiceSetups(), // Remove startDate and endDate arguments
     select: (data) => {
       const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
       console.log('Filtered service setups:', filteredData.length)

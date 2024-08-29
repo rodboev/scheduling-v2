@@ -117,13 +117,6 @@ function transformServiceSetup(setup) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
 
-  // Parse date range parameters
-  const startDate = searchParams.get('startDate') || '2024-09-02'
-  const endDate = searchParams.get('endDate') || '2024-09-02'
-
-  console.log('Start Date:', startDate)
-  console.log('End Date:', endDate)
-
   // Try to read from disk cache first
   let serviceSetups = await readFromDiskCache()
 
@@ -162,36 +155,7 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Filter the setups based on the date range
-  const filteredSetups = serviceSetups.filter((setup) => {
-    const scheduleArray = setup.schedule.string.split('')
-    const start = dayjs(startDate).subtract(1, 'day') // Start from the day before
-    const end = dayjs(endDate).add(1, 'day') // End on the day after
+  console.log(`Retrieved ${serviceSetups.length} service setups`)
 
-    let currentDate = start
-
-    while (currentDate.isBefore(end)) {
-      const dayOfWeek = currentDate.day()
-      const scheduleIndex = (dayOfWeek + 6) % 7
-      const nextDayOfWeek = (dayOfWeek + 1) % 7
-      const nextScheduleIndex = (nextDayOfWeek + 6) % 7
-
-      if (scheduleArray[scheduleIndex] === '1' || scheduleArray[nextScheduleIndex] === '1') {
-        return true
-      }
-      currentDate = currentDate.add(1, 'day')
-    }
-    return false
-  })
-
-  console.log('Filtered setups:', filteredSetups.length)
-
-  if (filteredSetups.length === 0) {
-    console.log('No service setups found for the given date range')
-    return NextResponse.json({ message: 'No service setups found' }, { status: 404 })
-  }
-
-  console.log(`Retrieved ${filteredSetups.length} service setups`)
-
-  return NextResponse.json(filteredSetups)
+  return NextResponse.json(serviceSetups)
 }

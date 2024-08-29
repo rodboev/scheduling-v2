@@ -39,7 +39,7 @@ export default function BigCalendar() {
     error,
     updateEnforced,
     updateAllEnforced,
-  } = useServiceSetups(currentViewRange.start, currentViewRange.end)
+  } = useServiceSetups()
 
   const allTechsEnforced =
     allocatedEvents.length > 0 &&
