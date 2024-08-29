@@ -70,7 +70,7 @@ export default function BigCalendar() {
         )
       })
 
-      let scheduledEvents, unscheduledEvents, finalResources
+      let scheduledEvents, unscheduledEvents, finalResources, scheduleSummary
 
       if (allTechsEnforced) {
         // Handle enforced techs as before
@@ -96,6 +96,7 @@ export default function BigCalendar() {
         const result = scheduleEvents(rawEvents, [], false, visibleStart, visibleEnd)
         scheduledEvents = result.scheduledEvents
         unscheduledEvents = result.unscheduledEvents // This should now always be an empty array
+        scheduleSummary = result.scheduleSummary
 
         // Create resources based on the scheduled events
         const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
@@ -117,6 +118,7 @@ export default function BigCalendar() {
 
       const summaryText = `Date: ${visibleStart.format('YYYY-MM-DD')}, Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}, Total filtered events: ${rawEvents.length}`
       setSummaryText(summaryText)
+      console.log(scheduleSummary)
       console.log(summaryText) // Log the summary text to the console
     }
   }, [serviceSetups, enforcedUpdates, currentViewRange, allTechsEnforced])

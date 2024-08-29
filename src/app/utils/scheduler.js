@@ -5,12 +5,17 @@ const MAX_WORK_HOURS = 8 * 60 * 60 // 8 hours in seconds
 
 export function scheduleEvents(events, resources, enforceTechs, visibleStart, visibleEnd) {
   let techSchedules = {}
-  let nextTechId = 1
+  let nextTechId = resources.length + 1
   let scheduledEventIdsByDate = new Map()
 
   console.log(`Total events to schedule: ${events.length}`)
   console.log(`Initial resources available: ${resources.length}`)
   console.log(`Enforce techs: ${enforceTechs}`)
+
+  // Initialize techSchedules with existing resources
+  resources.forEach((resource) => {
+    techSchedules[resource.id] = []
+  })
 
   // Sort events by time window size (ascending) and duration (descending)
   events.sort((a, b) => {
@@ -32,34 +37,9 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
   events
     .filter((event) => !event.tech.enforced)
     .forEach((event) => {
-      let scheduled = false
-      for (const techId in techSchedules) {
-        if (scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate)) {
-          scheduled = true
-          break
-        }
-      }
-      if (!scheduled) {
-        const newTechId = `Tech ${nextTechId++}`
-        scheduleEventIfNotScheduled(event, newTechId, techSchedules, scheduledEventIdsByDate)
-      }
+      scheduleEventWithExistingOrNewTech(event, techSchedules, scheduledEventIdsByDate, nextTechId)
+      nextTechId++
     })
-
-  // Optimize the schedule
-  optimizeSchedule(techSchedules, scheduledEventIdsByDate)
-
-  // Try to fill gaps with unscheduled events
-  tryFillGaps(events, techSchedules, scheduledEventIdsByDate)
-
-  // Final attempt to schedule any remaining events
-  events.forEach((event) => {
-    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
-    const eventKey = `${event.id}-${eventDate}`
-    if (!scheduledEventIdsByDate.has(eventKey)) {
-      const newTechId = `Tech ${nextTechId++}`
-      scheduleEventIfNotScheduled(event, newTechId, techSchedules, scheduledEventIdsByDate)
-    }
-  })
 
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -71,18 +51,40 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
     })),
   )
 
-  // Identify truly unallocated events
+  // Check for any remaining unallocated events (this should be rare or none)
   const unallocatedEvents = events.filter((event) => {
     const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
     const eventKey = `${event.id}-${eventDate}`
     return !scheduledEventIdsByDate.has(eventKey)
   })
 
+  const scheduleSummary = createScheduleSummary(techSchedules, unallocatedEvents)
+
   console.log(`Total scheduled events: ${scheduledEvents.length}`)
   console.log(`Total unallocated events: ${unallocatedEvents.length}`)
   console.log(`Total techs used: ${Object.keys(techSchedules).length}`)
 
-  return { scheduledEvents, unscheduledEvents: unallocatedEvents }
+  return { scheduledEvents, unscheduledEvents: unallocatedEvents, scheduleSummary }
+}
+
+function scheduleEventWithExistingOrNewTech(
+  event,
+  techSchedules,
+  scheduledEventIdsByDate,
+  nextTechId,
+) {
+  let scheduled = false
+  for (const techId in techSchedules) {
+    if (scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate)) {
+      scheduled = true
+      break
+    }
+  }
+  if (!scheduled) {
+    const newTechId = `Tech ${nextTechId}`
+    techSchedules[newTechId] = []
+    scheduleEventIfNotScheduled(event, newTechId, techSchedules, scheduledEventIdsByDate)
+  }
 }
 
 function scheduleEventIfNotScheduled(event, techId, techSchedules, scheduledEventIdsByDate) {
@@ -233,4 +235,47 @@ function addScheduledEventForDate(eventId, date, scheduledEventIdsByDate) {
     scheduledEventIdsByDate.set(date, new Set())
   }
   scheduledEventIdsByDate.get(date).add(eventId)
+}
+
+// Generate detailed summary
+function createScheduleSummary(techSchedules, unallocatedEvents) {
+  let scheduleSummary = '\nSchedule Summary:\n\n'
+  let hasPrintedEvents = false
+
+  // Scheduled events
+  Object.entries(techSchedules).forEach(([techId, schedule]) => {
+    if (schedule.length === 0) return // Skip techs with no events
+
+    let techTotal = 0
+    let techSummary = `${techId}:\n`
+
+    schedule.sort((a, b) => a.start - b.start)
+
+    schedule.forEach((event) => {
+      const start = dayjs(event.start).format('h:mma')
+      const end = dayjs(event.end).format('h:mma')
+      techSummary += `- ${start}-${end}, ${event.company} (id: ${event.id})\n`
+      techTotal += event.time.duration
+    })
+
+    const techTotalHours = (techTotal / 60).toFixed(1)
+
+    if (techTotal > 0) {
+      techSummary += `Total: ${techTotalHours} hours\n\n`
+      scheduleSummary += techSummary
+      hasPrintedEvents = true
+    }
+  })
+
+  // Unallocated events
+  if (unallocatedEvents.length > 0) {
+    scheduleSummary += 'Unallocated services:\n'
+    unallocatedEvents.forEach((event) => {
+      const timeWindow = `${dayjs(event.time.range[0], 'HH:mm:ss').format('h:mma')}-${dayjs(event.time.range[1], 'HH:mm:ss').format('h:mma')}`
+      scheduleSummary += `- ${timeWindow} time window, ${event.company} (id: ${event.id})\n`
+    })
+    hasPrintedEvents = true
+  }
+
+  return hasPrintedEvents ? scheduleSummary : ''
 }
