@@ -70,17 +70,10 @@ export default function BigCalendar() {
         )
       })
 
-      // Create a resource for each unique tech code
-      const allResources = [...new Set(rawEvents.map((event) => event.tech.code))].map(
-        (tech, index) => ({
-          id: tech,
-          title: allTechsEnforced ? tech : `Tech ${index + 1}`,
-        }),
-      )
-
-      let scheduledEvents, unscheduledEvents
+      let scheduledEvents, unscheduledEvents, finalResources
 
       if (allTechsEnforced) {
+        // Handle enforced techs as before
         scheduledEvents = rawEvents.map((event) => {
           const preferredTime = parseTime(event.time.preferred)
           const startDate = dayjs(event.start).startOf('day').add(preferredTime, 'second')
@@ -92,28 +85,35 @@ export default function BigCalendar() {
           }
         })
         unscheduledEvents = []
-        setAllocatedEvents(scheduledEvents)
-        setResources(allResources)
-        setUnallocatedEvents([])
-      } else {
-        const result = scheduleEvents(rawEvents, allResources, false, visibleStart, visibleEnd)
-        scheduledEvents = result.scheduledEvents
-        unscheduledEvents = result.unscheduledEvents
-
-        // Determine which resources were actually used in scheduled events
-        const usedResourceIds = new Set(scheduledEvents.map((event) => event.resourceId))
-        const finalResources = allResources.filter((resource) => usedResourceIds.has(resource.id))
-
-        setAllocatedEvents(
-          scheduledEvents.map((event) => ({
-            ...event,
-            start: new Date(event.start),
-            end: new Date(event.end),
-          })),
+        finalResources = [...new Set(scheduledEvents.map((event) => event.resourceId))].map(
+          (techId) => ({
+            id: techId,
+            title: techId,
+          }),
         )
-        setResources(finalResources)
-        setUnallocatedEvents(unscheduledEvents)
+      } else {
+        // Use the new scheduling algorithm
+        const result = scheduleEvents(rawEvents, [], false, visibleStart, visibleEnd)
+        scheduledEvents = result.scheduledEvents
+        unscheduledEvents = result.unscheduledEvents // This should now always be an empty array
+
+        // Create resources based on the scheduled events
+        const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
+        finalResources = usedResourceIds.map((techId, index) => ({
+          id: techId,
+          title: `Tech ${index + 1}`,
+        }))
       }
+
+      setAllocatedEvents(
+        scheduledEvents.map((event) => ({
+          ...event,
+          start: new Date(event.start),
+          end: new Date(event.end),
+        })),
+      )
+      setResources(finalResources)
+      setUnallocatedEvents(unscheduledEvents)
 
       const summaryText = `Date: ${visibleStart.format('YYYY-MM-DD')}, Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}, Total filtered events: ${rawEvents.length}`
       setSummaryText(summaryText)
