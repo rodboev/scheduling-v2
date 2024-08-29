@@ -6,6 +6,7 @@ import { Switch } from '@/app/components/ui/switch'
 import { formatTimeRange } from '@/app/utils/timeRange'
 import { Label } from '@/app/components/ui/label'
 import { Card, CardContent } from '@/app/components/ui/card'
+import { capitalize } from '@/app/utils/capitalize'
 
 export default function EventTooltip({ event, handleEnforceTechChange }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -26,11 +27,10 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-          <span className="text-sm">{formatTimeRange(event.start, event.end)}</span>
-          <span> {event.company} </span>
-          <span className="text-sm">
-            ({formatTimeRange(event.time.range[0], event.time.range[1])})
+          <span className="inline-block text-sm leading-none">
+            {formatTimeRange(event.start, event.end)} —
           </span>
+          <span className="text-sm leading-none"> {capitalize(event.company)} </span>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -61,8 +61,8 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
           <div className="text-center">Tech: {event.tech.code || 'N/A'}</div>
         </div>
 
-        <h3 className="mb-2 flex flex-col items-start font-bold">
-          <div>{event.company}</div>
+        <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
+          <div>{capitalize(event.company)}</div>
           <div className="text-sm font-semibold">#{event.locationCode}</div>
         </h3>
 
@@ -72,14 +72,14 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         <p>Original Range: {event.time.originalRange || 'N/A'}</p>
         <p>Calculated to: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
 
-        <div className="border-rounded-lg my-1 w-fit rounded-lg border-2 border-dashed border-gray-300 px-2 py-1">
+        <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
           <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
           <p>Route Days: {event.route.days || 'N/A'}</p>
         </div>
 
         {event.comments && (
-          <>
-            <div className="my-2">
+          <div className="space-y-2">
+            <div className="">
               <p className="break-words text-sm">
                 <span className="block font-semibold">Service Setup comments:</span>
                 {event.comments.serviceSetup || 'N/A'}
@@ -93,7 +93,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
                 </p>
               </div>
             )}
-          </>
+          </div>
         )}
       </PopoverContent>
     </Popover>
