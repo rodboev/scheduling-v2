@@ -26,7 +26,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} className="h-full">
           <span className="inline-block text-sm leading-none">
             {formatTimeRange(event.start, event.end)} —
           </span>
