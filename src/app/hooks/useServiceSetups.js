@@ -18,7 +18,6 @@ const ALLOWED_TECHS = [
 ]
 
 export const useServiceSetups = () => {
-  // Remove startDate and endDate parameters
   const queryClient = useQueryClient()
   const [localEnforced, setLocalEnforced] = useState({})
 
@@ -27,8 +26,8 @@ export const useServiceSetups = () => {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['serviceSetups'], // Remove startDate and endDate from queryKey
-    queryFn: () => fetchServiceSetups(), // Remove startDate and endDate arguments
+    queryKey: ['serviceSetups'],
+    queryFn: () => fetchServiceSetups(),
     select: (data) => {
       const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
       console.log('Filtered service setups:', filteredData.length)
@@ -60,7 +59,7 @@ export const useServiceSetups = () => {
         return acc
       }, {})
       setLocalEnforced(newLocalEnforced)
-      queryClient.invalidateQueries({ queryKey: ['serviceSetups', startDate, endDate] })
+      queryClient.invalidateQueries({ queryKey: ['serviceSetups'] })
     }
   }
 

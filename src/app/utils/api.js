@@ -6,14 +6,9 @@ const api = axios.create({
   baseURL: '/api',
 })
 
-export const fetchServiceSetups = async (startDate, endDate) => {
+export const fetchServiceSetups = async () => {
   try {
-    const { data } = await api.get('/services', {
-      params: {
-        startDate,
-        endDate,
-      },
-    })
+    const { data } = await api.get('/services')
     return data
   } catch (error) {
     console.error('Error fetching service setups:', error)
