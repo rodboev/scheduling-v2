@@ -5,16 +5,16 @@ import { useState } from 'react'
 import { fetchServiceSetups } from '@/app/utils/api'
 
 const ALLOWED_TECHS = [
-  'CORA JOSE',
-  'MADERA M.',
   'HUNTLEY E.',
+  'MADERA M.',
+  'VASTA RICK',
+  'CORA JOSE',
   'RIVERS',
+  'BLAKAJ A.',
   'LOPEZ A.',
   'FORD J.',
   'CAPPA T.',
   'BAEZ MALIK',
-  'BLAKAJ A.',
-  'VASTA RICK',
 ]
 
 export const useServiceSetups = () => {

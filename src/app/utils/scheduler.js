@@ -24,15 +24,10 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   // Function to attempt scheduling an event
   const attemptSchedule = (event) => {
     if (event.tech.enforced) {
-      // If this specific tech is enforced, schedule with the assigned tech
-      return scheduleEventWithRespectToWorkHours(
-        event,
-        event.tech.code,
-        techSchedules,
-        scheduledEventIdsByDate,
-      )
+      // For enforced techs, schedule at the preferred time
+      return scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
     } else {
-      // If not enforced, try to schedule with existing Techs
+      // For non-enforced events, try to schedule with existing generic Techs
       for (const techId in techSchedules) {
         if (
           techId.startsWith('Tech') &&
@@ -93,6 +88,27 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   console.log(`Total techs used: ${Object.keys(techSchedules).length}`)
 
   return { scheduledEvents, unscheduledEvents: unallocatedEvents, scheduleSummary }
+}
+
+function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
+  const techId = event.tech.code
+  if (!techSchedules[techId]) techSchedules[techId] = []
+
+  const preferredTime = parseTime(event.time.preferred)
+  const startTime = dayjs(event.start).startOf('day').add(preferredTime, 'second')
+  const endTime = startTime.add(event.time.duration, 'minute')
+
+  techSchedules[techId].push({
+    ...event,
+    start: startTime,
+    end: endTime,
+  })
+
+  const eventDate = startTime.format('YYYY-MM-DD')
+  const eventKey = `${event.id}-${eventDate}`
+  scheduledEventIdsByDate.set(eventKey, techId)
+
+  return true
 }
 
 function scheduleEventWithRespectToWorkHours(
