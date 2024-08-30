@@ -70,58 +70,29 @@ export default function BigCalendar() {
         )
       })
 
-      let scheduledEvents, unscheduledEvents, finalResources, scheduleSummary
+      const result = scheduleEvents({
+        events: rawEvents,
+        resources: [],
+        visibleStart,
+        visibleEnd,
+      })
+      const { scheduledEvents, unscheduledEvents, scheduleSummary } = result
 
-      if (allTechsEnforced) {
-        // Handle enforced techs as before
-        scheduledEvents = rawEvents.map((event) => {
-          const preferredTime = parseTime(event.time.preferred)
-          const startDate = dayjs(event.start).startOf('day').add(preferredTime, 'second')
-          return {
-            ...event,
-            resourceId: event.tech.code,
-            start: startDate.toDate(),
-            end: startDate.add(event.time.duration, 'minute').toDate(),
-          }
-        })
-        unscheduledEvents = []
-        finalResources = [...new Set(scheduledEvents.map((event) => event.resourceId))].map(
-          (techId) => ({
-            id: techId,
-            title: techId,
-          }),
-        )
-      } else {
-        // Use the new scheduling algorithm
-        const result = scheduleEvents(rawEvents, [], false, visibleStart, visibleEnd)
-        scheduledEvents = result.scheduledEvents
-        unscheduledEvents = result.unscheduledEvents // This should now always be an empty array
-        scheduleSummary = result.scheduleSummary
+      // Create resources based on the scheduled events
+      const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
+      const finalResources = usedResourceIds.map((techId) => ({
+        id: techId,
+        title: techId, // This will always be the actual tech code now
+      }))
 
-        // Create resources based on the scheduled events
-        const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
-        finalResources = usedResourceIds.map((techId, index) => ({
-          id: techId,
-          title: `Tech ${index + 1}`,
-        }))
-      }
-
-      setAllocatedEvents(
-        scheduledEvents.map((event) => ({
-          ...event,
-          start: new Date(event.start),
-          end: new Date(event.end),
-        })),
-      )
+      setAllocatedEvents(scheduledEvents)
       setResources(finalResources)
       setUnallocatedEvents(unscheduledEvents)
 
       const summaryText = `Date: ${visibleStart.format('YYYY-MM-DD')}, Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}, Total filtered events: ${rawEvents.length}`
       setSummaryText(summaryText)
-      console.log(scheduleSummary)
-      console.log(summaryText) // Log the summary text to the console
     }
-  }, [serviceSetups, enforcedUpdates, currentViewRange, allTechsEnforced])
+  }, [serviceSetups, currentViewRange, enforcedUpdates])
 
   function handleEnforceTechChange(id, checked) {
     const { setupId, enforced } = updateEnforced(id, checked)
@@ -143,7 +114,6 @@ export default function BigCalendar() {
   function handleView(newView) {
     setView(newView)
   }
-
   function handleNavigate(newDate) {
     setDate(newDate)
     setCurrentViewRange(createDateRange(newDate, newDate))

@@ -1,21 +1,16 @@
+// src/app/utils/scheduler.js
+
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange } from './timeRange'
 
 const MAX_WORK_HOURS = 8 * 60 * 60 // 8 hours in seconds
 
-export function scheduleEvents(events, resources, enforceTechs, visibleStart, visibleEnd) {
+export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   let techSchedules = {}
-  let nextTechId = resources.length + 1
+  let nextGenericTechId = 1
   let scheduledEventIdsByDate = new Map()
 
   console.log(`Total events to schedule: ${events.length}`)
-  console.log(`Initial resources available: ${resources.length}`)
-  console.log(`Enforce techs: ${enforceTechs}`)
-
-  // Initialize techSchedules with existing resources
-  resources.forEach((resource) => {
-    techSchedules[resource.id] = []
-  })
 
   // Sort events by time window size (ascending) and duration (descending)
   events.sort((a, b) => {
@@ -29,32 +24,34 @@ export function scheduleEvents(events, resources, enforceTechs, visibleStart, vi
   // Function to attempt scheduling an event
   const attemptSchedule = (event) => {
     if (event.tech.enforced) {
+      // If this specific tech is enforced, schedule with the assigned tech
       return scheduleEventWithRespectToWorkHours(
         event,
         event.tech.code,
         techSchedules,
         scheduledEventIdsByDate,
       )
-    }
-
-    // Try to schedule with existing techs
-    for (const techId in techSchedules) {
-      if (
-        scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
-      ) {
-        return true
+    } else {
+      // If not enforced, try to schedule with existing Techs
+      for (const techId in techSchedules) {
+        if (
+          techId.startsWith('Tech') &&
+          scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
+        ) {
+          return true
+        }
       }
-    }
 
-    // If not scheduled, create a new tech and try again
-    const newTechId = `Tech ${nextTechId++}`
-    techSchedules[newTechId] = []
-    return scheduleEventWithRespectToWorkHours(
-      event,
-      newTechId,
-      techSchedules,
-      scheduledEventIdsByDate,
-    )
+      // If not scheduled with existing Techs, create a new Tech and try again
+      const newGenericTechId = `Tech ${nextGenericTechId++}`
+      techSchedules[newGenericTechId] = []
+      return scheduleEventWithRespectToWorkHours(
+        event,
+        newGenericTechId,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+    }
   }
 
   // Schedule all events
