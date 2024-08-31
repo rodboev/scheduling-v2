@@ -1,12 +1,15 @@
 // src/app/hooks/useServiceSetups.js
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useLocalStorage } from '@/app/hooks/useLocalStorage'
 import { getServiceSetups } from '@/app/actions/getServiceSetups'
 
 export const useServiceSetups = () => {
   const queryClient = useQueryClient()
-  const [localEnforced, setLocalEnforced] = useState({})
+  const [enforcedServiceSetups, setEnforcedServiceSetups] = useLocalStorage(
+    'enforcedServiceSetups',
+    {},
+  )
 
   const {
     data: serviceSetups,
@@ -21,7 +24,7 @@ export const useServiceSetups = () => {
         ...setup,
         tech: {
           ...setup.tech,
-          enforced: localEnforced[setup.id] ?? setup.tech.enforced,
+          enforced: enforcedServiceSetups[setup.id] ?? setup.tech.enforced,
         },
       }))
     },
@@ -29,22 +32,20 @@ export const useServiceSetups = () => {
 
   function updateEnforced(id, enforced) {
     const setupId = id.includes('-') ? id.split('-')[0] : id
-    setLocalEnforced((prev) => {
-      const newLocalEnforced = { ...prev, [setupId]: enforced }
-      console.log('New localEnforced state:', newLocalEnforced)
-      return newLocalEnforced
+    setEnforcedServiceSetups((prev) => {
+      const newEnforcedServiceSetups = { ...prev, [setupId]: enforced }
+      console.log('New enforcedServiceSetups state:', newEnforcedServiceSetups)
+      return newEnforcedServiceSetups
     })
-    // Return the updated setupId and enforced value
-    return { setupId, enforced }
   }
 
   function updateAllEnforced(enforced) {
     if (serviceSetups) {
-      const newLocalEnforced = serviceSetups.reduce((acc, setup) => {
+      const newEnforcedServiceSetups = serviceSetups.reduce((acc, setup) => {
         acc[setup.id] = enforced
         return acc
       }, {})
-      setLocalEnforced(newLocalEnforced)
+      setEnforcedServiceSetups(newEnforcedServiceSetups)
       queryClient.invalidateQueries({ queryKey: ['serviceSetups'] })
     }
   }
@@ -55,5 +56,6 @@ export const useServiceSetups = () => {
     error,
     updateEnforced,
     updateAllEnforced,
+    enforcedServiceSetups,
   }
 }

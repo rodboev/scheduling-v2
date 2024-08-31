@@ -2,36 +2,29 @@
 
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useMemo } from 'react'
+import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
-import { useServiceSetups } from '@/app/hooks/useServiceSetups'
-import { dayjsInstance as dayjs, createDateRange } from '@/app/utils/dayjs'
-import { parseTime } from '@/app/utils/timeRange'
-import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
-import { scheduleEvents } from '@/app/utils/scheduler'
-import EventTooltip from '@/app/components/EventTooltip'
 import UnallocatedEvents from '@/app/components/UnallocatedEvents'
+import Event from '@/app/components/Event'
+import { useServiceSetups } from '@/app/hooks/useServiceSetups'
+import { useCalendarState } from '@/app/hooks/useCalendarState'
+import { useEventGeneration } from '@/app/hooks/useEventGeneration'
+
+import Header from '@/app/components/Header'
+import Logo from '@/app/components/Logo'
+import { Card, CardContent } from '@/app/components/ui/card'
 import { Switch } from '@/app/components/ui/switch'
 import { Label } from '@/app/components/ui/label'
-import { Card, CardContent } from '@/app/components/ui/card'
-import { useLocalStorage } from '@/app/hooks/useLocalStorage'
-import { capitalize } from '@/app/utils/capitalize'
 
 const localizer = dayjsLocalizer(dayjs)
 
+// src/app/components/BigCalendar.js
+
 export default function BigCalendar() {
-  const [date, setDate] = useState(new Date(2024, 8, 2)) // September 2, 2024
-  const [view, setView] = useState(Views.DAY)
-  const [currentViewRange, setCurrentViewRange] = useState(() => createDateRange(date, date))
-  const [enforcedUpdates, setEnforcedUpdates, syncEnforcedUpdates] = useLocalStorage(
-    'enforcedUpdates',
-    {},
-  )
-  const [allocatedEvents, setAllocatedEvents] = useState([])
-  const [resources, setResources] = useState([])
-  const [unallocatedEvents, setUnallocatedEvents] = useState([])
-  const [summaryText, setSummaryText] = useState('')
+  const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
+    useCalendarState()
 
   const {
     data: serviceSetups,
@@ -39,129 +32,31 @@ export default function BigCalendar() {
     error,
     updateEnforced,
     updateAllEnforced,
+    enforcedServiceSetups,
   } = useServiceSetups()
 
-  const allTechsEnforced =
-    allocatedEvents.length > 0 &&
-    allocatedEvents.every((event) =>
-      enforcedUpdates.hasOwnProperty(event.id.split('-')[0])
-        ? enforcedUpdates[event.id.split('-')[0]]
-        : event.tech.enforced,
-    )
+  const { allocatedEvents, resources, filteredUnallocatedEvents, summaryText } = useEventGeneration(
+    serviceSetups,
+    currentViewRange,
+    enforcedServiceSetups,
+  )
 
-  useEffect(() => {
-    syncEnforcedUpdates()
-  }, [])
-
-  useEffect(() => {
-    if (serviceSetups) {
-      // Only generate events for the visible range
-      const visibleStart = dayjs(currentViewRange.start).startOf('day')
-      const visibleEnd = dayjs(currentViewRange.end).endOf('day')
-
-      const rawEvents = serviceSetups.flatMap((setup) => {
-        const enforced = enforcedUpdates.hasOwnProperty(setup.id)
-          ? enforcedUpdates[setup.id]
-          : setup.tech.enforced
-        return generateEventsForDateRange(
-          { ...setup, tech: { ...setup.tech, enforced } },
-          visibleStart,
-          visibleEnd,
-        )
-      })
-
-      const result = scheduleEvents({
-        events: rawEvents,
-        resources: [],
-        visibleStart,
-        visibleEnd,
-      })
-      const { scheduledEvents, unscheduledEvents, scheduleSummary } = result
-
-      // Create resources based on the scheduled events
-      const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
-      const finalResources = usedResourceIds.map((techId) => ({
-        id: techId,
-        title: techId, // This will always be the actual tech code now
-      }))
-
-      setAllocatedEvents(scheduledEvents)
-      setResources(finalResources)
-      setUnallocatedEvents(unscheduledEvents)
-
-      const summaryText = `Date: ${visibleStart.format('YYYY-MM-DD')}, Scheduled: ${scheduledEvents.length}, Unscheduled: ${unscheduledEvents.length}, Total filtered events: ${rawEvents.length}`
-      setSummaryText(summaryText)
-    }
-  }, [serviceSetups, currentViewRange, enforcedUpdates])
-
-  function handleEnforceTechChange(id, checked) {
-    const { setupId, enforced } = updateEnforced(id, checked)
-    setEnforcedUpdates((prev) => {
-      const newUpdates = { ...prev, [setupId]: enforced }
-      return newUpdates
-    })
-  }
-
-  function handleEnforceTechsChange(checked) {
-    const newEnforcedUpdates = serviceSetups.reduce((acc, setup) => {
-      acc[setup.id] = checked
-      return acc
-    }, {})
-    setEnforcedUpdates(newEnforcedUpdates)
-    updateAllEnforced(checked)
-  }
-
-  function handleView(newView) {
-    setView(newView)
-  }
-  function handleNavigate(newDate) {
-    setDate(newDate)
-    setCurrentViewRange(createDateRange(newDate, newDate))
-  }
-
-  function handleRangeChange(range) {
-    const [start, end] = Array.isArray(range)
-      ? [range[0], range[range.length - 1]]
-      : [range.start, range.start]
-
-    const newRange = createDateRange(start, end)
-
-    setCurrentViewRange(newRange)
-  }
-
-  const filteredUnallocatedEvents = unallocatedEvents
-    .filter((unallocatedEvent) => {
-      const eventDate = dayjs(unallocatedEvent.start)
-      return eventDate.isBetween(currentViewRange.start, currentViewRange.end, null, '[]')
-    })
-    .map((event) => ({
-      ...event,
-      company: event.company || 'Unknown Company',
-      title: event.title || 'Untitled Event',
-      start: event.start || new Date(),
-      end: event.end || new Date(),
-      // Don't overwrite the reason if it exists
-      reason: event.reason || 'No reason provided',
-    }))
-
-  function EventComponent({ event }) {
-    const setupId = event.id.split('-')[0]
-    const enforced = enforcedUpdates.hasOwnProperty(setupId)
-      ? enforcedUpdates[setupId]
-      : event.tech.enforced
-
+  const allServiceSetupsEnforced = useMemo(() => {
     return (
-      <EventTooltip
-        event={{
-          ...event,
-          tech: {
-            ...event.tech,
-            enforced: enforced,
-          },
-        }}
-        handleEnforceTechChange={handleEnforceTechChange}
-      />
+      allocatedEvents.length > 0 &&
+      allocatedEvents.every((event) => {
+        const setupId = event.id.split('-')[0]
+        return enforcedServiceSetups[setupId] ?? event.tech.enforced
+      })
     )
+  }, [allocatedEvents, enforcedServiceSetups])
+
+  const handleEnforceServiceSetup = (id, checked) => {
+    updateEnforced(id, checked)
+  }
+
+  const handleEnforceAllServiceSetups = (checked) => {
+    updateAllEnforced(checked)
   }
 
   return (
@@ -170,31 +65,27 @@ export default function BigCalendar() {
         <UnallocatedEvents events={filteredUnallocatedEvents} />
       </div>
       <div className="flex flex-grow flex-col">
-        <div className="flex items-center justify-between border-b p-4">
+        <Header>
           <Card className="w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
             <CardContent className="p-0">
               <Label
-                htmlFor="enforce-all-techs"
+                htmlFor="enforce-all-service-setups"
                 className="flex cursor-pointer items-center space-x-3 p-3 px-4"
               >
                 <Switch
                   className="focus-visible:ring-transparent"
-                  checked={allTechsEnforced}
-                  onCheckedChange={handleEnforceTechsChange}
-                  id="enforce-all-techs"
+                  checked={allServiceSetupsEnforced}
+                  onCheckedChange={updateAllEnforced}
+                  id="enforce-all-service-setups"
                 />
-                <span>Enforce All Techs</span>
+                <span>Enforce all techs</span>
               </Label>
             </CardContent>
           </Card>
-          <div className="logo flex-grow text-center tracking-tighter">
-            <span className="display-inline mx-1 text-5xl font-bold text-teal-500">liberty</span>
-            <span className="display-inline mx-1 text-2xl">schedule</span>
-          </div>
-          <div className="w-[200px]"></div> {/* Placeholder to balance the layout */}
-        </div>
-
+          <Logo />
+        </Header>
         <div className="flex-grow p-4">
+          <div>{summaryText}</div>
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"
@@ -216,10 +107,16 @@ export default function BigCalendar() {
             onRangeChange={handleRangeChange}
             toolbar={true}
             formats={{
-              eventTimeRangeFormat: () => null, // This disables the default time display
+              eventTimeRangeFormat: () => null,
             }}
             components={{
-              event: EventComponent,
+              event: (props) => (
+                <Event
+                  {...props}
+                  updateEnforced={updateEnforced}
+                  enforcedServiceSetups={enforcedServiceSetups}
+                />
+              ),
             }}
           />
         </div>

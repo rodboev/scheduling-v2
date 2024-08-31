@@ -8,7 +8,7 @@ import { Label } from '@/app/components/ui/label'
 import { Card, CardContent } from '@/app/components/ui/card'
 import { capitalize } from '@/app/utils/capitalize'
 
-export default function EventTooltip({ event, handleEnforceTechChange }) {
+export default function EventTooltip({ event, children }) {
   const [isOpen, setIsOpen] = useState(false)
   const timeoutRef = useRef(null)
   const [offset, setOffset] = useState(0)
@@ -27,8 +27,6 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
       setIsOpen(false)
     }, 300)
   }
-
-  const cursorY = e.clientY + window.scrollY
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -50,22 +48,7 @@ export default function EventTooltip({ event, handleEnforceTechChange }) {
         onMouseLeave={handleMouseLeave}
       >
         <div className="float-right mb-2 ml-4">
-          <Card className="mb-2 w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
-            <CardContent className="w-fit p-0">
-              <Label
-                htmlFor={`enforce-tech-${event.id}`}
-                className="flex cursor-pointer items-center space-x-3 p-3 px-4"
-              >
-                <Switch
-                  className="focus-visible:ring-transparent"
-                  checked={event.tech.enforced || false}
-                  onCheckedChange={(checked) => handleEnforceTechChange(event.id, checked)}
-                  id={`enforce-tech-${event.id}`}
-                />
-                <span className="whitespace-nowrap">Enforce Tech</span>
-              </Label>
-            </CardContent>
-          </Card>
+          {children}
           <div className="text-center">Tech: {event.tech.code || 'N/A'}</div>
         </div>
 
