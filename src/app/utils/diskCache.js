@@ -3,7 +3,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 
-const CACHE_FILE = path.join(process.cwd(), 'src', 'app', 'data', 'serviceSetups.json')
+const CACHE_FILE = path.join(process.cwd(), 'data', 'serviceSetups.json')
 const CACHE_VALIDITY_HOURS = 4
 
 function formatCacheAge(ageInHours) {

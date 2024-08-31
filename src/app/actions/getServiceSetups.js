@@ -1,7 +1,6 @@
-// src/app/api/services/route.js
+'use server'
 
-import { NextResponse } from 'next/server'
-import sql from 'msnodesqlv8'
+import sql from 'mssql/msnodesqlv8'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { parseTimeRange } from '@/app/utils/timeRange'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
@@ -127,52 +126,27 @@ function transformServiceSetup(setup) {
   }
 }
 
-export async function GET(request) {
-  const { searchParams } = new URL(request.url)
-
-  // Try to read from disk cache first
+export async function getServiceSetups() {
   let serviceSetups = await readFromDiskCache()
 
   if (!serviceSetups) {
     let pool
     try {
-      console.log('Fetching service setups from database...')
       pool = await sql.connect(config)
-
       serviceSetups = await runQuery(pool, BASE_QUERY)
-      console.log('Total service setups fetched:', serviceSetups.length)
-
-      // Transform all service setups immediately
       serviceSetups = serviceSetups.map(transformServiceSetup)
-      console.log('Transformed setups:', serviceSetups.length)
-
-      // Write all fetched and transformed data to disk cache
       await writeToDiskCache(serviceSetups)
     } catch (error) {
       console.error('Error fetching from database:', error)
-      return NextResponse.json(
-        { error: 'Internal Server Error', details: error.message, stack: error.stack },
-        { status: 500 },
-      )
+      throw error
     } finally {
-      if (pool) {
-        try {
-          await pool.close()
-          console.log('Database connection closed')
-        } catch (closeErr) {
-          console.error('Error closing database connection:', closeErr)
-        }
-      }
+      if (pool) await pool.close()
     }
-  } else {
-    console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
   if (ALLOWED_TECHS?.length > 0) {
-    return NextResponse.json(
-      serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code)),
-    )
+    return serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
   } else {
-    return NextResponse.json(serviceSetups)
+    return serviceSetups
   }
 }

@@ -2,20 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { fetchServiceSetups } from '@/app/utils/api'
-
-const ALLOWED_TECHS = [
-  'HUNTLEY E.',
-  'MADERA M.',
-  'VASTA RICK',
-  'CORA JOSE',
-  'RIVERS',
-  'BLAKAJ A.',
-  'LOPEZ A.',
-  'FORD J.',
-  'CAPPA T.',
-  'BAEZ MALIK',
-]
+import { getServiceSetups } from '@/app/actions/getServiceSetups'
 
 export const useServiceSetups = () => {
   const queryClient = useQueryClient()
@@ -27,11 +14,10 @@ export const useServiceSetups = () => {
     error,
   } = useQuery({
     queryKey: ['serviceSetups'],
-    queryFn: () => fetchServiceSetups(),
+    queryFn: () => getServiceSetups(),
     select: (data) => {
-      const filteredData = data.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
-      console.log('Filtered service setups:', filteredData.length)
-      return filteredData.map((setup) => ({
+      console.log('Filtered service setups:', data.length)
+      return data.map((setup) => ({
         ...setup,
         tech: {
           ...setup.tech,
