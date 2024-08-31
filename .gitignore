@@ -10,7 +10,8 @@
 /coverage
 
 # vite
-dist/
+ /dist
+ vite.config.*.timestamp-*
 
 # production
 /build
