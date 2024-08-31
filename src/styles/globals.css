@@ -21,7 +21,7 @@
       @apply border-border;
     }
     body {
-      @apply font-inter bg-background text-foreground;
+      @apply bg-background font-inter text-foreground;
     }
 
     --teal: 186 54% 20%;

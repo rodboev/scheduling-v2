@@ -1,4 +1,4 @@
-// app/layout.js
+// src/components/Providers.js
 
 'use client'
 

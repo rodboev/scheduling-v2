@@ -31,15 +31,17 @@
     "msnodesqlv8": "^4.2.1",
     "mssql": "^11.0.1",
     "odbc": "^2.4.9",
-    "react": "^19.0.0-rc-b57d2823-20240822",
+    "preact": "^10.23.2",
+    "preact-compat": "^3.19.0",
     "react-big-calendar": "^1.13.4",
-    "react-dom": "^19.0.0-rc-b57d2823-20240822",
     "react-error-boundary": "^4.0.13",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "tailwindcss-font-inter": "^3.1.0"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.9.0",
+    "@swc/core": "^1.7.22",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8",
@@ -52,6 +54,7 @@
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.6",
     "tailwindcss": "^3.4.10",
+    "unplugin-swc": "^1.5.1",
     "vite": "^5.4.2",
     "vite-plugin-api-routes": "^1.1.10"
   },

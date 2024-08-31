@@ -1,15 +1,32 @@
-import pluginReact from '@vitejs/plugin-react-swc'
+import preact from '@preact/preset-vite'
+import swc from 'unplugin-swc'
+import { pluginAPIRoutes as apiRoutes } from 'vite-plugin-api-routes'
 import { defineConfig } from 'vite'
-import { pluginAPIRoutes } from 'vite-plugin-api-routes'
-import tailwindcss from 'tailwindcss'
-import autoprefixer from 'autoprefixer'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [pluginReact(), pluginAPIRoutes({})],
+  plugins: [
+    preact(),
+    swc.vite({
+      jsc: {
+        transform: {
+          react: {
+            pragma: 'h',
+            pragmaFrag: 'Fragment',
+            importSource: 'preact',
+          },
+        },
+      },
+    }),
+    apiRoutes(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      react: 'preact/compat',
+      'react-dom/test-utils': 'preact/test-utils',
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime',
     },
   },
   server: {
@@ -20,13 +37,13 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['msnodesqlv8'],
-    include: ['vite-plugin-api-routes'],
+    include: ['preact', 'preact/hooks', 'vite-plugin-api-routes'],
   },
   build: {
     commonjsOptions: {
       exclude: ['msnodesqlv8'],
     },
-    minify: false,
+    minify: process.env.NODE_ENV === 'production',
     outDir: 'dist/public',
   },
   ssr: {
