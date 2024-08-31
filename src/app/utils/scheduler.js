@@ -192,44 +192,6 @@ function tryScheduleEventWithinWorkHours(
   return false
 }
 
-// Modify tryScheduleEvent to always schedule the event, even if it exceeds MAX_WORK_HOURS
-function tryScheduleEvent(event, techId, startTime, endTime, duration, techSchedules) {
-  if (!techSchedules[techId]) techSchedules[techId] = []
-
-  const schedule = techSchedules[techId]
-  let potentialStart = startTime
-
-  while (potentialStart.add(duration, 'second').isSameOrBefore(endTime)) {
-    const potentialEnd = potentialStart.add(duration, 'second')
-
-    if (
-      !schedule.some(
-        (existingEvent) =>
-          (potentialStart.isBefore(existingEvent.end) &&
-            potentialEnd.isAfter(existingEvent.start)) ||
-          potentialStart.isSame(existingEvent.start),
-      )
-    ) {
-      techSchedules[techId].push({
-        ...event,
-        start: potentialStart,
-        end: potentialEnd,
-      })
-      return true
-    }
-
-    potentialStart = potentialStart.add(1, 'minute')
-  }
-
-  // If we couldn't find a slot, schedule it at the original start time anyway
-  techSchedules[techId].push({
-    ...event,
-    start: startTime,
-    end: startTime.add(duration, 'second'),
-  })
-  return true
-}
-
 // Generate detailed summary
 function createScheduleSummary(techSchedules, unallocatedEvents) {
   let scheduleSummary = '\nSchedule Summary:\n\n'
