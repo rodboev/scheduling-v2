@@ -2,7 +2,6 @@
 const nextConfig = {
   experimental: {
     reactCompiler: true,
-    serverActions: true,
   },
   serverExternalPackages: ['mssql'],
   env: {
