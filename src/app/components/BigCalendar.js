@@ -6,21 +6,17 @@ import React, { useMemo } from 'react'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
-import UnallocatedEvents from '@/app/components/UnallocatedEvents'
-import Event from '@/app/components/Event'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
 import { useCalendarState } from '@/app/hooks/useCalendarState'
 import { useEventGeneration } from '@/app/hooks/useEventGeneration'
 
+import UnallocatedEvents from '@/app/components/UnallocatedEvents'
 import Header from '@/app/components/Header'
+import EnforceSwitch from '@/app/components/EnforceSwitch'
 import Logo from '@/app/components/Logo'
-import { Card, CardContent } from '@/app/components/ui/card'
-import { Switch } from '@/app/components/ui/switch'
-import { Label } from '@/app/components/ui/label'
+import Event from '@/app/components/Event'
 
 const localizer = dayjsLocalizer(dayjs)
-
-// src/app/components/BigCalendar.js
 
 export default function BigCalendar() {
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
@@ -51,14 +47,6 @@ export default function BigCalendar() {
     )
   }, [allocatedEvents, enforcedServiceSetups])
 
-  const handleEnforceServiceSetup = (id, checked) => {
-    updateEnforced(id, checked)
-  }
-
-  const handleEnforceAllServiceSetups = (checked) => {
-    updateAllEnforced(checked)
-  }
-
   return (
     <div className="flex h-screen">
       <div className="w-64 border-r">
@@ -66,22 +54,13 @@ export default function BigCalendar() {
       </div>
       <div className="flex flex-grow flex-col">
         <Header>
-          <Card className="w-fit overflow-hidden hover:border-neutral-300 hover:bg-neutral-100">
-            <CardContent className="p-0">
-              <Label
-                htmlFor="enforce-all-service-setups"
-                className="flex cursor-pointer items-center space-x-3 p-3 px-4"
-              >
-                <Switch
-                  className="focus-visible:ring-transparent"
-                  checked={allServiceSetupsEnforced}
-                  onCheckedChange={updateAllEnforced}
-                  id="enforce-all-service-setups"
-                />
-                <span>Enforce all techs</span>
-              </Label>
-            </CardContent>
-          </Card>
+          <EnforceSwitch
+            id="enforce-all-service-setups"
+            checked={allServiceSetupsEnforced}
+            onCheckedChange={updateAllEnforced}
+          >
+            Enforce all techs
+          </EnforceSwitch>
           <Logo />
         </Header>
         <div className="flex-grow p-4">
@@ -110,13 +89,22 @@ export default function BigCalendar() {
               eventTimeRangeFormat: () => null,
             }}
             components={{
-              event: (props) => (
-                <Event
-                  {...props}
-                  updateEnforced={updateEnforced}
-                  enforcedServiceSetups={enforcedServiceSetups}
-                />
-              ),
+              event: (props) => {
+                const setupId = props.event.id.split('-')[0]
+                const enforced = enforcedServiceSetups[setupId] ?? props.event.tech.enforced
+                return (
+                  <Event
+                    event={{
+                      ...props.event,
+                      tech: {
+                        ...props.event.tech,
+                        enforced: enforced,
+                      },
+                    }}
+                    updateEnforced={updateEnforced}
+                  />
+                )
+              },
             }}
           />
         </div>
