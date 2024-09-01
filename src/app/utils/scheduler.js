@@ -83,6 +83,8 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
 
   const scheduleSummary = createScheduleSummary(techSchedules, unallocatedEvents)
 
+  console.log(scheduleSummary)
+
   console.log(`Total scheduled events: ${scheduledEvents.length}`)
   console.log(`Total unallocated events: ${unallocatedEvents.length}`)
   console.log(`Total techs used: ${Object.keys(techSchedules).length}`)

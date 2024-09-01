@@ -95,7 +95,7 @@ export function parseTime(timeStr, defaultPeriod = null) {
   return totalSeconds
 }
 
-export function parseTimeRange(timeRangeStr, duration) {
+function oldParseTimeRange(timeRangeStr, duration) {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
     // console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
     return [null, null]
@@ -116,6 +116,22 @@ export function parseTimeRange(timeRangeStr, duration) {
   }
 
   return [startTime, endTime]
+}
+
+export const parseTimeRange = memoize(oldParseTimeRange)
+export const memoizedParseTimeRange = parseTimeRange
+
+function memoize(fn) {
+  const cache = new Map()
+  return function (...args) {
+    const key = JSON.stringify(args)
+    if (cache.has(key)) {
+      return cache.get(key)
+    }
+    const result = fn.apply(this, args)
+    cache.set(key, result)
+    return result
+  }
 }
 
 export function parseTimeRangeInterval(timeRangeStr) {
