@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocalStorage } from '@/app/hooks/useLocalStorage'
-import { getServiceSetups } from '@/app/actions/getServiceSetups'
+import axios from 'axios'
 
 export const useServiceSetups = () => {
   const queryClient = useQueryClient()
@@ -17,7 +17,7 @@ export const useServiceSetups = () => {
     error,
   } = useQuery({
     queryKey: ['serviceSetups'],
-    queryFn: () => getServiceSetups(),
+    queryFn: () => axios.get('api/services').then((res) => res.data),
     select: (data) => {
       console.log('Filtered service setups:', data.length)
       return data.map((setup) => ({
