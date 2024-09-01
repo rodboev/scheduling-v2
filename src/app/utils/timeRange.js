@@ -95,7 +95,7 @@ export function parseTime(timeStr, defaultPeriod = null) {
   return totalSeconds
 }
 
-export const parseTimeRange = memoize((timeRangeStr, duration) => {
+export const parseTimeRange = memoize((timeRangeStr, duration = 30) => {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
     return [null, null]
   }
@@ -113,11 +113,9 @@ export const parseTimeRange = memoize((timeRangeStr, duration) => {
       endTime %= 86400 // Wrap around if it exceeds 24 hours
     }
     return [startTime, endTime]
-  } else if (parts.length === 2) {
+  } else {
     // Time range input
     return parseTimeRangeInterval(timeRangeStr)
-  } else {
-    return [null, null]
   }
 })
 
@@ -138,17 +136,16 @@ function memoize(fn) {
 
 export function parseTimeRangeInterval(timeRangeStr) {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
-    // console.error(`Invalid timeRangeStr: ${timeRangeStr}`)
     return [null, null]
   }
 
-  const parts = timeRangeStr.split('-')
+  const parts = timeRangeStr.split('-').map((part) => part.trim())
+
   if (parts.length !== 2) {
-    // console.error(`Invalid time range format: ${timeRangeStr}`)
     return [null, null]
   }
 
-  const [startStr, endStr] = parts.map((str) => str.trim())
+  const [startStr, endStr] = parts
 
   // Determine if the time strings contain period indicators
   const startHasPeriod =
@@ -156,19 +153,14 @@ export function parseTimeRangeInterval(timeRangeStr) {
   const endHasPeriod = endStr.toUpperCase().includes('A') || endStr.toUpperCase().includes('P')
 
   // If the end time has a period and the start time does not, use the end time's period for the start time
-  let defaultPeriod
-  if (!startHasPeriod && endHasPeriod) {
-    defaultPeriod = endStr.toUpperCase().includes('P') ? 'PM' : 'AM'
-  } else {
-    defaultPeriod = 'AM'
-  }
+  let defaultPeriod =
+    !startHasPeriod && endHasPeriod ? (endStr.toUpperCase().includes('P') ? 'PM' : 'AM') : 'AM'
 
   // Parse start and end times with the determined default period
   let startTime = parseTime(startStr, defaultPeriod)
   let endTime = parseTime(endStr, 'AM')
 
   if (startTime === null || endTime === null) {
-    console.log(`Error parsing time range: '${timeRangeStr}'`)
     return [null, null]
   }
 
@@ -177,14 +169,12 @@ export function parseTimeRangeInterval(timeRangeStr) {
     const startPeriod = startStr.toUpperCase().includes('P') ? 'PM' : 'AM'
     const endPeriod = endStr.toUpperCase().includes('P') ? 'PM' : 'AM'
     if (startPeriod === endPeriod && endTime <= startTime) {
-      // console.error(`Invalid time range: '${timeRangeStr}'`)
       return [null, null]
     }
   }
 
   // If end time is earlier than start time, it means the service spans across midnight
   if (endTime <= startTime) {
-    // Special handling for cases where end time is AM and earlier than start time
     if (
       endStr.toUpperCase().includes('A') &&
       !startStr.toUpperCase().includes('AM') &&
@@ -199,3 +189,4 @@ export function parseTimeRangeInterval(timeRangeStr) {
 
   return [startTime, endTime]
 }
+
