@@ -1,5 +1,5 @@
 import { dayjsInstance as dayjs } from './dayjs'
-import { parseTime, parseTimeRange, memoizedParseTimeRange } from './timeRange'
+import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
 const MAX_WORK_HOURS = 8 * 60 * 60 // 8 hours in seconds
 const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
@@ -88,27 +88,6 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   return { scheduledEvents, unscheduledEvents, scheduleSummary }
 }
 
-function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
-  const techId = event.tech.code
-  if (!techSchedules[techId]) techSchedules[techId] = []
-
-  const preferredTime = parseTime(event.time.preferred)
-  const startTime = dayjs(event.start).startOf('day').add(preferredTime, 'second')
-  const endTime = startTime.add(event.time.duration, 'minute')
-
-  techSchedules[techId].push({
-    ...event,
-    start: startTime,
-    end: endTime,
-  })
-
-  const eventDate = startTime.format('YYYY-MM-DD')
-  const eventKey = `${event.id}-${eventDate}`
-  scheduledEventIdsByDate.set(eventKey, techId)
-
-  return true
-}
-
 function scheduleEventWithRespectToWorkHours(
   event,
   techId,
@@ -154,6 +133,27 @@ function scheduleEventWithRespectToWorkHours(
   return false
 }
 
+function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
+  const techId = event.tech.code
+  if (!techSchedules[techId]) techSchedules[techId] = []
+
+  const preferredTime = parseTime(event.time.preferred)
+  const startTime = dayjs(event.start).startOf('day').add(preferredTime, 'second')
+  const endTime = startTime.add(event.time.duration, 'minute')
+
+  techSchedules[techId].push({
+    ...event,
+    start: startTime,
+    end: endTime,
+  })
+
+  const eventDate = startTime.format('YYYY-MM-DD')
+  const eventKey = `${event.id}-${eventDate}`
+  scheduledEventIdsByDate.set(eventKey, techId)
+
+  return true
+}
+
 function isOverlapping(schedule, start, end) {
   return schedule.some(
     (existingEvent) =>
@@ -163,7 +163,13 @@ function isOverlapping(schedule, start, end) {
 }
 
 function isWithinWorkHours(schedule, start, end) {
-  const dayEvents = [...schedule, { start, end }].filter((e) => e.start.isSame(start, 'day'))
+  const dayEvents = [
+    ...schedule,
+    {
+      start,
+      end,
+    },
+  ].filter((e) => e.start.isSame(start, 'day'))
   dayEvents.sort((a, b) => a.start - b.start)
   const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'second')
   return totalDuration <= MAX_WORK_HOURS
@@ -203,7 +209,7 @@ function createScheduleSummary(techSchedules, unallocatedEvents) {
   if (unallocatedEvents.length > 0) {
     scheduleSummary += 'Unallocated services:\n'
     unallocatedEvents.forEach((event) => {
-      const timeWindow = `${dayjs(event.time.range[0], 'HH:mm:ss').format('h:mma')}-${dayjs(event.time.range[1], 'HH:mm:ss').format('h:mma')}`
+      const timeWindow = formatTimeRange(event.time.range[0], event.time.range[1])
       scheduleSummary += `- ${timeWindow} time window, ${event.company} (id: ${event.id})\n`
     })
     hasPrintedEvents = true
