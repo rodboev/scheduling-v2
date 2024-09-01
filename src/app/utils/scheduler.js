@@ -1,5 +1,3 @@
-// leaves none, space on 2 and 4
-
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
@@ -35,9 +33,13 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
     } else {
       // Try to schedule with existing techs
       for (const techId in techSchedules) {
-        if (
-          scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
-        ) {
+        const result = scheduleEventWithRespectToWorkHours(
+          event,
+          techId,
+          techSchedules,
+          scheduledEventIdsByDate,
+        )
+        if (result.scheduled) {
           scheduled = true
           break
         }
@@ -47,12 +49,13 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
       if (!scheduled) {
         const newTechId = `Tech ${nextGenericTechId++}`
         techSchedules[newTechId] = []
-        scheduled = scheduleEventWithRespectToWorkHours(
+        const result = scheduleEventWithRespectToWorkHours(
           event,
           newTechId,
           techSchedules,
           scheduledEventIdsByDate,
         )
+        scheduled = result.scheduled
       }
     }
 
@@ -125,133 +128,97 @@ function scheduleEventWithRespectToWorkHours(
         const eventKey = `${event.id}-${eventDate}`
         scheduledEventIdsByDate.set(eventKey, techId)
 
-        return true
+        return { scheduled: true, reason: null }
       } else {
-        return false
+        return { scheduled: false, reason: 'Exceeds 8 hour work max' }
       }
     }
 
     potentialStart = potentialStart.add(TIME_INCREMENT, 'second')
   }
 
-  return false
+  return { scheduled: false, reason: 'No available time slot within the specified range' }
 }
 
 function optimizeSchedule(techSchedules, unscheduledEvents, scheduledEventIdsByDate) {
-  let changed = true
-  while (changed) {
-    changed = false
+  // Sort techs by total scheduled time (ascending)
+  const sortedTechs = Object.keys(techSchedules).sort((a, b) => {
+    const totalTimeA = getTotalScheduledTime(techSchedules[a])
+    const totalTimeB = getTotalScheduledTime(techSchedules[b])
+    return totalTimeA - totalTimeB
+  })
 
-    // Sort techs by total scheduled time (ascending)
-    const sortedTechs = Object.keys(techSchedules).sort((a, b) => {
-      return getTotalScheduledTime(techSchedules[a]) - getTotalScheduledTime(techSchedules[b])
-    })
+  // Try to move events from more occupied techs to less occupied ones
+  for (let i = sortedTechs.length - 1; i > 0; i--) {
+    const sourceTechId = sortedTechs[i]
+    const sourceSchedule = techSchedules[sourceTechId]
 
-    // Try to move events from more occupied techs to less occupied ones
-    for (let i = sortedTechs.length - 1; i > 0; i--) {
-      const sourceTechId = sortedTechs[i]
-      const sourceSchedule = techSchedules[sourceTechId]
+    for (let j = 0; j < i; j++) {
+      const targetTechId = sortedTechs[j]
+      const targetSchedule = techSchedules[targetTechId]
 
-      for (let j = 0; j < i; j++) {
-        const targetTechId = sortedTechs[j]
-        const targetSchedule = techSchedules[targetTechId]
-
-        for (const event of sourceSchedule) {
-          if (
-            tryMoveEvent(event, sourceTechId, targetTechId, techSchedules, scheduledEventIdsByDate)
-          ) {
-            changed = true
-            break
-          }
+      for (const event of sourceSchedule) {
+        const result = tryMoveEvent(
+          event,
+          sourceTechId,
+          targetTechId,
+          techSchedules,
+          scheduledEventIdsByDate,
+        )
+        if (result) {
+          // Event was moved successfully
+          break
         }
-        if (changed) break
-      }
-      if (changed) break
-    }
-
-    // Try to schedule unscheduled events
-    if (!changed) {
-      for (const event of unscheduledEvents) {
-        for (const techId of sortedTechs) {
-          if (
-            scheduleEventWithRespectToWorkHours(
-              event,
-              techId,
-              techSchedules,
-              scheduledEventIdsByDate,
-            )
-          ) {
-            unscheduledEvents = unscheduledEvents.filter((e) => e.id !== event.id)
-            changed = true
-            break
-          }
-        }
-        if (changed) break
       }
     }
+  }
 
-    // If still not changed, try to move events to create space for unscheduled events
-    if (!changed && unscheduledEvents.length > 0) {
-      changed = tryCreateSpaceForUnscheduledEvents(
-        unscheduledEvents,
+  // Try to schedule remaining unscheduled events
+  for (const event of unscheduledEvents) {
+    for (const techId of sortedTechs) {
+      const result = scheduleEventWithRespectToWorkHours(
+        event,
+        techId,
         techSchedules,
         scheduledEventIdsByDate,
       )
+      if (result.scheduled) {
+        unscheduledEvents = unscheduledEvents.filter((e) => e.id !== event.id)
+        break
+      }
     }
   }
 
-  // Add reasons for unscheduled events
-  unscheduledEvents.forEach((event) => {
-    event.reason = 'Could not find a suitable time slot within work hours'
-  })
+  // Optimize start times for events with flexible time ranges
+  for (const techId in techSchedules) {
+    optimizeEventStartTimes(techSchedules[techId])
+  }
+}
+
+function getTotalScheduledTime(schedule) {
+  return schedule.reduce((total, event) => total + event.time.duration, 0)
 }
 
 function tryMoveEvent(event, sourceTechId, targetTechId, techSchedules, scheduledEventIdsByDate) {
-  const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-    event.time.originalRange,
-    event.time.duration,
+  const result = scheduleEventWithRespectToWorkHours(
+    event,
+    targetTechId,
+    techSchedules,
+    scheduledEventIdsByDate,
   )
-  const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-  const latestStart = dayjs(event.start)
-    .startOf('day')
-    .add(rangeEnd, 'second')
-    .subtract(event.time.duration, 'minute')
-
-  const targetSchedule = techSchedules[targetTechId]
-  let potentialStart = earliestStart
-
-  while (potentialStart.isSameOrBefore(latestStart)) {
-    const potentialEnd = potentialStart.add(event.time.duration, 'minute')
-
-    if (
-      !isOverlapping(targetSchedule, potentialStart, potentialEnd) &&
-      isWithinWorkHours(targetSchedule, potentialStart, potentialEnd)
-    ) {
-      // Move the event
-      techSchedules[sourceTechId] = techSchedules[sourceTechId].filter((e) => e.id !== event.id)
-      event.start = potentialStart
-      event.end = potentialEnd
-      targetSchedule.push(event)
-
-      const eventDate = event.start.format('YYYY-MM-DD')
-      const eventKey = `${event.id}-${eventDate}`
-      scheduledEventIdsByDate.set(eventKey, targetTechId)
-
-      return true
-    }
-
-    potentialStart = potentialStart.add(TIME_INCREMENT, 'second')
+  if (result.scheduled) {
+    // Remove the event from the source tech
+    techSchedules[sourceTechId] = techSchedules[sourceTechId].filter((e) => e.id !== event.id)
+    return true
   }
-
   return false
 }
 
-function tryCreateSpaceForUnscheduledEvents(
-  unscheduledEvents,
-  techSchedules,
-  scheduledEventIdsByDate,
-) {
-  for (const event of unscheduledEvents) {
+function optimizeEventStartTimes(schedule) {
+  schedule.sort((a, b) => a.start - b.start)
+
+  for (let i = 0; i < schedule.length; i++) {
+    const event = schedule[i]
     const [rangeStart, rangeEnd] = memoizedParseTimeRange(
       event.time.originalRange,
       event.time.duration,
@@ -262,48 +229,17 @@ function tryCreateSpaceForUnscheduledEvents(
       .add(rangeEnd, 'second')
       .subtract(event.time.duration, 'minute')
 
-    for (const techId in techSchedules) {
-      const schedule = techSchedules[techId]
-      const conflictingEvents = schedule.filter(
-        (e) =>
-          (e.start.isBefore(latestStart) && e.end.isAfter(earliestStart)) ||
-          (e.start.isSame(earliestStart) && e.end.isSame(latestStart)),
-      )
+    let optimalStart = earliestStart
+    if (i > 0) {
+      const previousEventEnd = schedule[i - 1].end
+      optimalStart = dayjs.max(earliestStart, previousEventEnd)
+    }
 
-      for (const conflictingEvent of conflictingEvents) {
-        for (const otherTechId in techSchedules) {
-          if (otherTechId !== techId) {
-            if (
-              tryMoveEvent(
-                conflictingEvent,
-                techId,
-                otherTechId,
-                techSchedules,
-                scheduledEventIdsByDate,
-              )
-            ) {
-              if (
-                scheduleEventWithRespectToWorkHours(
-                  event,
-                  techId,
-                  techSchedules,
-                  scheduledEventIdsByDate,
-                )
-              ) {
-                unscheduledEvents = unscheduledEvents.filter((e) => e.id !== event.id)
-                return true
-              }
-            }
-          }
-        }
-      }
+    if (optimalStart.isBefore(latestStart)) {
+      event.start = optimalStart
+      event.end = optimalStart.add(event.time.duration, 'minute')
     }
   }
-  return false
-}
-
-function getTotalScheduledTime(schedule) {
-  return schedule.reduce((total, event) => total + event.time.duration, 0)
 }
 
 function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
@@ -383,11 +319,7 @@ function createScheduleSummary(techSchedules, unallocatedEvents) {
     scheduleSummary += 'Unallocated services:\n'
     unallocatedEvents.forEach((event) => {
       const timeWindow = formatTimeRange(event.time.range[0], event.time.range[1])
-      scheduleSummary += `- ${timeWindow} time window, ${event.company} (id: ${event.id})`
-      if (event.reason) {
-        scheduleSummary += ` (Reason: ${event.reason})`
-      }
-      scheduleSummary += '\n'
+      scheduleSummary += `- ${timeWindow} time window, ${event.company} (id: ${event.id})\n`
     })
     hasPrintedEvents = true
   }
