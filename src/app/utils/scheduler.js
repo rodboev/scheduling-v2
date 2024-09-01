@@ -13,71 +13,50 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   let nextGenericTechId = 1
   let scheduledEventIdsByDate = new Map()
 
-  // Sort events by time window size (ascending) and duration (descending)
-  console.time('Sorting events')
-  events.sort((a, b) => {
+  // Separate enforced and unenforced events
+  const enforcedEvents = events.filter((event) => event.tech.enforced)
+  const unenforcedEvents = events.filter((event) => !event.tech.enforced)
+
+  // Schedule enforced events first
+  console.time('Enforced event scheduling')
+  enforcedEvents.forEach((event) => {
+    scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
+  })
+  console.timeEnd('Enforced event scheduling')
+
+  // Sort unenforced events by time window size (ascending) and duration (descending)
+  console.time('Sorting unenforced events')
+  unenforcedEvents.sort((a, b) => {
     const aWindow = memoizedParseTimeRange(a.time.originalRange, a.time.duration)
     const bWindow = memoizedParseTimeRange(b.time.originalRange, b.time.duration)
     const aWindowSize = aWindow[1] - aWindow[0]
     const bWindowSize = bWindow[1] - bWindow[0]
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
-  console.timeEnd('Sorting events')
+  console.timeEnd('Sorting unenforced events')
 
-  // Function to attempt scheduling an event
-  console.time('Initial scheduling')
-  const attemptSchedule = (event) => {
-    if (event.tech.enforced) {
-      return scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
-    } else {
-      // Try to schedule with existing generic Techs
-      for (const techId in techSchedules) {
-        if (
-          techId.startsWith('Tech') &&
-          scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
-        ) {
-          return true
-        }
+  // Schedule unenforced events
+  console.time('Unenforced event scheduling')
+  unenforcedEvents.forEach((event) => {
+    let scheduled = false
+    for (const techId in techSchedules) {
+      if (
+        techId.startsWith('Tech') &&
+        scheduleEventWithRespectToWorkHours(event, techId, techSchedules, scheduledEventIdsByDate)
+      ) {
+        scheduled = true
+        break
       }
-
-      // If not scheduled with existing Techs, create a new Tech and try again
-      const newGenericTechId = `Tech ${nextGenericTechId++}`
-      techSchedules[newGenericTechId] = []
-      return scheduleEventWithRespectToWorkHours(
-        event,
-        newGenericTechId,
-        techSchedules,
-        scheduledEventIdsByDate,
-      )
     }
-  }
-
-  // Schedule all events
-  events.forEach(attemptSchedule)
-  console.timeEnd('Initial scheduling')
-
-  // Check for any remaining unallocated events
-  let unallocatedEvents = events.filter((event) => {
-    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
-    const eventKey = `${event.id}-${eventDate}`
-    return !scheduledEventIdsByDate.has(eventKey)
+    if (!scheduled) {
+      const newTechId = `Tech ${nextGenericTechId++}`
+      techSchedules[newTechId] = []
+      scheduleEventWithRespectToWorkHours(event, newTechId, techSchedules, scheduledEventIdsByDate)
+    }
   })
-
-  console.time('Unallocated events scheduling')
-  // Attempt to schedule unallocated events
-  while (unallocatedEvents.length > 0) {
-    const initialUnallocatedCount = unallocatedEvents.length
-    unallocatedEvents = unallocatedEvents.filter((event) => !attemptSchedule(event))
-
-    if (unallocatedEvents.length === initialUnallocatedCount) {
-      console.warn(`Unable to schedule ${unallocatedEvents.length} events:`, unallocatedEvents)
-      break
-    }
-  }
-  console.timeEnd('Unallocated events scheduling')
+  console.timeEnd('Unenforced event scheduling')
 
   // Convert techSchedules to scheduledEvents format
-  console.time('Creating result')
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
     schedule.map((event) => ({
       ...event,
@@ -86,20 +65,24 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
       resourceId: techId,
     })),
   )
-  console.timeEnd('Creating result')
 
-  const scheduleSummary = createScheduleSummary(techSchedules, unallocatedEvents)
+  const unscheduledEvents = events.filter((event) => {
+    const eventDate = dayjs(event.start).startOf('day').format('YYYY-MM-DD')
+    return !scheduledEventIdsByDate.has(`${event.id}-${eventDate}`)
+  })
+
+  const scheduleSummary = createScheduleSummary(techSchedules, unscheduledEvents)
 
   console.timeEnd('Total scheduling time')
 
   console.log(scheduleSummary)
-
   console.log(`Scheduling completed:`)
+  console.log(`- Total events: ${events.length}`)
   console.log(`- Total scheduled events: ${scheduledEvents.length}`)
-  console.log(`- Total unallocated events: ${unallocatedEvents.length}`)
+  console.log(`- Total unscheduled events: ${unscheduledEvents.length}`)
   console.log(`- Total techs used: ${Object.keys(techSchedules).length}`)
 
-  return { scheduledEvents, unscheduledEvents: unallocatedEvents, scheduleSummary }
+  return { scheduledEvents, unscheduledEvents, scheduleSummary }
 }
 
 function scheduleEventWithRespectToWorkHours(
@@ -187,9 +170,11 @@ function getDayEvents(schedule, day) {
 function isWithinWorkHours(events) {
   if (events.length === 0) return true
   events.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
-  return (
-    dayjs(events[events.length - 1].end).diff(dayjs(events[0].start), 'second') <= MAX_WORK_HOURS
+  const totalDuration = events.reduce(
+    (sum, event) => sum + dayjs(event.end).diff(event.start, 'second'),
+    0,
   )
+  return totalDuration <= MAX_WORK_HOURS
 }
 
 function scheduleNonEnforcedEvent(
