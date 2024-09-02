@@ -6,7 +6,7 @@ import {
   dateFromSecondsSinceMidnight,
 } from '@/app/utils/dayjs'
 
-function formatTime(input) {
+export function formatTime(input) {
   let date
   if (typeof input === 'number') {
     date = dateFromSecondsSinceMidnight(input)
@@ -189,4 +189,3 @@ export function parseTimeRangeInterval(timeRangeStr) {
 
   return [startTime, endTime]
 }
-

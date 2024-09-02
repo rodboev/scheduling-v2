@@ -1,6 +1,12 @@
 import { dayjsInstance as dayjs } from './dayjs'
 import PriorityQueue from 'priorityqueuejs'
-import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
+import {
+  parseTime,
+  parseTimeRange,
+  memoizedParseTimeRange,
+  formatTimeRange,
+  formatTime,
+} from './timeRange'
 
 const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
 const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
@@ -41,18 +47,42 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
     } else {
-      scheduled = scheduleEventWithBacktracking(
-        event,
-        techSchedules,
-        scheduledEventIdsByDate,
-        nextGenericTechId,
-      )
-      if (scheduled) {
-        nextGenericTechId =
-          Math.max(
-            nextGenericTechId,
-            ...Object.keys(techSchedules).map((id) => parseInt(id.split(' ')[1] || 0)),
-          ) + 1
+      for (const techId in techSchedules) {
+        const result = findBestSlotForEvent(event, techId, techSchedules)
+        if (result.scheduled) {
+          const newEvent = {
+            ...event,
+            start: result.startTime.toISOString(),
+            end: result.startTime.add(event.time.duration, 'minute').toISOString(),
+          }
+          if (!wouldViolate8HourLimit(newEvent, techSchedules[techId])) {
+            techSchedules[techId].push(newEvent)
+            const eventDate = result.startTime.format('YYYY-MM-DD')
+            const eventKey = `${event.id}-${eventDate}`
+            scheduledEventIdsByDate.set(eventKey, techId)
+            scheduled = true
+            break
+          }
+        }
+      }
+
+      if (!scheduled) {
+        const newTechId = `Tech ${nextGenericTechId}`
+        techSchedules[newTechId] = []
+        const result = findBestSlotForEvent(event, newTechId, techSchedules)
+        if (result.scheduled) {
+          const newEvent = {
+            ...event,
+            start: result.startTime.toISOString(),
+            end: result.startTime.add(event.time.duration, 'minute').toISOString(),
+          }
+          techSchedules[newTechId].push(newEvent)
+          const eventDate = result.startTime.format('YYYY-MM-DD')
+          const eventKey = `${event.id}-${eventDate}`
+          scheduledEventIdsByDate.set(eventKey, newTechId)
+          scheduled = true
+          nextGenericTechId++
+        }
       }
     }
 
@@ -212,42 +242,48 @@ function findBestSlotForEvent(event, techId, techSchedules) {
     event.time.duration,
   )
   const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-  const latestStart = dayjs(event.start)
-    .startOf('day')
-    .add(rangeEnd, 'second')
-    .subtract(event.time.duration, 'minute')
+  const latestStart = dayjs(event.start).startOf('day').add(rangeEnd, 'second')
+  const latestEnd = latestStart.add(event.time.duration, 'minute')
 
   const techSchedule = techSchedules[techId] || []
-  const gaps = findScheduleGaps(techSchedule, earliestStart, latestStart)
+  let bestSlot = null
+  let lowestWorkload = Infinity
 
-  for (const gap of gaps) {
-    if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      const potentialStartTime = gap.start
-      const potentialEndTime = potentialStartTime.add(event.time.duration, 'minute')
+  for (
+    let time = earliestStart;
+    time.isBefore(latestStart);
+    time = time.add(TIME_INCREMENT, 'second')
+  ) {
+    const potentialEnd = time.add(event.time.duration, 'minute')
+    if (potentialEnd.isAfter(latestEnd)) break
 
-      // Check if this event would exceed the 8-hour limit in a 24-hour period
-      const dayStart = potentialStartTime.startOf('day')
-      const dayEnd = dayStart.add(1, 'day')
-      const dayEvents = techSchedule.filter(
-        (e) =>
-          dayjs(e.start).isBetween(dayStart, dayEnd, null, '[]') ||
-          dayjs(e.end).isBetween(dayStart, dayEnd, null, '[]'),
-      )
+    const conflictingEvents = techSchedule.filter(
+      (e) => dayjs(e.end).isAfter(time) && dayjs(e.start).isBefore(potentialEnd),
+    )
 
-      const totalWorkMinutes =
-        dayEvents.reduce((total, e) => {
-          const eventStart = dayjs.max(dayjs(e.start), dayStart)
-          const eventEnd = dayjs.min(dayjs(e.end), dayEnd)
-          return total + eventEnd.diff(eventStart, 'minute')
-        }, 0) + event.time.duration
-
-      if (totalWorkMinutes <= MAX_WORK_HOURS) {
-        return {
-          scheduled: true,
-          startTime: potentialStartTime,
-          workload: calculateWorkload(techSchedule, potentialStartTime, potentialEndTime),
-        }
+    if (conflictingEvents.length === 0) {
+      const potentialEvent = {
+        ...event,
+        start: time.toISOString(),
+        end: potentialEnd.toISOString(),
       }
+      if (wouldViolate8HourLimit(potentialEvent, techSchedule)) {
+        continue // Skip this slot as it would violate the 8-hour limit
+      }
+
+      const workload = calculateWorkload(techSchedule, time)
+      if (workload < lowestWorkload) {
+        lowestWorkload = workload
+        bestSlot = { startTime: time, workload }
+      }
+    }
+  }
+
+  if (bestSlot) {
+    return {
+      scheduled: true,
+      startTime: bestSlot.startTime,
+      workload: bestSlot.workload,
     }
   }
 
@@ -255,8 +291,33 @@ function findBestSlotForEvent(event, techId, techSchedules) {
     scheduled: false,
     startTime: null,
     workload: Infinity,
-    reason: `No suitable time slot found between ${earliestStart.format('HH:mm')} and ${latestStart.format('HH:mm')} within 8-hour work limit`,
+    reason: `No suitable time slot found between ${formatTime(earliestStart)} and ${formatTime(latestEnd)} within 8-hour work limit`,
   }
+}
+
+function wouldViolate8HourLimit(event, techSchedule, startTime) {
+  const eventStart = startTime || dayjs(event.start)
+  const eventEnd = eventStart.add(event.time.duration, 'minute')
+  const dayStart = eventStart.startOf('day')
+  const dayEnd = dayStart.add(1, 'day')
+
+  const relevantEvents = [
+    ...techSchedule.filter(
+      (e) => dayjs(e.start).isBefore(dayEnd) && dayjs(e.end).isAfter(dayStart),
+    ),
+    { start: eventStart.toISOString(), end: eventEnd.toISOString() },
+  ].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+
+  if (relevantEvents.length === 0) {
+    return false
+  }
+
+  const firstEventStart = dayjs(relevantEvents[0].start)
+  const lastEventEnd = dayjs(relevantEvents[relevantEvents.length - 1].end)
+
+  const totalSpan = lastEventEnd.diff(firstEventStart, 'hour', true)
+
+  return totalSpan > 8
 }
 
 function renameGenericResources(techSchedules) {
