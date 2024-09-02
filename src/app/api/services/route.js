@@ -7,16 +7,26 @@ import { parseTimeRange } from '@/app/utils/timeRange'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 
 const ALLOWED_TECHS = [
-  'HUNTLEY E.',
-  'MADERA M.',
-  'VASTA RICK',
-  'CORA JOSE',
-  'RIVERS',
-  'BLAKAJ A.',
-  'LOPEZ A.',
-  'FORD J.',
-  'CAPPA T.',
+  'BELTRAN',
   'BAEZ MALIK',
+  'BLAKAJ A.',
+  'CAPALDI J.',
+  'CAPPA T.',
+  'CHIN SAU',
+  'CORA JOSE',
+  'CRUZ N.',
+  'FERNANDEZ',
+  'GHANIM MO',
+  'GUITEREZ O',
+  'FORD J.',
+  'HARRIS',
+  'HUNTLEY E.',
+  'JOHNI',
+  'JONES H.',
+  'LOPEZ A.',
+  'MADERA M.',
+  'RIVERS',
+  'VASTA RICK',
 ]
 
 sql.driver = 'FreeTDS'

@@ -71,7 +71,6 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
 
   console.timeEnd('Scheduling events')
 
-  // Rename generic resources
   renameGenericResources(techSchedules)
 
   // Convert techSchedules to scheduledEvents format
@@ -84,16 +83,9 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
     })),
   )
 
-  const scheduleSummary = createScheduleSummary(techSchedules, unscheduledEvents)
-
   console.timeEnd('Total scheduling time')
 
-  console.log(scheduleSummary)
-  console.log(`Scheduling completed:`)
-  console.log(`- Total events: ${events.length}`)
-  console.log(`- Total scheduled events: ${scheduledEvents.length}`)
-  console.log(`- Total unscheduled events: ${unscheduledEvents.length}`)
-  console.log(`- Total techs used: ${Object.keys(techSchedules).length}`)
+  printSummary(techSchedules, unscheduledEvents)
 
   return {
     scheduledEvents,
@@ -102,7 +94,6 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
       start: new Date(event.start),
       end: new Date(event.end),
     })),
-    scheduleSummary,
   }
 }
 
@@ -115,6 +106,7 @@ function tryScheduleUnscheduledEvents(
   const remainingUnscheduled = []
   for (const event of unscheduledEvents) {
     let scheduled = false
+    let reason = ''
 
     // Try to schedule with existing techs
     for (const techId in techSchedules) {
@@ -130,6 +122,8 @@ function tryScheduleUnscheduledEvents(
         const eventKey = `${event.id}-${eventDate}`
         scheduledEventIdsByDate.set(eventKey, techId)
         break
+      } else {
+        reason = result.reason || 'No suitable time slot found'
       }
     }
 
@@ -137,22 +131,24 @@ function tryScheduleUnscheduledEvents(
     if (!scheduled) {
       const newTechId = `Tech ${nextGenericTechId++}`
       techSchedules[newTechId] = []
-      const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-        event.time.originalRange,
-        event.time.duration,
-      )
-      const startTime = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-      const endTime = startTime.add(event.time.duration, 'minute')
-      const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
-      addEvent(techSchedules[newTechId], scheduledEvent)
+      const result = findBestSlotForEvent(event, newTechId, techSchedules)
+      if (result.scheduled) {
+        const startTime = result.startTime
+        const endTime = startTime.add(event.time.duration, 'minute')
+        const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
+        addEvent(techSchedules[newTechId], scheduledEvent)
 
-      const eventDate = startTime.format('YYYY-MM-DD')
-      const eventKey = `${event.id}-${eventDate}`
-      scheduledEventIdsByDate.set(eventKey, newTechId)
-      scheduled = true
+        const eventDate = startTime.format('YYYY-MM-DD')
+        const eventKey = `${event.id}-${eventDate}`
+        scheduledEventIdsByDate.set(eventKey, newTechId)
+        scheduled = true
+      } else {
+        reason = result.reason
+      }
     }
 
     if (!scheduled) {
+      event.reason = reason
       remainingUnscheduled.push(event)
     }
   }
@@ -226,14 +222,31 @@ function findBestSlotForEvent(event, techId, techSchedules) {
 
   for (const gap of gaps) {
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      return {
-        scheduled: true,
-        startTime: gap.start,
-        workload: calculateWorkload(
-          techSchedule,
-          gap.start,
-          gap.start.add(event.time.duration, 'minute'),
-        ),
+      const potentialStartTime = gap.start
+      const potentialEndTime = potentialStartTime.add(event.time.duration, 'minute')
+
+      // Check if this event would exceed the 8-hour limit in a 24-hour period
+      const dayStart = potentialStartTime.startOf('day')
+      const dayEnd = dayStart.add(1, 'day')
+      const dayEvents = techSchedule.filter(
+        (e) =>
+          dayjs(e.start).isBetween(dayStart, dayEnd, null, '[]') ||
+          dayjs(e.end).isBetween(dayStart, dayEnd, null, '[]'),
+      )
+
+      const totalWorkMinutes =
+        dayEvents.reduce((total, e) => {
+          const eventStart = dayjs.max(dayjs(e.start), dayStart)
+          const eventEnd = dayjs.min(dayjs(e.end), dayEnd)
+          return total + eventEnd.diff(eventStart, 'minute')
+        }, 0) + event.time.duration
+
+      if (totalWorkMinutes <= MAX_WORK_HOURS) {
+        return {
+          scheduled: true,
+          startTime: potentialStartTime,
+          workload: calculateWorkload(techSchedule, potentialStartTime, potentialEndTime),
+        }
       }
     }
   }
@@ -242,6 +255,7 @@ function findBestSlotForEvent(event, techId, techSchedules) {
     scheduled: false,
     startTime: null,
     workload: Infinity,
+    reason: `No suitable time slot found between ${earliestStart.format('HH:mm')} and ${latestStart.format('HH:mm')} within 8-hour work limit`,
   }
 }
 
@@ -394,24 +408,21 @@ function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
   return true
 }
 
-// Generate detailed summary
-function createScheduleSummary(techSchedules, unallocatedEvents) {
-  let scheduleSummary = '\nSchedule Summary:\n\n'
+function printSummary(techSchedules, unscheduledEvents) {
+  let scheduleSummary = 'Schedule Summary:\n\n'
   let hasPrintedEvents = false
 
-  // Scheduled events
   Object.entries(techSchedules).forEach(([techId, schedule]) => {
-    if (schedule.length === 0) return // Skip techs with no events
-
     let techTotal = 0
     let techSummary = `${techId}:\n`
 
     schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
     schedule.forEach((event) => {
+      const date = ensureDayjs(event.start).format('M/D')
       const start = ensureDayjs(event.start).format('h:mma')
       const end = ensureDayjs(event.end).format('h:mma')
-      techSummary += `- ${start}-${end}, ${event.company} (id: ${event.id})\n`
+      techSummary += `- ${date}, ${start}-${end}, ${event.company} (id: ${event.id})\n`
       techTotal += event.time.duration
     })
 
@@ -425,14 +436,17 @@ function createScheduleSummary(techSchedules, unallocatedEvents) {
   })
 
   // Unallocated events
-  if (unallocatedEvents.length > 0) {
+  if (unscheduledEvents.length > 0) {
     scheduleSummary += 'Unallocated services:\n'
-    unallocatedEvents.forEach((event) => {
+    unscheduledEvents.forEach((event) => {
+      const date = ensureDayjs(event.start).format('M/D')
       const timeWindow = formatTimeRange(event.time.range[0], event.time.range[1])
-      scheduleSummary += `- ${timeWindow} time window, ${event.company} (id: ${event.id})\n`
+      scheduleSummary += `- ${date}, ${timeWindow} time window, ${event.company} (id: ${event.id}), Reason: ${event.reason}\n`
     })
     hasPrintedEvents = true
   }
 
-  return hasPrintedEvents ? scheduleSummary : ''
+  if (hasPrintedEvents) {
+    console.log(scheduleSummary)
+  }
 }
