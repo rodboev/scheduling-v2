@@ -1,10 +1,9 @@
 // src/app/api/services/route.js
-
-import { NextResponse } from 'next/server'
-import sql from 'mssql/msnodesqlv8'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
-import { parseTimeRange } from '@/app/utils/timeRange'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
+import { parseTimeRange } from '@/app/utils/timeRange'
+import sql from 'mssql/msnodesqlv8'
+import { NextResponse } from 'next/server'
 
 const ALLOWED_TECHS = [
   'BELTRAN',
@@ -86,7 +85,8 @@ async function runQuery(pool, query) {
     const result = await pool.request().query(query)
     console.log('Query executed successfully')
     return result.recordset
-  } catch (err) {
+  }
+  catch (err) {
     console.error(`Error executing query:`, err)
     throw err
   }
@@ -166,23 +166,27 @@ export async function GET(request) {
 
       // Write all fetched and transformed data to disk cache
       await writeToDiskCache(serviceSetups)
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Error fetching from database:', error)
       return NextResponse.json(
         { error: 'Internal Server Error', details: error.message, stack: error.stack },
         { status: 500 },
       )
-    } finally {
+    }
+    finally {
       if (pool) {
         try {
           await pool.close()
           console.log('Database connection closed')
-        } catch (closeErr) {
+        }
+        catch (closeErr) {
           console.error('Error closing database connection:', closeErr)
         }
       }
     }
-  } else {
+  }
+  else {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
@@ -190,7 +194,8 @@ export async function GET(request) {
     return NextResponse.json(
       serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code)),
     )
-  } else {
+  }
+  else {
     return NextResponse.json(serviceSetups)
   }
 }

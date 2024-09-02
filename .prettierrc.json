@@ -2,6 +2,17 @@
   "semi": false,
   "singleQuote": true,
   "jsxSingleQuote": false,
-  "plugins": ["prettier-plugin-tailwindcss"],
-  "printWidth": 100
+  "plugins": [
+    "prettier-plugin-packagejson",
+    "@trivago/prettier-plugin-sort-imports",
+    "prettier-plugin-brace-style",
+    "prettier-plugin-tailwindcss",
+    "prettier-plugin-classnames",
+    "prettier-plugin-merge"
+  ],
+  "importOrder": ["^react$", "<THIRD_PARTY_MODULES>", "^[./]"],
+  "importOrderParserPlugins": ["javascript", "jsx"],
+  "braceStyle": "stroustrup",
+  "printWidth": 100,
+  "singleAttributePerLine": true
 }
