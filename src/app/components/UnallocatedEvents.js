@@ -56,6 +56,7 @@ function EventPopover({ event }) {
             <p>Duration: {event.time.duration || 'N/A'} min</p>
             <p>Tech: {event.tech.code || 'N/A'}</p>
             <p>Calc Range: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
+            <p>Original: {event.time.originalRange}</p>
           </div>
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
             <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>

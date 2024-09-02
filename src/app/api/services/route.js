@@ -48,8 +48,8 @@ const BASE_QUERY = `
       ServiceSetups.WorkTime,
       ServiceSetups.TimeRange,
       ServiceSetups.Duration,
-      ServiceSetups.RouteOptTime1Beg,
-      ServiceSetups.RouteOptTime1End,
+      ServiceSetups.RouteOptTime1Beg as routeStart,
+      ServiceSetups.RouteOptTime1End as routeEnd,
 			ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
       Locations.LocationCode,
@@ -89,9 +89,15 @@ function transformServiceSetup(setup) {
     return `${fname} ${lname.charAt(0)}.`
   }
 
-  const [rangeStart, rangeEnd] = setup.TimeRange
+  let [rangeStart, rangeEnd] = setup.TimeRange
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
+
+  // If Time Range is empty, use Route Time
+  if (!rangeStart && !rangeEnd) {
+    rangeStart = setup.routeStart
+    rangeEnd = setup.routeEnd
+  }
 
   return {
     id: setup.id,
@@ -114,10 +120,12 @@ function transformServiceSetup(setup) {
       preferred: convertToETTime(setup.WorkTime),
       enforced: false,
       duration: setup.Duration,
-      originalRange: setup.TimeRange,
+      originalRange:
+        setup.TimeRange ||
+        `${convertToETTime(setup.routeStart)}-${convertToETTime(setup.routeEnd)}`,
     },
     route: {
-      time: [convertToETTime(setup.RouteOptTime1Beg), convertToETTime(setup.RouteOptTime1End)],
+      time: [convertToETTime(setup.routeStart), convertToETTime(setup.routeEnd)],
       days: setup.RouteOptIncludeDays,
     },
     comments: {

@@ -115,18 +115,21 @@ function tryScheduleUnscheduledEvents(
   const remainingUnscheduled = []
   for (const event of unscheduledEvents) {
     let scheduled = false
-    let bestTechId = null
-    let bestStartTime = null
-    let minWorkload = Infinity
 
     // Try to schedule with existing techs
     for (const techId in techSchedules) {
       const result = findBestSlotForEvent(event, techId, techSchedules)
-      if (result.scheduled && result.workload < minWorkload) {
+      if (result.scheduled) {
         scheduled = true
-        bestTechId = techId
-        bestStartTime = result.startTime
-        minWorkload = result.workload
+        const startTime = result.startTime
+        const endTime = startTime.add(event.time.duration, 'minute')
+        const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
+        addEvent(techSchedules[techId], scheduledEvent)
+
+        const eventDate = startTime.format('YYYY-MM-DD')
+        const eventKey = `${event.id}-${eventDate}`
+        scheduledEventIdsByDate.set(eventKey, techId)
+        break
       }
     }
 
@@ -134,25 +137,22 @@ function tryScheduleUnscheduledEvents(
     if (!scheduled) {
       const newTechId = `Tech ${nextGenericTechId++}`
       techSchedules[newTechId] = []
-      const result = findBestSlotForEvent(event, newTechId, techSchedules)
-      if (result.scheduled) {
-        scheduled = true
-        bestTechId = newTechId
-        bestStartTime = result.startTime
-        minWorkload = result.workload
-      }
+      const [rangeStart, rangeEnd] = memoizedParseTimeRange(
+        event.time.originalRange,
+        event.time.duration,
+      )
+      const startTime = dayjs(event.start).startOf('day').add(rangeStart, 'second')
+      const endTime = startTime.add(event.time.duration, 'minute')
+      const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
+      addEvent(techSchedules[newTechId], scheduledEvent)
+
+      const eventDate = startTime.format('YYYY-MM-DD')
+      const eventKey = `${event.id}-${eventDate}`
+      scheduledEventIdsByDate.set(eventKey, newTechId)
+      scheduled = true
     }
 
-    if (scheduled) {
-      const endTime = bestStartTime.add(event.time.duration, 'minute')
-      const scheduledEvent = { ...event, start: bestStartTime.toDate(), end: endTime.toDate() }
-      addEvent(techSchedules[bestTechId], scheduledEvent)
-
-      const eventDate = bestStartTime.format('YYYY-MM-DD')
-      const eventKey = `${event.id}-${eventDate}`
-      scheduledEventIdsByDate.set(eventKey, bestTechId)
-    } else {
-      event.reason = `Unallocated: ${event.reason || 'No suitable time slot found'}`
+    if (!scheduled) {
       remainingUnscheduled.push(event)
     }
   }
@@ -216,43 +216,32 @@ function findBestSlotForEvent(event, techId, techSchedules) {
     event.time.duration,
   )
   const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-  const latestEnd = dayjs(event.start).startOf('day').add(rangeEnd, 'second')
+  const latestStart = dayjs(event.start)
+    .startOf('day')
+    .add(rangeEnd, 'second')
+    .subtract(event.time.duration, 'minute')
 
   const techSchedule = techSchedules[techId] || []
-
-  const gaps = findScheduleGaps(techSchedule, earliestStart, latestEnd)
-
-  let bestStartTime = null
-  let minWorkload = Infinity
-  let reason = ''
+  const gaps = findScheduleGaps(techSchedule, earliestStart, latestStart)
 
   for (const gap of gaps) {
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      const startTime = gap.start
-      const endTime = startTime.add(event.time.duration, 'minute')
-      if (endTime.isAfter(latestEnd)) {
-        continue
+      return {
+        scheduled: true,
+        startTime: gap.start,
+        workload: calculateWorkload(
+          techSchedule,
+          gap.start,
+          gap.start.add(event.time.duration, 'minute'),
+        ),
       }
-
-      if (isWithinWorkHours(techSchedule, startTime, endTime)) {
-        const workload = calculateWorkload(techSchedule, startTime, endTime)
-        if (workload < minWorkload) {
-          bestStartTime = startTime
-          minWorkload = workload
-        }
-      } else {
-        reason = 'Exceeds work hours limit'
-      }
-    } else {
-      reason = 'No gap large enough for event duration'
     }
   }
 
   return {
-    scheduled: bestStartTime !== null,
-    startTime: bestStartTime,
-    workload: minWorkload,
-    reason: bestStartTime ? '' : reason,
+    scheduled: false,
+    startTime: null,
+    workload: Infinity,
   }
 }
 

@@ -1,5 +1,3 @@
-// src/app/hooks/useEventGeneration.js
-
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 import { scheduleEvents } from '@/app/utils/scheduler'
@@ -28,7 +26,6 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
 
   const { scheduledEvents, unscheduledEvents } = scheduleEvents({
     events: rawEvents,
-    resources: [],
     visibleStart,
     visibleEnd,
   })
