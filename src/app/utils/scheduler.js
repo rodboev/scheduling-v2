@@ -1,8 +1,20 @@
 import { dayjsInstance as dayjs } from './dayjs'
+import PriorityQueue from 'priorityqueuejs'
 import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
 const MAX_WORK_HOURS = 8 * 60 * 60 // 8 hours in seconds
 const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
+const MAX_BACKTRACK_ATTEMPTS = 5
+
+// Helper function to ensure we're always working with dayjs objects
+function ensureDayjs(date) {
+  return dayjs.isDayjs(date) ? date : dayjs(date)
+}
+
+// Helper function to convert dayjs to Date, or return Date as is
+function ensureDate(date) {
+  return dayjs.isDayjs(date) ? date.toDate() : date
+}
 
 export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   console.time('Total scheduling time')
@@ -31,31 +43,18 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
     } else {
-      // Try to schedule with existing techs
-      for (const techId in techSchedules) {
-        const result = scheduleEventWithRespectToWorkHours(
-          event,
-          techId,
-          techSchedules,
-          scheduledEventIdsByDate,
-        )
-        if (result.scheduled) {
-          scheduled = true
-          break
-        }
-      }
-
-      // If not scheduled, create a new tech
-      if (!scheduled) {
-        const newTechId = `Tech ${nextGenericTechId++}`
-        techSchedules[newTechId] = []
-        const result = scheduleEventWithRespectToWorkHours(
-          event,
-          newTechId,
-          techSchedules,
-          scheduledEventIdsByDate,
-        )
-        scheduled = result.scheduled
+      scheduled = scheduleEventWithBacktracking(
+        event,
+        techSchedules,
+        scheduledEventIdsByDate,
+        nextGenericTechId,
+      )
+      if (scheduled) {
+        nextGenericTechId =
+          Math.max(
+            nextGenericTechId,
+            ...Object.keys(techSchedules).map((id) => parseInt(id.split(' ')[1] || 0)),
+          ) + 1
       }
     }
 
@@ -65,17 +64,12 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   })
   console.timeEnd('Scheduling events')
 
-  // Try to optimize schedule and fit unscheduled events
-  console.time('Optimizing schedule')
-  optimizeSchedule(techSchedules, unscheduledEvents, scheduledEventIdsByDate)
-  console.timeEnd('Optimizing schedule')
-
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
     schedule.map((event) => ({
       ...event,
-      start: event.start.toDate(),
-      end: event.end.toDate(),
+      start: new Date(event.start), // Ensure this is a JavaScript Date object
+      end: new Date(event.end), // Ensure this is a JavaScript Date object
       resourceId: techId,
     })),
   )
@@ -91,7 +85,68 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   console.log(`- Total unscheduled events: ${unscheduledEvents.length}`)
   console.log(`- Total techs used: ${Object.keys(techSchedules).length}`)
 
-  return { scheduledEvents, unscheduledEvents, scheduleSummary }
+  return {
+    scheduledEvents,
+    unscheduledEvents: unscheduledEvents.map((event) => ({
+      ...event,
+      start: new Date(event.start),
+      end: new Date(event.end),
+    })),
+    scheduleSummary,
+  }
+}
+
+function scheduleEventWithBacktracking(
+  event,
+  techSchedules,
+  scheduledEventIdsByDate,
+  nextGenericTechId,
+) {
+  const backtrackStack = []
+  let attempts = 0
+
+  while (attempts < MAX_BACKTRACK_ATTEMPTS) {
+    for (const techId in techSchedules) {
+      const result = scheduleEventWithRespectToWorkHours(
+        event,
+        techId,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+      if (result.scheduled) {
+        return true
+      }
+    }
+
+    // If we couldn't schedule with existing techs, create a new one
+    const newTechId = `Tech ${nextGenericTechId++}`
+    techSchedules[newTechId] = []
+    const result = scheduleEventWithRespectToWorkHours(
+      event,
+      newTechId,
+      techSchedules,
+      scheduledEventIdsByDate,
+    )
+    if (result.scheduled) {
+      return true
+    }
+
+    // If we still couldn't schedule, backtrack
+    if (backtrackStack.length > 0) {
+      const { removedEvent, removedFromTechId } = backtrackStack.pop()
+      removeEventFromSchedule(
+        removedEvent,
+        removedFromTechId,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+      attempts++
+    } else {
+      break
+    }
+  }
+
+  return false
 }
 
 function scheduleEventWithRespectToWorkHours(
@@ -104,142 +159,92 @@ function scheduleEventWithRespectToWorkHours(
     event.time.originalRange,
     event.time.duration,
   )
-  const startTime = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-  const endTime = dayjs(event.start).startOf('day').add(rangeEnd, 'second')
-  const duration = event.time.duration * 60
+  const earliestStart = ensureDayjs(event.start).startOf('day').add(rangeStart, 'second')
+  const latestStart = ensureDayjs(event.start)
+    .startOf('day')
+    .add(rangeEnd, 'second')
+    .subtract(event.time.duration, 'minute')
 
   if (!techSchedules[techId]) techSchedules[techId] = []
 
   const schedule = techSchedules[techId]
-  let potentialStart = startTime
+  const gaps = findScheduleGaps(schedule, earliestStart, latestStart)
 
-  while (potentialStart.add(duration, 'second').isSameOrBefore(endTime)) {
-    const potentialEnd = potentialStart.add(duration, 'second')
+  for (const gap of gaps) {
+    if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
+      const startTime = gap.start
+      const endTime = startTime.add(event.time.duration, 'minute')
 
-    if (!isOverlapping(schedule, potentialStart, potentialEnd)) {
-      if (isWithinWorkHours(schedule, potentialStart, potentialEnd)) {
-        techSchedules[techId].push({
-          ...event,
-          start: potentialStart,
-          end: potentialEnd,
-        })
+      if (isWithinWorkHours(schedule, startTime, endTime)) {
+        const scheduledEvent = { ...event, start: ensureDate(startTime), end: ensureDate(endTime) }
+        addEvent(schedule, scheduledEvent)
 
-        const eventDate = potentialStart.format('YYYY-MM-DD')
+        const eventDate = startTime.format('YYYY-MM-DD')
         const eventKey = `${event.id}-${eventDate}`
         scheduledEventIdsByDate.set(eventKey, techId)
 
         return { scheduled: true, reason: null }
-      } else {
-        return { scheduled: false, reason: 'Exceeds 8 hour work max' }
       }
     }
-
-    potentialStart = potentialStart.add(TIME_INCREMENT, 'second')
   }
 
   return { scheduled: false, reason: 'No available time slot within the specified range' }
 }
 
-function optimizeSchedule(techSchedules, unscheduledEvents, scheduledEventIdsByDate) {
-  // Sort techs by total scheduled time (ascending)
-  const sortedTechs = Object.keys(techSchedules).sort((a, b) => {
-    const totalTimeA = getTotalScheduledTime(techSchedules[a])
-    const totalTimeB = getTotalScheduledTime(techSchedules[b])
-    return totalTimeA - totalTimeB
+function findScheduleGaps(schedule, start, end) {
+  const gaps = []
+  let currentTime = ensureDayjs(start)
+  const endTime = ensureDayjs(end)
+
+  schedule.forEach((event) => {
+    const eventStart = ensureDayjs(event.start)
+    const eventEnd = ensureDayjs(event.end)
+    if (eventStart.isAfter(currentTime)) {
+      gaps.push({ start: currentTime, end: eventStart })
+    }
+    currentTime = dayjs.max(currentTime, eventEnd)
   })
 
-  // Try to move events from more occupied techs to less occupied ones
-  for (let i = sortedTechs.length - 1; i > 0; i--) {
-    const sourceTechId = sortedTechs[i]
-    const sourceSchedule = techSchedules[sourceTechId]
-
-    for (let j = 0; j < i; j++) {
-      const targetTechId = sortedTechs[j]
-      const targetSchedule = techSchedules[targetTechId]
-
-      for (const event of sourceSchedule) {
-        const result = tryMoveEvent(
-          event,
-          sourceTechId,
-          targetTechId,
-          techSchedules,
-          scheduledEventIdsByDate,
-        )
-        if (result) {
-          // Event was moved successfully
-          break
-        }
-      }
-    }
+  if (endTime.isAfter(currentTime)) {
+    gaps.push({ start: currentTime, end: endTime })
   }
 
-  // Try to schedule remaining unscheduled events
-  for (const event of unscheduledEvents) {
-    for (const techId of sortedTechs) {
-      const result = scheduleEventWithRespectToWorkHours(
-        event,
-        techId,
-        techSchedules,
-        scheduledEventIdsByDate,
-      )
-      if (result.scheduled) {
-        unscheduledEvents = unscheduledEvents.filter((e) => e.id !== event.id)
-        break
-      }
-    }
-  }
-
-  // Optimize start times for events with flexible time ranges
-  for (const techId in techSchedules) {
-    optimizeEventStartTimes(techSchedules[techId])
-  }
+  return gaps
 }
 
-function getTotalScheduledTime(schedule) {
-  return schedule.reduce((total, event) => total + event.time.duration, 0)
+function isWithinWorkHours(schedule, start, end) {
+  const dayEvents = [
+    ...schedule.map((e) => ({ start: ensureDayjs(e.start), end: ensureDayjs(e.end) })),
+    { start: ensureDayjs(start), end: ensureDayjs(end) },
+  ].filter((e) => e.start.isSame(ensureDayjs(start), 'day'))
+  dayEvents.sort((a, b) => a.start.diff(b.start))
+  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'second')
+  return totalDuration <= MAX_WORK_HOURS
 }
 
-function tryMoveEvent(event, sourceTechId, targetTechId, techSchedules, scheduledEventIdsByDate) {
-  const result = scheduleEventWithRespectToWorkHours(
-    event,
-    targetTechId,
-    techSchedules,
-    scheduledEventIdsByDate,
+function isOverlapping(schedule, start, end) {
+  return schedule.some(
+    (existingEvent) =>
+      (ensureDayjs(start).isBefore(ensureDayjs(existingEvent.end)) &&
+        ensureDayjs(end).isAfter(ensureDayjs(existingEvent.start))) ||
+      ensureDayjs(start).isSame(ensureDayjs(existingEvent.start)),
   )
-  if (result.scheduled) {
-    // Remove the event from the source tech
-    techSchedules[sourceTechId] = techSchedules[sourceTechId].filter((e) => e.id !== event.id)
-    return true
-  }
-  return false
 }
 
-function optimizeEventStartTimes(schedule) {
-  schedule.sort((a, b) => a.start - b.start)
-
-  for (let i = 0; i < schedule.length; i++) {
-    const event = schedule[i]
-    const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-      event.time.originalRange,
-      event.time.duration,
-    )
-    const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-    const latestStart = dayjs(event.start)
-      .startOf('day')
-      .add(rangeEnd, 'second')
-      .subtract(event.time.duration, 'minute')
-
-    let optimalStart = earliestStart
-    if (i > 0) {
-      const previousEventEnd = schedule[i - 1].end
-      optimalStart = dayjs.max(earliestStart, previousEventEnd)
-    }
-
-    if (optimalStart.isBefore(latestStart)) {
-      event.start = optimalStart
-      event.end = optimalStart.add(event.time.duration, 'minute')
-    }
+function addEvent(schedule, event) {
+  const index = schedule.findIndex((e) => ensureDayjs(e.start).isAfter(ensureDayjs(event.start)))
+  if (index === -1) {
+    schedule.push(event)
+  } else {
+    schedule.splice(index, 0, event)
   }
+}
+
+function removeEventFromSchedule(event, techId, techSchedules, scheduledEventIdsByDate) {
+  techSchedules[techId] = techSchedules[techId].filter((e) => e.id !== event.id)
+  const eventDate = ensureDayjs(event.start).format('YYYY-MM-DD')
+  const eventKey = `${event.id}-${eventDate}`
+  scheduledEventIdsByDate.delete(eventKey)
 }
 
 function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
@@ -247,7 +252,7 @@ function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
   if (!techSchedules[techId]) techSchedules[techId] = []
 
   const preferredTime = parseTime(event.time.preferred)
-  const startTime = dayjs(event.start).startOf('day').add(preferredTime, 'second')
+  const startTime = ensureDayjs(event.start).startOf('day').add(preferredTime, 'second')
   const endTime = startTime.add(event.time.duration, 'minute')
 
   techSchedules[techId].push({
@@ -263,27 +268,6 @@ function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
   return true
 }
 
-function isOverlapping(schedule, start, end) {
-  return schedule.some(
-    (existingEvent) =>
-      (start.isBefore(existingEvent.end) && end.isAfter(existingEvent.start)) ||
-      start.isSame(existingEvent.start),
-  )
-}
-
-function isWithinWorkHours(schedule, start, end) {
-  const dayEvents = [
-    ...schedule,
-    {
-      start,
-      end,
-    },
-  ].filter((e) => e.start.isSame(start, 'day'))
-  dayEvents.sort((a, b) => a.start - b.start)
-  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'second')
-  return totalDuration <= MAX_WORK_HOURS
-}
-
 // Generate detailed summary
 function createScheduleSummary(techSchedules, unallocatedEvents) {
   let scheduleSummary = '\nSchedule Summary:\n\n'
@@ -296,11 +280,11 @@ function createScheduleSummary(techSchedules, unallocatedEvents) {
     let techTotal = 0
     let techSummary = `${techId}:\n`
 
-    schedule.sort((a, b) => a.start - b.start)
+    schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
     schedule.forEach((event) => {
-      const start = dayjs(event.start).format('h:mma')
-      const end = dayjs(event.end).format('h:mma')
+      const start = ensureDayjs(event.start).format('h:mma')
+      const end = ensureDayjs(event.end).format('h:mma')
       techSummary += `- ${start}-${end}, ${event.company} (id: ${event.id})\n`
       techTotal += event.time.duration
     })
