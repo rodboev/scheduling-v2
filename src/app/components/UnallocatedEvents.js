@@ -48,7 +48,7 @@ function EventPopover({ event }) {
             <div className="font-semibold">#{event.locationCode || 'N/A'}</div>
           </h3>
           <div className="-mx-4 border-y-2 border-dashed border-gray-300 px-4 py-1">
-            <h4 className="font-bold">{event.reason || 'No cancellation reason provided'}</h4>
+            <h4 className="font-bold">Unallocated: {event.reason || 'Unknown reason'}</h4>
             <p className="text-neutral-500"></p>
           </div>
           <div className="py-4">

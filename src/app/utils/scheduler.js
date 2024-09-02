@@ -61,11 +61,12 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
     }
   })
 
-  // Try to schedule unscheduled events one more time
+  // Try to schedule unscheduled events one more time, creating new techs if necessary
   unscheduledEvents = tryScheduleUnscheduledEvents(
     unscheduledEvents,
     techSchedules,
     scheduledEventIdsByDate,
+    nextGenericTechId,
   )
 
   console.timeEnd('Scheduling events')
@@ -77,8 +78,8 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
     schedule.map((event) => ({
       ...event,
-      start: new Date(event.start), // Ensure this is a JavaScript Date object
-      end: new Date(event.end), // Ensure this is a JavaScript Date object
+      start: new Date(event.start),
+      end: new Date(event.end),
       resourceId: techId,
     })),
   )
@@ -105,29 +106,40 @@ export function scheduleEvents({ events, visibleStart, visibleEnd }) {
   }
 }
 
-function tryScheduleUnscheduledEvents(unscheduledEvents, techSchedules, scheduledEventIdsByDate) {
-  console.log('Attempting to schedule unscheduled events:', unscheduledEvents.length)
+function tryScheduleUnscheduledEvents(
+  unscheduledEvents,
+  techSchedules,
+  scheduledEventIdsByDate,
+  nextGenericTechId,
+) {
   const remainingUnscheduled = []
   for (const event of unscheduledEvents) {
-    console.log(`\nTrying to schedule event: ${event.id} - ${event.company}`)
-    console.log(
-      `Event time window: ${event.time.originalRange}, Duration: ${event.time.duration} minutes`,
-    )
     let scheduled = false
     let bestTechId = null
     let bestStartTime = null
     let minWorkload = Infinity
 
+    // Try to schedule with existing techs
     for (const techId in techSchedules) {
-      console.log(`\nChecking Tech ${techId}:`)
       const result = findBestSlotForEvent(event, techId, techSchedules)
-      console.log(`Result for Tech ${techId}:`, result)
       if (result.scheduled && result.workload < minWorkload) {
         scheduled = true
         bestTechId = techId
         bestStartTime = result.startTime
         minWorkload = result.workload
-        console.log(`Found better slot with Tech ${techId} at ${bestStartTime.format('HH:mm')}`)
+      }
+    }
+
+    // If not scheduled, create a new tech
+    if (!scheduled) {
+      const newTechId = `Tech ${nextGenericTechId++}`
+      techSchedules[newTechId] = []
+      const result = findBestSlotForEvent(event, newTechId, techSchedules)
+      if (result.scheduled) {
+        scheduled = true
+        bestTechId = newTechId
+        bestStartTime = result.startTime
+        minWorkload = result.workload
       }
     }
 
@@ -139,13 +151,9 @@ function tryScheduleUnscheduledEvents(unscheduledEvents, techSchedules, schedule
       const eventDate = bestStartTime.format('YYYY-MM-DD')
       const eventKey = `${event.id}-${eventDate}`
       scheduledEventIdsByDate.set(eventKey, bestTechId)
-      console.log(
-        `Successfully scheduled event ${event.id} with Tech ${bestTechId} from ${bestStartTime.format('HH:mm')} to ${endTime.format('HH:mm')}`,
-      )
     } else {
-      event.reason = `Unallocated: ${event.reason || 'No suitable time slot found across all techs'}`
+      event.reason = `Unallocated: ${event.reason || 'No suitable time slot found'}`
       remainingUnscheduled.push(event)
-      console.log(`Failed to schedule event ${event.id}. Reason: ${event.reason}`)
     }
   }
   return remainingUnscheduled
@@ -178,22 +186,15 @@ function isWithinWorkHours(techSchedule, start, end) {
   const dayEvents = [
     ...techSchedule.map((e) => ({ start: dayjs(e.start), end: dayjs(e.end) })),
     { start: dayjs(start), end: dayjs(end) },
-  ].filter((e) => e.start.isSame(dayjs(start), 'day'))
-
-  console.log(
-    `Day events for Tech on ${dayjs(start).format('YYYY-MM-DD')}:`,
-    dayEvents.map((e) => `${e.start.format('HH:mm')}-${e.end.format('HH:mm')}`),
-  )
+  ].filter((e) => e.start.isSame(dayjs(start), 'day') || e.end.isSame(dayjs(start), 'day'))
 
   if (dayEvents.length === 0) {
-    console.log('No events for this day, considering it within work hours')
     return true
   }
 
   dayEvents.sort((a, b) => a.start.diff(b.start))
   const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 
-  console.log(`Total work duration: ${totalDuration / 60} hours`)
   return totalDuration <= MAX_WORK_HOURS
 }
 
@@ -217,51 +218,32 @@ function findBestSlotForEvent(event, techId, techSchedules) {
   const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
   const latestEnd = dayjs(event.start).startOf('day').add(rangeEnd, 'second')
 
-  console.log(
-    `Earliest start: ${earliestStart.format('HH:mm')}, Latest end: ${latestEnd.format('HH:mm')}`,
-  )
-
   const techSchedule = techSchedules[techId] || []
-  console.log(
-    `Current schedule for Tech ${techId}:`,
-    techSchedule.map((e) => `${dayjs(e.start).format('HH:mm')}-${dayjs(e.end).format('HH:mm')}`),
-  )
 
   const gaps = findScheduleGaps(techSchedule, earliestStart, latestEnd)
-  console.log(
-    `Found gaps:`,
-    gaps.map((gap) => `${gap.start.format('HH:mm')}-${gap.end.format('HH:mm')}`),
-  )
 
   let bestStartTime = null
   let minWorkload = Infinity
   let reason = ''
 
   for (const gap of gaps) {
-    console.log(`Checking gap: ${gap.start.format('HH:mm')}-${gap.end.format('HH:mm')}`)
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
       const startTime = gap.start
       const endTime = startTime.add(event.time.duration, 'minute')
       if (endTime.isAfter(latestEnd)) {
-        console.log(`Event would end after the latest allowed end time`)
         continue
       }
-      console.log(`Potential slot: ${startTime.format('HH:mm')}-${endTime.format('HH:mm')}`)
 
       if (isWithinWorkHours(techSchedule, startTime, endTime)) {
         const workload = calculateWorkload(techSchedule, startTime, endTime)
-        console.log(`Slot is within work hours. Workload: ${workload / 60} hours`)
         if (workload < minWorkload) {
           bestStartTime = startTime
           minWorkload = workload
-          console.log(`New best start time: ${bestStartTime.format('HH:mm')}`)
         }
       } else {
-        console.log(`Slot exceeds work hours limit`)
         reason = 'Exceeds work hours limit'
       }
     } else {
-      console.log(`Gap is too small for event duration`)
       reason = 'No gap large enough for event duration'
     }
   }
