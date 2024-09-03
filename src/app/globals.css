@@ -3,16 +3,26 @@
 @tailwind utilities;
 
 /* react-big-calendar overrides */
-.rbc-calendar .rbc-day-slot .rbc-event,
-.rbc-calendar .rbc-day-slot .rbc-background-event {
-  @apply !border-teal bg-teal/85;
-}
-.rbc-calendar .rbc-day-slot .rbc-event.rbc-selected,
-.rbc-calendar .rbc-day-slot .rbc-selected.rbc-background-event {
-  @apply bg-teal/80;
-}
 .rbc-time-header .rbc-row-segment .rbc-event-content {
   white-space: normal;
+}
+.rbc-calendar .rbc-background-event,
+.rbc-calendar .rbc-event {
+  @apply w-fit border border-solid border-teal bg-teal/85;
+}
+.rbc-calendar .rbc-background-event:focus,
+.rbc-calendar .rbc-event:focus {
+  @apply outline-black;
+}
+.rbc-calendar .rbc-selected.rbc-background-event,
+.rbc-calendar .rbc-selected.rbc-event {
+  @apply bg-teal;
+}
+.rbc-calendar .rbc-today {
+  background-color: transparent;
+}
+.rbc-calendar .rbc-current-time-indicator {
+  @apply bg-teal/50;
 }
 
 @layer base {
@@ -26,11 +36,11 @@
 
     --teal: 186 54% 20%;
     --teal-light: 196 40% 88%;
-    --background: 0 0% 100%;
+    --background: 0 0 100%;
     --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
+    --card: 0 0 100%;
     --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
+    --popover: 0 0 100%;
     --popover-foreground: 222.2 84% 4.9%;
     --primary: var(--teal);
     --primary-foreground: var(--teal-light);
@@ -81,10 +91,9 @@
     --chart-5: 340 75% 55%;
   }
 }
-
 @layer components {
   .btn {
-    @apply flex h-10 w-fit items-center overflow-hidden rounded px-4 pb-2 pt-2.5 font-bold hover:bg-opacity-95 active:bg-opacity-100;
+    @apply active: flex h-10 w-fit items-center overflow-hidden rounded bg-opacity-100 px-4 pb-2 pt-2.5 font-bold hover:bg-opacity-95;
   }
   .btn-teal {
     @apply btn bg-teal text-white;
@@ -92,12 +101,10 @@
   .icon {
     @apply h-8 w-8 fill-current;
   }
-
   .checkbox-hover:hover button {
     @apply border-2 border-blue-600;
   }
 }
-
 @layer utilities {
   .animate-none {
     animation: none !important;

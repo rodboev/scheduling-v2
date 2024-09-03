@@ -10,8 +10,16 @@
     "prettier-plugin-classnames",
     "prettier-plugin-merge"
   ],
-  "importOrder": ["^react$", "<THIRD_PARTY_MODULES>", "^[./]"],
-  "importOrderParserPlugins": ["javascript", "jsx"],
+  "multilineArraysWrapThreshold": 1,
+  "importOrder": [
+    "^react$",
+    "<THIRD_PARTY_MODULES>",
+    "^[./]"
+  ],
+  "importOrderParserPlugins": [
+    "javascript",
+    "jsx"
+  ],
   "braceStyle": "stroustrup",
   "printWidth": 100,
   "singleAttributePerLine": true

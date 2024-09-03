@@ -1,20 +1,20 @@
-// src/app/components/BigCalendar.js
-
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useEffect } from 'react'
+import EnforceSwitch from '@/app/components/EnforceSwitch'
+import Event from '@/app/components/Event'
+import Header from '@/app/components/Header'
+import Logo from '@/app/components/Logo'
+import UnallocatedEvents from '@/app/components/UnallocatedEvents'
+import { Progress } from '@/app/components/ui/progress'
+import { useCalendarState } from '@/app/hooks/useCalendarState'
+import { useEventGeneration } from '@/app/hooks/useEventGeneration'
+import { useServiceSetups } from '@/app/hooks/useServiceSetups'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
-import { useServiceSetups } from '@/app/hooks/useServiceSetups'
-import { useCalendarState } from '@/app/hooks/useCalendarState'
-import { useEventGeneration } from '@/app/hooks/useEventGeneration'
 
-import UnallocatedEvents from '@/app/components/UnallocatedEvents'
-import Header from '@/app/components/Header'
-import EnforceSwitch from '@/app/components/EnforceSwitch'
-import Logo from '@/app/components/Logo'
-import Event from '@/app/components/Event'
+// src/app/components/BigCalendar.js
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -31,11 +31,13 @@ export default function BigCalendar() {
     enforcedServiceSetups,
   } = useServiceSetups()
 
-  const { allocatedEvents, resources, filteredUnallocatedEvents, summaryText } = useEventGeneration(
-    serviceSetups,
-    currentViewRange,
-    enforcedServiceSetups,
-  )
+  const {
+    allocatedEvents,
+    resources,
+    filteredUnallocatedEvents,
+    isScheduling,
+    schedulingProgress,
+  } = useEventGeneration(serviceSetups, currentViewRange, enforcedServiceSetups)
 
   const allServiceSetupsEnforced = useMemo(() => {
     return (
@@ -49,6 +51,17 @@ export default function BigCalendar() {
 
   return (
     <div className="flex h-screen">
+      {isScheduling && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="w-80 space-y-5 rounded-lg border bg-white/50 p-5 backdrop-blur-md">
+            <p className="text-center">Scheduling...</p>
+            <Progress
+              value={schedulingProgress}
+              className="w-full"
+            />
+          </div>
+        </div>
+      )}
       <div className="w-64 border-r">
         <UnallocatedEvents events={filteredUnallocatedEvents} />
       </div>
@@ -64,7 +77,6 @@ export default function BigCalendar() {
           <Logo />
         </Header>
         <div className="flex-grow p-4">
-          <div>{summaryText}</div>
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"

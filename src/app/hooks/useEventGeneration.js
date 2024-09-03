@@ -1,72 +1,116 @@
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { generateEventsForDateRange } from '@/app/utils/eventGeneration'
 import { scheduleEvents } from '@/app/utils/scheduler'
 
 export function useEventGeneration(serviceSetups, currentViewRange, enforcedServiceSetups) {
-  if (!serviceSetups || !currentViewRange) {
-    return {
-      allocatedEvents: [],
-      resources: [],
-      filteredUnallocatedEvents: [],
-      allServiceSetupsEnforced: false,
+  const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [result, setResult] = useState({
+    allocatedEvents: [],
+    resources: [],
+    filteredUnallocatedEvents: [],
+    allServiceSetupsEnforced: false,
+  })
+
+  const progressRef = useRef(0)
+
+  const updateProgress = useCallback((newProgress) => {
+    progressRef.current = newProgress
+    // Force a re-render
+    setProgress(newProgress)
+  }, [])
+
+  useEffect(() => {
+    if (!serviceSetups || !currentViewRange) {
+      return
     }
-  }
 
-  const visibleStart = dayjs(currentViewRange.start).startOf('day')
-  const visibleEnd = dayjs(currentViewRange.end).endOf('day')
+    setLoading(true)
+    setProgress(0)
+    progressRef.current = 0
 
-  const rawEvents = serviceSetups.flatMap((setup) => {
-    const isEnforced = enforcedServiceSetups[setup.id] ?? setup.tech.enforced
-    return generateEventsForDateRange(
-      { ...setup, tech: { ...setup.tech, enforced: isEnforced } },
-      visibleStart,
-      visibleEnd,
-    )
-  })
+    const scheduleEventsAsync = async () => {
+      const visibleStart = dayjs(currentViewRange.start).startOf('day')
+      const visibleEnd = dayjs(currentViewRange.end).endOf('day')
 
-  const { scheduledEvents, unscheduledEvents } = scheduleEvents({
-    events: rawEvents,
-    visibleStart,
-    visibleEnd,
-  })
+      const rawEvents = serviceSetups.flatMap((setup) => {
+        const isEnforced = enforcedServiceSetups[setup.id] ?? setup.tech.enforced
+        return generateEventsForDateRange(
+          { ...setup, tech: { ...setup.tech, enforced: isEnforced } },
+          visibleStart,
+          visibleEnd,
+        )
+      })
 
-  const usedResourceIds = [...new Set(scheduledEvents.map((event) => event.resourceId))]
-  const techCodes = new Set(scheduledEvents.map((event) => event.tech.code))
+      const { techSchedules, unscheduledEvents } = await new Promise((resolve) => {
+        setTimeout(() => {
+          const result = scheduleEvents(
+            {
+              events: rawEvents,
+              visibleStart,
+              visibleEnd,
+            },
+            updateProgress,
+          )
+          resolve(result)
+        }, 0)
+      })
 
-  const sortResources = (resources) => {
-    return resources.sort((a, b) => {
-      const aIsGeneric = !techCodes.has(a.id)
-      const bIsGeneric = !techCodes.has(b.id)
+      const allocatedEvents = Object.entries(techSchedules).flatMap(([techId, events]) =>
+        events.map((event) => ({ ...event, resourceId: techId })),
+      )
 
-      if (aIsGeneric && !bIsGeneric) return -1
-      if (!aIsGeneric && bIsGeneric) return 1
-      if (aIsGeneric && bIsGeneric) {
-        // Assuming generic resources are numbered (e.g., "Tech 1", "Tech 2")
-        return parseInt(a.id.split(' ')[1]) - parseInt(b.id.split(' ')[1])
+      const techCodes = new Set(allocatedEvents.map((event) => event.tech.code))
+
+      const sortResources = (resources) => {
+        return resources.sort((a, b) => {
+          const aIsGeneric = !techCodes.has(a.id)
+          const bIsGeneric = !techCodes.has(b.id)
+
+          if (aIsGeneric && !bIsGeneric) return -1
+          if (!aIsGeneric && bIsGeneric) return 1
+          if (aIsGeneric && bIsGeneric) {
+            return parseInt(a.id.split(' ')[1]) - parseInt(b.id.split(' ')[1])
+          }
+          return a.id.localeCompare(b.id)
+        })
       }
-      return a.id.localeCompare(b.id)
-    })
-  }
 
-  const resources = sortResources(
-    usedResourceIds.map((techId) => ({
-      id: techId,
-      title: techId,
-    })),
-  )
+      const resources = sortResources(
+        Object.keys(techSchedules).map((techId) => ({
+          id: techId,
+          title: techId,
+        })),
+      )
 
-  const filteredUnallocatedEvents = unscheduledEvents.filter((event) =>
-    dayjs(event.start).isBetween(visibleStart, visibleEnd, null, '[]'),
-  )
+      const filteredUnallocatedEvents = unscheduledEvents.filter((event) =>
+        dayjs(event.start).isBetween(visibleStart, visibleEnd, null, '[]'),
+      )
 
-  const allServiceSetupsEnforced =
-    scheduledEvents.length > 0 &&
-    scheduledEvents.every((event) => enforcedServiceSetups[event.id.split('-')[0]])
+      const allServiceSetupsEnforced =
+        allocatedEvents.length > 0 &&
+        allocatedEvents.every((event) => enforcedServiceSetups[event.id.split('-')[0]])
 
-  return {
-    allocatedEvents: scheduledEvents,
-    resources,
-    filteredUnallocatedEvents,
-    allServiceSetupsEnforced,
-  }
+      setResult({
+        allocatedEvents,
+        resources,
+        filteredUnallocatedEvents,
+        allServiceSetupsEnforced,
+      })
+      setLoading(false)
+    }
+
+    scheduleEventsAsync()
+
+    // Set up an interval to update the progress state
+    const intervalId = setInterval(() => {
+      setProgress(progressRef.current)
+    }, 100) // Update every 100ms
+
+    // Clean up the interval when the effect is cleaned up
+    return () => clearInterval(intervalId)
+  }, [serviceSetups, currentViewRange, enforcedServiceSetups, updateProgress])
+
+  return { ...result, isScheduling: loading, schedulingProgress: progress }
 }

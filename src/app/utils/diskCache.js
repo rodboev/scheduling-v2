@@ -1,5 +1,4 @@
 // src/app/utils/diskCache.js
-
 import fs from 'fs/promises'
 import path from 'path'
 
@@ -12,9 +11,11 @@ function formatCacheAge(ageInHours) {
 
   if (hours === 0) {
     return `${minutes} min`
-  } else if (minutes === 0) {
+  }
+  else if (minutes === 0) {
     return `${hours} hr`
-  } else {
+  }
+  else {
     return `${hours} hr ${minutes} min`
   }
 }
@@ -43,11 +44,13 @@ export async function readFromDiskCache() {
     if (cacheAgeHours < CACHE_VALIDITY_HOURS) {
       console.log(`Using valid cache, age: ${formattedAge}`)
       return serviceSetups
-    } else {
+    }
+    else {
       console.log(`Cache expired, age: ${formattedAge}`)
       return null
     }
-  } catch (error) {
+  }
+  catch (error) {
     if (error.code === 'ENOENT') {
       console.log('Cache file not found')
       return null // File doesn't exist
@@ -65,7 +68,8 @@ export async function writeToDiskCache(data) {
     }
     await fs.writeFile(CACHE_FILE, JSON.stringify(cacheData, null, 2), 'utf-8')
     console.log('Cache written successfully')
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Error writing to cache file:', error)
   }
 }
