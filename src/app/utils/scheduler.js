@@ -342,7 +342,6 @@ function scheduleEventWithRespectToWorkHours(
   const earliestStart = ensureDayjs(event.start).startOf('day').add(rangeStart, 'second')
   const latestEnd = ensureDayjs(event.start).startOf('day').add(rangeEnd, 'second')
 
-  // Initialize the tech's schedule if it doesn't exist
   if (!techSchedules[techId]) {
     techSchedules[techId] = []
   }
@@ -352,7 +351,7 @@ function scheduleEventWithRespectToWorkHours(
 
   for (const gap of gaps) {
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      const startTime = gap.start
+      const startTime = findBestStartTimeInGap(gap, event.time.duration, schedule)
       const endTime = startTime.add(event.time.duration, 'minute')
 
       if (isWithinWorkHours(schedule, startTime, endTime)) {
@@ -384,9 +383,61 @@ function isWithinWorkHours(schedule, start, end) {
   }
 
   dayEvents.sort((a, b) => a.start.diff(b.start))
-  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
+  const shiftStart = dayEvents[0].start
+  const shiftEnd = dayEvents[dayEvents.length - 1].end
+  const shiftDuration = shiftEnd.diff(shiftStart, 'minute')
 
-  return totalDuration <= MAX_SHIFT_DURATION
+  return shiftDuration <= MAX_SHIFT_DURATION
+}
+
+function findBestStartTimeInGap(gap, duration, schedule) {
+  const gapStart = gap.start
+  const gapEnd = gap.end.subtract(duration, 'minute')
+
+  if (gapEnd.isBefore(gapStart)) {
+    return gapStart
+  }
+
+  const nearestEvent = findNearestEvent(gap, schedule)
+
+  if (!nearestEvent) {
+    return gapStart
+  }
+
+  if (nearestEvent.end.isBefore(gap.start)) {
+    return gapStart
+  }
+
+  if (nearestEvent.start.isAfter(gap.end)) {
+    return gapEnd
+  }
+
+  // Try to schedule as close as possible to the nearest event
+  if (nearestEvent.end.isBefore(gapStart)) {
+    return gapStart
+  }
+  else if (nearestEvent.start.isAfter(gapEnd)) {
+    return gapEnd
+  }
+  else {
+    const middleOfGap = gapStart.add(gapEnd.diff(gapStart) / 2, 'minute')
+    return middleOfGap
+  }
+}
+
+function findNearestEvent(gap, schedule) {
+  return schedule.reduce((nearest, event) => {
+    const eventStart = ensureDayjs(event.start)
+    const eventEnd = ensureDayjs(event.end)
+    const distanceToStart = Math.abs(gap.start.diff(eventStart, 'minute'))
+    const distanceToEnd = Math.abs(gap.start.diff(eventEnd, 'minute'))
+    const distance = Math.min(distanceToStart, distanceToEnd)
+
+    if (!nearest || distance < nearest.distance) {
+      return { start: eventStart, end: eventEnd, distance }
+    }
+    return nearest
+  }, null)
 }
 
 function findScheduleGaps(schedule, start, end) {
@@ -396,17 +447,32 @@ function findScheduleGaps(schedule, start, end) {
 
   schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
+  let lastEventEnd = null
+
   schedule.forEach((event) => {
     const eventStart = ensureDayjs(event.start)
     const eventEnd = ensureDayjs(event.end)
-    if (eventStart.isAfter(currentTime)) {
+
+    if (lastEventEnd && eventStart.diff(lastEventEnd, 'hour') >= MIN_REST_HOURS) {
+      // Add a gap that respects the minimum rest period
+      gaps.push({ start: lastEventEnd.add(MIN_REST_HOURS, 'hour'), end: eventStart })
+    }
+    else if (eventStart.isAfter(currentTime)) {
       gaps.push({ start: currentTime, end: eventStart })
     }
+
     currentTime = dayjs.max(currentTime, eventEnd)
+    lastEventEnd = eventEnd
   })
 
   if (endTime.isAfter(currentTime)) {
-    gaps.push({ start: currentTime, end: endTime })
+    if (lastEventEnd && endTime.diff(lastEventEnd, 'hour') >= MIN_REST_HOURS) {
+      // Add a final gap that respects the minimum rest period
+      gaps.push({ start: lastEventEnd.add(MIN_REST_HOURS, 'hour'), end: endTime })
+    }
+    else {
+      gaps.push({ start: currentTime, end: endTime })
+    }
   }
 
   return gaps
