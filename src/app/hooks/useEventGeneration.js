@@ -43,22 +43,16 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
         )
       })
 
-      const { techSchedules, unscheduledEvents } = await new Promise((resolve) => {
-        setTimeout(() => {
-          const result = scheduleEvents(
-            {
-              events: rawEvents,
-              visibleStart,
-              visibleEnd,
-            },
-            updateProgress,
-          )
-          resolve(result)
-        }, 0)
-      })
+      const { scheduledEvents, unscheduledEvents, techSchedules } = await scheduleEvents(
+        { events: rawEvents, visibleStart, visibleEnd }, // Changed generatedEvents to rawEvents
+        setProgress,
+      )
 
       const allocatedEvents = Object.entries(techSchedules).flatMap(([techId, events]) =>
-        events.map((event) => ({ ...event, resourceId: techId })),
+        events.map((event) => ({
+          ...event,
+          resourceId: techId,
+        })),
       )
 
       const techCodes = new Set(allocatedEvents.map((event) => event.tech.code))

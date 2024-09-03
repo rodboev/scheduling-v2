@@ -5,177 +5,44 @@ import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } fr
 const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
 const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
 const MAX_BACKTRACK_ATTEMPTS = 5
-const REST_PERIOD = 0
+const MIN_REST_HOURS = 12 // 12 hours minimum rest between shifts
 
 function ensureDayjs(date) {
   return dayjs.isDayjs(date) ? date : dayjs(date)
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 function ensureDate(date) {
   return dayjs.isDayjs(date) ? date.toDate() : date
 }
 
-function findValidShift(events) {
-  let shiftStart = null
-  let shiftEnd = null
-  let shiftDuration = 0
-  let validEvents = []
-
-  for (const event of events) {
-    const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-      event.time.originalRange,
-      event.time.duration,
-    )
-    const eventStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-    const eventEnd = eventStart.add(event.time.duration, 'minute')
-    const eventDuration = event.time.duration
-
-    if (!shiftStart) {
-      shiftStart = eventStart
-      shiftEnd = eventEnd
-      shiftDuration = eventDuration
-      validEvents.push({ ...event, start: eventStart.toDate(), end: eventEnd.toDate() })
-    }
-    else {
-      const gapDuration = eventStart.diff(shiftEnd, 'minute')
-
-      if (gapDuration >= REST_PERIOD) {
-        // If there's a 16+ hour gap, start a new shift
-        return {
-          validEvents: validEvents,
-          remainingEvents: events.slice(i),
-        }
-      }
-      else if (shiftDuration + eventDuration <= MAX_WORK_HOURS) {
-        // If adding this event doesn't exceed 8 hours, include it
-        shiftEnd = eventEnd
-        shiftDuration += eventDuration
-        validEvents.push({ ...event, start: eventStart.toDate(), end: eventEnd.toDate() })
-      }
-      else {
-        // If adding this event would exceed 8 hours, end the shift here
-        return {
-          validEvents: validEvents,
-          remainingEvents: events.slice(i),
-        }
-      }
-    }
-  }
-
-  // If we've gone through all events without exceeding 8 hours
-  return {
-    validEvents: validEvents,
-    remainingEvents: [],
-  }
-}
-
-const memoizedCheckWorkHours = memoize(
-  (techSchedule, startTime, duration) => {
-    const endTime = startTime.add(duration, 'minute')
-    const windowStart = startTime.subtract(24, 'hour')
-
-    const relevantEvents = [
-      ...techSchedule.filter(
-        (e) => dayjs(e.end).isAfter(windowStart) && dayjs(e.start).isBefore(endTime),
-      ),
-      { start: startTime.toISOString(), end: endTime.toISOString() },
-    ].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
-
-    let workingTime = 0
-    let restStart = windowStart
-
-    for (const event of relevantEvents) {
-      const eventStart = dayjs(event.start)
-      const eventEnd = dayjs(event.end)
-
-      // Reset work time if there's been a 16-hour break
-      if (eventStart.diff(restStart, 'hour') >= 16) {
-        workingTime = 0
-      }
-
-      workingTime += eventEnd.diff(eventStart, 'minute')
-
-      // Check if we've exceeded 8 hours in the last 24 hours
-      if (workingTime > MAX_WORK_HOURS) {
-        return false
-      }
-
-      restStart = eventEnd
-    }
-
-    return true
-  },
-  (techSchedule, startTime, duration) => {
-    const scheduleKey = techSchedule.map((e) => `${e.id}-${e.start}-${e.end}`).join(',')
-    return `${scheduleKey}-${startTime.format('YYYY-MM-DD HH:mm')}-${duration}`
-  },
-)
-
-function findBestSlotForEvent(event, techId, techSchedules) {
-  const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-    event.time.originalRange,
-    event.time.duration,
-  )
-  const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
-  const latestStart = dayjs(event.start)
-    .startOf('day')
-    .add(rangeEnd, 'second')
-    .subtract(event.time.duration, 'minute')
-
-  const techSchedule = techSchedules[techId] || []
-  const gaps = findScheduleGaps(techSchedule, earliestStart, latestStart)
-
-  for (const gap of gaps) {
-    if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      for (
-        let potentialStartTime = gap.start;
-        potentialStartTime.add(event.time.duration, 'minute').isSameOrBefore(gap.end);
-        potentialStartTime = potentialStartTime.add(TIME_INCREMENT, 'second')
-      ) {
-        if (memoizedCheckWorkHours(techSchedule, potentialStartTime, event.time.duration)) {
-          const eventEnd = potentialStartTime.add(event.time.duration, 'minute')
-          return {
-            scheduled: true,
-            startTime: potentialStartTime,
-            endTime: eventEnd,
-          }
-        }
-      }
-    }
-  }
-
-  return {
-    scheduled: false,
-    startTime: null,
-    reason: `No suitable time slot found between ${earliestStart.format('HH:mm')} and ${latestStart.format('HH:mm')} within 8-hour work limit`,
-  }
-}
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export async function scheduleEvents({ events, visibleStart, visibleEnd }, onProgress) {
+  console.time('Total scheduling time')
+  console.log(`Starting scheduling process with ${events.length} events`)
+
+  const techSchedules = {}
+  const scheduledEventIdsByDate = new Map()
+  let nextGenericTechId = 1
+  const unscheduledEvents = []
+
+  // Sort events by time window size (ascending) and duration (descending)
+  console.time('Sorting events')
+  events.sort((a, b) => {
+    const aWindow = memoizedParseTimeRange(a.time.originalRange, a.time.duration)
+    const bWindow = memoizedParseTimeRange(b.time.originalRange, b.time.duration)
+    const aWindowSize = aWindow[1] - aWindow[0]
+    const bWindowSize = bWindow[1] - bWindow[0]
+    return aWindowSize - bWindowSize || b.time.duration - a.time.duration
+  })
+  console.timeEnd('Sorting events')
+
   const totalEvents = events.length
   let processedCount = 0
 
-  console.time('Total scheduling time')
-  console.log(`Starting scheduling process with ${totalEvents} events`)
-
-  let techSchedules = {}
-  let nextGenericTechId = 1
-  let unscheduledEvents = []
-  const scheduledEventIdsByDate = new Map()
-
-  const updateProgress = () => {
-    processedCount++
-    const percentage = Math.min(100, Math.round((processedCount / totalEvents) * 100))
-    onProgress(percentage)
-  }
-
-  // Sort events by start time
-  events.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
-
-  // First pass: Schedule events respecting 8-hour shifts
-  for (const [index, event] of events.entries()) {
+  // Schedule all events
+  console.time('Scheduling events')
+  for (const event of events) {
     let scheduled = false
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
@@ -188,10 +55,11 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
         nextGenericTechId,
       )
       if (scheduled) {
-        nextGenericTechId = Math.max(
-          nextGenericTechId,
-          parseInt(scheduled.split(' ')[1] || '0') + 1,
-        )
+        nextGenericTechId =
+          Math.max(
+            nextGenericTechId,
+            ...Object.keys(techSchedules).map((id) => parseInt(id.split(' ')[1] || 0)),
+          ) + 1
       }
     }
 
@@ -199,33 +67,53 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
       unscheduledEvents.push(event)
     }
 
-    updateProgress()
+    processedCount++
+    const percentage = Math.round((processedCount / totalEvents) * 100)
+    onProgress(percentage)
 
     // Force a small delay every 10 events to allow for UI updates
-    index % 10 === 0 && (await delay(0))
+    if (processedCount % 10 === 0) {
+      await delay(0)
+    }
   }
 
-  // Second pass: Try to schedule unscheduled events
-  unscheduledEvents = await tryScheduleUnscheduledEvents(
+  // Try to schedule unscheduled events one more time, creating new techs if necessary
+  const remainingUnscheduled = await tryScheduleUnscheduledEvents(
     unscheduledEvents,
     techSchedules,
     scheduledEventIdsByDate,
     nextGenericTechId,
-    updateProgress,
+    onProgress,
     totalEvents,
     processedCount,
   )
 
-  // Rename generic resources
+  console.timeEnd('Scheduling events')
+
   renameGenericResources(techSchedules)
+
+  // Convert techSchedules to scheduledEvents format
+  const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
+    schedule.map((event) => ({
+      ...event,
+      start: new Date(event.start),
+      end: new Date(event.end),
+      resourceId: techId,
+    })),
+  )
 
   console.timeEnd('Total scheduling time')
 
-  printSummary(techSchedules, unscheduledEvents)
+  printSummary(techSchedules, remainingUnscheduled)
 
   return {
-    techSchedules,
-    unscheduledEvents,
+    scheduledEvents,
+    unscheduledEvents: remainingUnscheduled.map((event) => ({
+      ...event,
+      start: new Date(event.start),
+      end: new Date(event.end),
+    })),
+    techSchedules, // Add this line to include techSchedules in the return value
   }
 }
 
@@ -234,14 +122,14 @@ async function tryScheduleUnscheduledEvents(
   techSchedules,
   scheduledEventIdsByDate,
   nextGenericTechId,
-  updateProgress,
+  onProgress,
   totalEvents,
   initialProcessedCount,
 ) {
   const remainingUnscheduled = []
   let processedCount = initialProcessedCount
 
-  for (const [index, event] of unscheduledEvents.entries()) {
+  for (const event of unscheduledEvents) {
     let scheduled = false
     let reason = ''
 
@@ -251,7 +139,7 @@ async function tryScheduleUnscheduledEvents(
       if (result.scheduled) {
         scheduled = true
         const startTime = result.startTime
-        const endTime = result.endTime
+        const endTime = startTime.add(event.time.duration, 'minute')
         const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
         addEvent(techSchedules[techId], scheduledEvent)
 
@@ -272,7 +160,7 @@ async function tryScheduleUnscheduledEvents(
       const result = findBestSlotForEvent(event, newTechId, techSchedules)
       if (result.scheduled) {
         const startTime = result.startTime
-        const endTime = result.endTime
+        const endTime = startTime.add(event.time.duration, 'minute')
         const scheduledEvent = { ...event, start: startTime.toDate(), end: endTime.toDate() }
         addEvent(techSchedules[newTechId], scheduledEvent)
 
@@ -290,62 +178,18 @@ async function tryScheduleUnscheduledEvents(
       event.reason = reason
       remainingUnscheduled.push(event)
     }
+
+    processedCount++
+    const percentage = Math.min(100, Math.round((processedCount / totalEvents) * 100))
+    onProgress(percentage)
+
+    // Force a small delay every 10 events to allow for UI updates
+    if (processedCount % 10 === 0) {
+      await delay(0)
+    }
   }
+
   return remainingUnscheduled
-}
-
-function scheduleEventWithBacktracking(
-  event,
-  techSchedules,
-  scheduledEventIdsByDate,
-  nextGenericTechId,
-) {
-  const backtrackStack = []
-  let attempts = 0
-
-  while (attempts < MAX_BACKTRACK_ATTEMPTS) {
-    for (const techId in techSchedules) {
-      const result = scheduleEventWithRespectToWorkHours(
-        event,
-        techId,
-        techSchedules,
-        scheduledEventIdsByDate,
-      )
-      if (result.scheduled) {
-        return techId
-      }
-    }
-
-    // If we couldn't schedule with existing techs, create a new one
-    const newTechId = `Tech ${nextGenericTechId}`
-    techSchedules[newTechId] = []
-    const result = scheduleEventWithRespectToWorkHours(
-      event,
-      newTechId,
-      techSchedules,
-      scheduledEventIdsByDate,
-    )
-    if (result.scheduled) {
-      return newTechId
-    }
-
-    // If we still couldn't schedule, backtrack
-    if (backtrackStack.length > 0) {
-      const { removedEvent, removedFromTechId } = backtrackStack.pop()
-      removeEventFromSchedule(
-        removedEvent,
-        removedFromTechId,
-        techSchedules,
-        scheduledEventIdsByDate,
-      )
-      attempts++
-    }
-    else {
-      break
-    }
-  }
-
-  return false
 }
 
 function findScheduleGaps(schedule, start, end) {
@@ -372,44 +216,19 @@ function findScheduleGaps(schedule, start, end) {
 }
 
 function isWithinWorkHours(techSchedule, start, end) {
-  const dayStart = dayjs(start).startOf('day')
-  const dayEnd = dayjs(end).endOf('day')
-  
-  // Get all events within a 24-hour window of the new event
-  const relevantEvents = [
-    ...techSchedule.filter(e => 
-      dayjs(e.end).isAfter(start.subtract(24, 'hour')) && 
-      dayjs(e.start).isBefore(end)
-    ),
-    { start, end }
-  ].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+  const dayEvents = [
+    ...techSchedule.map((e) => ({ start: dayjs(e.start), end: dayjs(e.end) })),
+    { start: dayjs(start), end: dayjs(end) },
+  ].filter((e) => e.start.isSame(dayjs(start), 'day') || e.end.isSame(dayjs(start), 'day'))
 
-  if (relevantEvents.length === 0) {
+  if (dayEvents.length === 0) {
     return true
   }
 
-  let workingTime = 0
-  let lastEndTime = null
+  dayEvents.sort((a, b) => a.start.diff(b.start))
+  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 
-  for (const event of relevantEvents) {
-    const eventStart = dayjs(event.start)
-    const eventEnd = dayjs(event.end)
-
-    if (lastEndTime && eventStart.diff(lastEndTime, 'hour') >= 16) {
-      // Reset working time if there's been a 16-hour break
-      workingTime = 0
-    }
-
-    workingTime += eventEnd.diff(eventStart, 'minute')
-
-    if (workingTime > MAX_WORK_HOURS) {
-      return false
-    }
-
-    lastEndTime = eventEnd
-  }
-
-  return true
+  return totalDuration <= MAX_WORK_HOURS
 }
 
 function calculateWorkload(techSchedule, start, end) {
@@ -424,6 +243,59 @@ function calculateWorkload(techSchedule, start, end) {
   return dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 }
 
+function findBestSlotForEvent(event, techId, techSchedules) {
+  const [rangeStart, rangeEnd] = memoizedParseTimeRange(
+    event.time.originalRange,
+    event.time.duration,
+  )
+  const earliestStart = dayjs(event.start).startOf('day').add(rangeStart, 'second')
+  const latestStart = dayjs(event.start)
+    .startOf('day')
+    .add(rangeEnd, 'second')
+    .subtract(event.time.duration, 'minute')
+
+  const techSchedule = techSchedules[techId] || []
+  const gaps = findScheduleGaps(techSchedule, earliestStart, latestStart)
+
+  for (const gap of gaps) {
+    if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
+      const potentialStartTime = gap.start
+      const potentialEndTime = potentialStartTime.add(event.time.duration, 'minute')
+
+      // Check if this event would exceed the 8-hour limit in a 24-hour period
+      const dayStart = potentialStartTime.startOf('day')
+      const dayEnd = dayStart.add(1, 'day')
+      const dayEvents = techSchedule.filter(
+        (e) =>
+          dayjs(e.start).isBetween(dayStart, dayEnd, null, '[]') ||
+          dayjs(e.end).isBetween(dayStart, dayEnd, null, '[]'),
+      )
+
+      const totalWorkMinutes =
+        dayEvents.reduce((total, e) => {
+          const eventStart = dayjs.max(dayjs(e.start), dayStart)
+          const eventEnd = dayjs.min(dayjs(e.end), dayEnd)
+          return total + eventEnd.diff(eventStart, 'minute')
+        }, 0) + event.time.duration
+
+      if (totalWorkMinutes <= MAX_WORK_HOURS) {
+        return {
+          scheduled: true,
+          startTime: potentialStartTime,
+          workload: calculateWorkload(techSchedule, potentialStartTime, potentialEndTime),
+        }
+      }
+    }
+  }
+
+  return {
+    scheduled: false,
+    startTime: null,
+    workload: Infinity,
+    reason: `No suitable time slot found between ${earliestStart.format('HH:mm')} and ${latestStart.format('HH:mm')} within 8-hour work limit`,
+  }
+}
+
 function renameGenericResources(techSchedules) {
   const genericTechs = Object.keys(techSchedules).filter((id) => id.startsWith('Tech '))
   genericTechs.sort((a, b) => {
@@ -432,13 +304,69 @@ function renameGenericResources(techSchedules) {
     return aNum - bNum
   })
 
-  genericTechs.forEach((oldId, index) => {
-    const newId = `Tech ${index + 1}`
+  let newTechId = 1
+  genericTechs.forEach((oldId) => {
+    const newId = `Tech ${newTechId}`
     if (oldId !== newId) {
       techSchedules[newId] = techSchedules[oldId]
       delete techSchedules[oldId]
     }
+    newTechId++
   })
+}
+
+function scheduleEventWithBacktracking(
+  event,
+  techSchedules,
+  scheduledEventIdsByDate,
+  nextGenericTechId,
+) {
+  const backtrackStack = []
+  let attempts = 0
+
+  while (attempts < MAX_BACKTRACK_ATTEMPTS) {
+    for (const techId in techSchedules) {
+      const result = scheduleEventWithRespectToWorkHours(
+        event,
+        techId,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+      if (result.scheduled) {
+        return true
+      }
+    }
+
+    // If we couldn't schedule with existing techs, create a new one
+    const newTechId = `Tech ${nextGenericTechId++}`
+    techSchedules[newTechId] = []
+    const result = scheduleEventWithRespectToWorkHours(
+      event,
+      newTechId,
+      techSchedules,
+      scheduledEventIdsByDate,
+    )
+    if (result.scheduled) {
+      return true
+    }
+
+    // If we still couldn't schedule, backtrack
+    if (backtrackStack.length > 0) {
+      const { removedEvent, removedFromTechId } = backtrackStack.pop()
+      removeEventFromSchedule(
+        removedEvent,
+        removedFromTechId,
+        techSchedules,
+        scheduledEventIdsByDate,
+      )
+      attempts++
+    }
+    else {
+      break
+    }
+  }
+
+  return false
 }
 
 function scheduleEventWithRespectToWorkHours(
