@@ -52,8 +52,8 @@ export default function BigCalendar() {
   return (
     <div className="flex h-screen">
       {isScheduling && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="w-80 space-y-5 rounded-lg border bg-white/50 p-5 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/50">
+          <div className="w-80 space-y-5 rounded-lg border p-5 backdrop-blur-md">
             <p className="text-center">Scheduling...</p>
             <Progress
               value={schedulingProgress}

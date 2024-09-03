@@ -21,6 +21,14 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
     setProgress(newProgress)
   }, [])
 
+  // Create a stable onProgress function
+  const onProgress = useCallback(
+    (newProgress) => {
+      updateProgress(newProgress)
+    },
+    [updateProgress],
+  )
+
   useEffect(() => {
     if (!serviceSetups || !currentViewRange) {
       return
@@ -44,18 +52,13 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
       })
 
       const { scheduledEvents, unscheduledEvents, techSchedules } = await scheduleEvents(
-        { events: rawEvents, visibleStart, visibleEnd }, // Changed generatedEvents to rawEvents
-        setProgress,
+        { events: rawEvents, visibleStart, visibleEnd },
+        onProgress, // Use the stable onProgress function here
       )
 
-      const allocatedEvents = Object.entries(techSchedules).flatMap(([techId, events]) =>
-        events.map((event) => ({
-          ...event,
-          resourceId: techId,
-        })),
-      )
+      const allocatedEvents = scheduledEvents
 
-      const techCodes = new Set(allocatedEvents.map((event) => event.tech.code))
+      const techCodes = new Set(allocatedEvents.map((event) => event.tech?.code).filter(Boolean))
 
       const sortResources = (resources) => {
         return resources.sort((a, b) => {
@@ -71,12 +74,14 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
         })
       }
 
-      const resources = sortResources(
-        Object.keys(techSchedules).map((techId) => ({
-          id: techId,
-          title: techId,
-        })),
-      )
+      const resources = techSchedules
+        ? sortResources(
+            Object.keys(techSchedules).map((techId) => ({
+              id: techId,
+              title: techId,
+            })),
+          )
+        : []
 
       const filteredUnallocatedEvents = unscheduledEvents.filter((event) =>
         dayjs(event.start).isBetween(visibleStart, visibleEnd, null, '[]'),
@@ -104,7 +109,7 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
 
     // Clean up the interval when the effect is cleaned up
     return () => clearInterval(intervalId)
-  }, [serviceSetups, currentViewRange, enforcedServiceSetups, updateProgress])
+  }, [serviceSetups, currentViewRange, enforcedServiceSetups, updateProgress, onProgress]) // Added onProgress to the dependency array
 
   return { ...result, isScheduling: loading, schedulingProgress: progress }
 }
