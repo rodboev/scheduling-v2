@@ -2,11 +2,26 @@ import { memoize } from 'lodash'
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
-const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
 const MAX_SHIFT_DURATION = 8 * 60 // 8 hours in minutes
-const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
+const MAX_GAP_BETWEEN_EVENTS = 120 // 2 hours
+const MIN_REST_HOURS = 16 // 16 hours minimum rest between shifts
 const MAX_BACKTRACK_ATTEMPTS = 5
-const MIN_REST_HOURS = 16 // 12 hours minimum rest between shifts
+const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
+const LOG_LEVELS = {
+  NONE: 0,
+  ERROR: 1,
+  WARN: 2,
+  INFO: 3,
+  DEBUG: 4,
+}
+const CURRENT_LOG_LEVEL = LOG_LEVELS.ERROR
+
+function log(level, ...args) {
+  if (level <= CURRENT_LOG_LEVEL) {
+    const prefix = Object.keys(LOG_LEVELS).find((key) => LOG_LEVELS[key] === level)
+    log(`[${prefix}]`, ...args)
+  }
+}
 
 function ensureDayjs(date) {
   return dayjs.isDayjs(date) ? date : dayjs(date)
@@ -39,16 +54,21 @@ function getNextAvailableTechId(techSchedules, nextGenericTechId) {
 
 export async function scheduleEvents({ events, visibleStart, visibleEnd }, onProgress) {
   console.time('Total scheduling time')
-  console.log(`Starting scheduling process with ${events.length} events`)
+  log(`Starting scheduling process with ${events.length} events`)
 
   const techSchedules = {}
   const scheduledEventIdsByDate = new Map()
   let nextGenericTechId = 1
   const unscheduledEvents = []
 
-  // Sort events by time window size (ascending) and duration (descending)
+  // Sort events by date, then by time window size (ascending) and duration (descending)
   console.time('Sorting events')
   events.sort((a, b) => {
+    const aDate = ensureDayjs(a.start).startOf('day')
+    const bDate = ensureDayjs(b.start).startOf('day')
+    if (!aDate.isSame(bDate)) {
+      return aDate.diff(bDate)
+    }
     const aWindow = memoizedParseTimeRange(a.time.originalRange, a.time.duration)
     const bWindow = memoizedParseTimeRange(b.time.originalRange, b.time.duration)
     const aWindowSize = aWindow[1] - aWindow[0]
@@ -63,6 +83,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
   // Schedule all events
   console.time('Scheduling events')
   for (const event of events) {
+    log(`Processing event: ${event.id} on ${ensureDayjs(event.start).format('YYYY-MM-DD')}`)
     let scheduled = false
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
@@ -79,6 +100,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
     }
 
     if (!scheduled) {
+      log(`Failed to schedule event: ${event.id}`)
       unscheduledEvents.push(event)
     }
 
@@ -98,7 +120,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
     techSchedules,
     scheduledEventIdsByDate,
     nextGenericTechId,
-    onProgress, // Pass onProgress here
+    onProgress,
     totalEvents,
     processedCount,
   )
@@ -134,7 +156,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
       end: new Date(event.end),
     })),
     nextGenericTechId,
-    techSchedules, // Add this line to include techSchedules in the return value
+    techSchedules,
   }
 }
 
@@ -236,6 +258,9 @@ function findBestSlotForEvent(event, techId, techSchedules) {
   const techSchedule = techSchedules[techId] || []
   const gaps = findScheduleGaps(techSchedule, earliestStart, latestEnd)
 
+  let bestSlot = null
+  let minGap = Infinity
+
   for (const gap of gaps) {
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
       const potentialStartTime = gap.start
@@ -258,21 +283,49 @@ function findBestSlotForEvent(event, techId, techSchedules) {
         }, 0) + event.time.duration
 
       if (totalWorkMinutes <= MAX_WORK_HOURS) {
-        return {
-          scheduled: true,
-          startTime: potentialStartTime,
-          workload: calculateWorkload(techSchedule, potentialStartTime, potentialEndTime),
+        const gapToNearestEvent = findGapToNearestEvent(
+          potentialStartTime,
+          potentialEndTime,
+          techSchedule,
+        )
+        if (gapToNearestEvent < minGap) {
+          minGap = gapToNearestEvent
+          bestSlot = {
+            scheduled: true,
+            startTime: potentialStartTime,
+            workload: calculateWorkload(techSchedule, potentialStartTime, potentialEndTime),
+          }
         }
       }
     }
   }
 
-  return {
-    scheduled: false,
-    startTime: null,
-    workload: Infinity,
-    reason: `No suitable time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} within 8-hour work limit`,
-  }
+  return (
+    bestSlot || {
+      scheduled: false,
+      startTime: null,
+      workload: Infinity,
+      reason: `No suitable time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} within 8-hour work limit`,
+    }
+  )
+}
+
+function findGapToNearestEvent(start, end, schedule) {
+  const nearestBefore = schedule
+    .filter((e) => dayjs(e.end).isBefore(start))
+    .reduce((nearest, e) => {
+      const gap = start.diff(dayjs(e.end), 'minute')
+      return gap < nearest ? gap : nearest
+    }, Infinity)
+
+  const nearestAfter = schedule
+    .filter((e) => dayjs(e.start).isAfter(end))
+    .reduce((nearest, e) => {
+      const gap = dayjs(e.start).diff(end, 'minute')
+      return gap < nearest ? gap : nearest
+    }, Infinity)
+
+  return Math.min(nearestBefore, nearestAfter)
 }
 
 function scheduleEventWithBacktracking(
@@ -284,9 +337,14 @@ function scheduleEventWithBacktracking(
   const backtrackStack = []
   let attempts = 0
 
+  log(
+    `Attempting to schedule event ${event.id} on ${ensureDayjs(event.start).format('YYYY-MM-DD')}`,
+  )
+
   while (attempts < MAX_BACKTRACK_ATTEMPTS) {
     // Try to schedule with existing techs
     for (const techId in techSchedules) {
+      log(`Trying to schedule event ${event.id} with existing tech ${techId}`)
       const result = scheduleEventWithRespectToWorkHours(
         event,
         techId,
@@ -294,25 +352,35 @@ function scheduleEventWithBacktracking(
         scheduledEventIdsByDate,
       )
       if (result.scheduled) {
+        log(`Successfully scheduled event ${event.id} with tech ${techId}`)
         return { scheduled: true, nextGenericTechId }
+      }
+      else {
+        log(`Failed to schedule event ${event.id} with tech ${techId}. Reason: ${result.reason}`)
       }
     }
 
     // If we couldn't schedule with existing techs, create a new one
-    const newTechId = getNextAvailableTechId(techSchedules, nextGenericTechId)
+    const newTechId = `Tech ${getNextAvailableTechId(techSchedules, nextGenericTechId)}`
+    log(`Creating new tech ${newTechId} for event ${event.id}`)
+    techSchedules[newTechId] = [] // Initialize the new tech's schedule
     const result = scheduleEventWithRespectToWorkHours(
       event,
-      `Tech ${newTechId}`,
+      newTechId,
       techSchedules,
       scheduledEventIdsByDate,
     )
     if (result.scheduled) {
-      return { scheduled: true, nextGenericTechId: newTechId + 1 }
+      log(`Successfully scheduled event ${event.id} with new tech ${newTechId}`)
+      return { scheduled: true, nextGenericTechId: nextGenericTechId + 1 }
     }
+
+    log(`Failed to schedule event ${event.id} with new tech ${newTechId}. Reason: ${result.reason}`)
 
     // If we still couldn't schedule, backtrack
     if (backtrackStack.length > 0) {
       const { removedEvent, removedFromTechId } = backtrackStack.pop()
+      log(`Backtracking: Removing event ${removedEvent.id} from tech ${removedFromTechId}`)
       removeEventFromSchedule(
         removedEvent,
         removedFromTechId,
@@ -322,10 +390,12 @@ function scheduleEventWithBacktracking(
       attempts++
     }
     else {
+      log(`Unable to backtrack for event ${event.id}`)
       break
     }
   }
 
+  log(`Failed to schedule event ${event.id} after ${attempts} attempts`)
   return { scheduled: false, nextGenericTechId }
 }
 
@@ -351,7 +421,7 @@ function scheduleEventWithRespectToWorkHours(
 
   for (const gap of gaps) {
     if (gap.end.diff(gap.start, 'minute') >= event.time.duration) {
-      const startTime = findBestStartTimeInGap(gap, event.time.duration, schedule)
+      const startTime = gap.start
       const endTime = startTime.add(event.time.duration, 'minute')
 
       if (isWithinWorkHours(schedule, startTime, endTime)) {
@@ -379,15 +449,39 @@ function isWithinWorkHours(schedule, start, end) {
   )
 
   if (dayEvents.length === 0) {
+    log('No events for the day, returning true')
     return true
   }
 
   dayEvents.sort((a, b) => a.start.diff(b.start))
-  const shiftStart = dayEvents[0].start
-  const shiftEnd = dayEvents[dayEvents.length - 1].end
-  const shiftDuration = shiftEnd.diff(shiftStart, 'minute')
+  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 
-  return shiftDuration <= MAX_SHIFT_DURATION
+  log(`Total duration: ${totalDuration}, MAX_SHIFT_DURATION: ${MAX_SHIFT_DURATION}`)
+  return totalDuration <= MAX_SHIFT_DURATION
+}
+
+function calculateShiftDuration(events) {
+  if (events.length === 0) return 0
+
+  const shiftStart = ensureDayjs(events[0].start)
+  const shiftEnd = ensureDayjs(events[events.length - 1].end)
+
+  return shiftEnd.diff(shiftStart, 'minute')
+}
+
+function isIsolatedEvent(events, index) {
+  const event = events[index]
+  const prevEvent = index > 0 ? events[index - 1] : null
+  const nextEvent = index < events.length - 1 ? events[index + 1] : null
+
+  const gapBefore = prevEvent
+    ? ensureDayjs(event.start).diff(ensureDayjs(prevEvent.end), 'minute')
+    : Infinity
+  const gapAfter = nextEvent
+    ? ensureDayjs(nextEvent.start).diff(ensureDayjs(event.end), 'minute')
+    : Infinity
+
+  return gapBefore > MAX_GAP_BETWEEN_EVENTS && gapAfter > MAX_GAP_BETWEEN_EVENTS
 }
 
 function findBestStartTimeInGap(gap, duration, schedule) {
@@ -521,23 +615,35 @@ function printSummary(techSchedules, unscheduledEvents) {
   let hasPrintedEvents = false
 
   Object.entries(techSchedules).forEach(([techId, schedule]) => {
-    let techTotal = 0
     let techSummary = `${techId}:\n`
 
-    schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
-
+    // Group events by day
+    const daySchedules = new Map()
     schedule.forEach((event) => {
-      const date = ensureDayjs(event.start).format('M/D')
-      const start = ensureDayjs(event.start).format('h:mma')
-      const end = ensureDayjs(event.end).format('h:mma')
-      techSummary += `- ${date}, ${start}-${end}, ${event.company} (id: ${event.id})\n`
-      techTotal += event.time.duration
+      const day = ensureDayjs(event.start).startOf('day').format('YYYY-MM-DD')
+      if (!daySchedules.has(day)) {
+        daySchedules.set(day, [])
+      }
+      daySchedules.get(day).push(event)
     })
 
-    const techTotalHours = (techTotal / 60).toFixed(1)
+    // Print events and calculate shift duration for each day
+    for (const [day, events] of daySchedules) {
+      events.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
-    if (techTotal > 0) {
-      techSummary += `Total: ${techTotalHours} hours\n\n`
+      events.forEach((event) => {
+        const date = ensureDayjs(event.start).format('M/D')
+        const start = ensureDayjs(event.start).format('h:mma')
+        const end = ensureDayjs(event.end).format('h:mma')
+        techSummary += `- ${date}, ${start}-${end}, ${event.company} (id: ${event.id})\n`
+      })
+
+      const shiftDuration = calculateShiftDuration(events)
+      const shiftDurationHours = (shiftDuration / 60).toFixed(1)
+      techSummary += `Shift duration: ${shiftDurationHours} hours\n\n`
+    }
+
+    if (schedule.length > 0) {
       scheduleSummary += techSummary
       hasPrintedEvents = true
     }
@@ -555,6 +661,6 @@ function printSummary(techSchedules, unscheduledEvents) {
   }
 
   if (hasPrintedEvents) {
-    console.log(scheduleSummary)
+    log(scheduleSummary)
   }
 }
