@@ -3,6 +3,7 @@ import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
 const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
+const MAX_SHIFT_DURATION = 8 * 60 // 8 hours in minutes
 const TIME_INCREMENT = 15 * 60 // 15 minutes in seconds
 const MAX_BACKTRACK_ATTEMPTS = 5
 const MIN_REST_HOURS = 16 // 12 hours minimum rest between shifts
@@ -212,45 +213,6 @@ async function tryScheduleUnscheduledEvents(
   return remainingUnscheduled
 }
 
-function findScheduleGaps(schedule, start, end) {
-  const gaps = []
-  let currentTime = dayjs(start)
-  const endTime = dayjs(end)
-
-  schedule.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
-
-  schedule.forEach((event) => {
-    const eventStart = dayjs(event.start)
-    const eventEnd = dayjs(event.end)
-    if (eventStart.isAfter(currentTime)) {
-      gaps.push({ start: currentTime, end: eventStart })
-    }
-    currentTime = dayjs.max(currentTime, eventEnd)
-  })
-
-  if (endTime.isAfter(currentTime)) {
-    gaps.push({ start: currentTime, end: endTime })
-  }
-
-  return gaps
-}
-
-function isWithinWorkHours(techSchedule, start, end) {
-  const dayEvents = [
-    ...techSchedule.map((e) => ({ start: dayjs(e.start), end: dayjs(e.end) })),
-    { start: dayjs(start), end: dayjs(end) },
-  ].filter((e) => e.start.isSame(dayjs(start), 'day') || e.end.isSame(dayjs(start), 'day'))
-
-  if (dayEvents.length === 0) {
-    return true
-  }
-
-  dayEvents.sort((a, b) => a.start.diff(b.start))
-  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
-
-  return totalDuration <= MAX_WORK_HOURS
-}
-
 function calculateWorkload(techSchedule, start, end) {
   const dayEvents = [
     ...techSchedule.map((e) => ({ start: dayjs(e.start), end: dayjs(e.end) })),
@@ -380,7 +342,12 @@ function scheduleEventWithRespectToWorkHours(
   const earliestStart = ensureDayjs(event.start).startOf('day').add(rangeStart, 'second')
   const latestEnd = ensureDayjs(event.start).startOf('day').add(rangeEnd, 'second')
 
-  const schedule = techSchedules[techId] || []
+  // Initialize the tech's schedule if it doesn't exist
+  if (!techSchedules[techId]) {
+    techSchedules[techId] = []
+  }
+
+  const schedule = techSchedules[techId]
   const gaps = findScheduleGaps(schedule, earliestStart, latestEnd)
 
   for (const gap of gaps) {
@@ -390,12 +357,7 @@ function scheduleEventWithRespectToWorkHours(
 
       if (isWithinWorkHours(schedule, startTime, endTime)) {
         const scheduledEvent = { ...event, start: ensureDate(startTime), end: ensureDate(endTime) }
-
-        // Only create the tech schedule if it doesn't exist
-        if (!techSchedules[techId]) {
-          techSchedules[techId] = []
-        }
-        addEvent(techSchedules[techId], scheduledEvent)
+        addEvent(schedule, scheduledEvent)
 
         const eventDate = startTime.format('YYYY-MM-DD')
         const eventKey = `${event.id}-${eventDate}`
@@ -407,6 +369,47 @@ function scheduleEventWithRespectToWorkHours(
   }
 
   return { scheduled: false, reason: 'No available time slot within the specified range' }
+}
+
+function isWithinWorkHours(schedule, start, end) {
+  const dayEvents = [
+    ...schedule.map((e) => ({ start: ensureDayjs(e.start), end: ensureDayjs(e.end) })),
+    { start: ensureDayjs(start), end: ensureDayjs(end) },
+  ].filter(
+    (e) => e.start.isSame(ensureDayjs(start), 'day') || e.end.isSame(ensureDayjs(start), 'day'),
+  )
+
+  if (dayEvents.length === 0) {
+    return true
+  }
+
+  dayEvents.sort((a, b) => a.start.diff(b.start))
+  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
+
+  return totalDuration <= MAX_SHIFT_DURATION
+}
+
+function findScheduleGaps(schedule, start, end) {
+  const gaps = []
+  let currentTime = ensureDayjs(start)
+  const endTime = ensureDayjs(end)
+
+  schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+
+  schedule.forEach((event) => {
+    const eventStart = ensureDayjs(event.start)
+    const eventEnd = ensureDayjs(event.end)
+    if (eventStart.isAfter(currentTime)) {
+      gaps.push({ start: currentTime, end: eventStart })
+    }
+    currentTime = dayjs.max(currentTime, eventEnd)
+  })
+
+  if (endTime.isAfter(currentTime)) {
+    gaps.push({ start: currentTime, end: endTime })
+  }
+
+  return gaps
 }
 
 function addEvent(schedule, event) {
