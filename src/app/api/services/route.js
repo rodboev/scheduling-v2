@@ -147,28 +147,27 @@ function transformServiceSetup(setup) {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
+  const idParam = searchParams.get('id')
 
-  // Try to read from disk cache first
-  let serviceSetups = await readFromDiskCache()
-
-  if (!serviceSetups) {
+  if (idParam) {
+    // Handle specific ID request
+    const ids = idParam.split(',')
     let pool
     try {
-      console.log('Fetching service setups from database...')
+      console.log('Fetching specific service setups from database...')
       pool = await sql.connect(config)
 
-      serviceSetups = await runQuery(pool, BASE_QUERY)
-      console.log('Total service setups fetched:', serviceSetups.length)
+      const query = `${BASE_QUERY} AND ServiceSetups.SetupID IN (${ids.map((id) => `'${id}'`).join(',')})`
+      const serviceSetups = await runQuery(pool, query)
+      console.log('Total specific service setups fetched:', serviceSetups.length)
 
-      // Transform all service setups immediately
-      serviceSetups = serviceSetups.map(transformServiceSetup)
-      console.log('Transformed setups:', serviceSetups.length)
+      // Transform fetched service setups
+      const transformedSetups = serviceSetups.map(transformServiceSetup)
 
-      // Write all fetched and transformed data to disk cache
-      await writeToDiskCache(serviceSetups)
+      return NextResponse.json(transformedSetups)
     }
     catch (error) {
-      console.error('Error fetching from database:', error)
+      console.error('Error fetching specific setups from database:', error)
       return NextResponse.json(
         { error: 'Internal Server Error', details: error.message, stack: error.stack },
         { status: 500 },
@@ -187,15 +186,55 @@ export async function GET(request) {
     }
   }
   else {
-    console.log('Using cached data, total setups:', serviceSetups.length)
-  }
+    // Handle full request (use disk cache)
+    let serviceSetups = await readFromDiskCache()
 
-  if (ALLOWED_TECHS?.length > 0) {
-    return NextResponse.json(
-      serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code)),
-    )
-  }
-  else {
-    return NextResponse.json(serviceSetups)
+    if (!serviceSetups) {
+      let pool
+      try {
+        console.log('Fetching all service setups from database...')
+        pool = await sql.connect(config)
+
+        serviceSetups = await runQuery(pool, BASE_QUERY)
+        console.log('Total service setups fetched:', serviceSetups.length)
+
+        // Transform all service setups immediately
+        serviceSetups = serviceSetups.map(transformServiceSetup)
+        console.log('Transformed setups:', serviceSetups.length)
+
+        // Write all fetched and transformed data to disk cache
+        await writeToDiskCache(serviceSetups)
+      }
+      catch (error) {
+        console.error('Error fetching from database:', error)
+        return NextResponse.json(
+          { error: 'Internal Server Error', details: error.message, stack: error.stack },
+          { status: 500 },
+        )
+      }
+      finally {
+        if (pool) {
+          try {
+            await pool.close()
+            console.log('Database connection closed')
+          }
+          catch (closeErr) {
+            console.error('Error closing database connection:', closeErr)
+          }
+        }
+      }
+    }
+    else {
+      console.log('Using cached data, total setups:', serviceSetups.length)
+    }
+
+    if (ALLOWED_TECHS?.length > 0) {
+      return NextResponse.json(
+        serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code)),
+      )
+    }
+    else {
+      return NextResponse.json(serviceSetups)
+    }
   }
 }

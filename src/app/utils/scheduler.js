@@ -7,21 +7,6 @@ const MAX_GAP_BETWEEN_EVENTS = 120 // 2 hours
 const MIN_REST_HOURS = 16 // 16 hours minimum rest between shifts
 const MAX_BACKTRACK_ATTEMPTS = 5
 const MAX_WORK_HOURS = 8 * 60 // 8 hours in minutes
-const LOG_LEVELS = {
-  NONE: 0,
-  ERROR: 1,
-  WARN: 2,
-  INFO: 3,
-  DEBUG: 4,
-}
-const CURRENT_LOG_LEVEL = LOG_LEVELS.ERROR
-
-function log(level, ...args) {
-  if (level <= CURRENT_LOG_LEVEL) {
-    const prefix = Object.keys(LOG_LEVELS).find((key) => LOG_LEVELS[key] === level)
-    log(`[${prefix}]`, ...args)
-  }
-}
 
 function ensureDayjs(date) {
   return dayjs.isDayjs(date) ? date : dayjs(date)
@@ -54,7 +39,7 @@ function getNextAvailableTechId(techSchedules, nextGenericTechId) {
 
 export async function scheduleEvents({ events, visibleStart, visibleEnd }, onProgress) {
   console.time('Total scheduling time')
-  log(`Starting scheduling process with ${events.length} events`)
+  console.log(`Starting scheduling process with ${events.length} events:`)
 
   const techSchedules = {}
   const scheduledEventIdsByDate = new Map()
@@ -83,7 +68,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
   // Schedule all events
   console.time('Scheduling events')
   for (const event of events) {
-    log(`Processing event: ${event.id} on ${ensureDayjs(event.start).format('YYYY-MM-DD')}`)
+    // Processing event
     let scheduled = false
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
@@ -100,7 +85,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
     }
 
     if (!scheduled) {
-      log(`Failed to schedule event: ${event.id}`)
+      // Failed to schedule event
       unscheduledEvents.push(event)
     }
 
@@ -148,16 +133,24 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
 
   printSummary(techSchedules, remainingUnscheduled)
 
-  return {
-    scheduledEvents,
+  const result = {
+    scheduledEvents: Object.entries(techSchedules).flatMap(([techId, schedule]) =>
+      schedule.map((event) => ({
+        ...event,
+        start: event.start.toISOString(),
+        end: event.end.toISOString(),
+        resourceId: techId,
+      })),
+    ),
     unscheduledEvents: remainingUnscheduled.map((event) => ({
       ...event,
-      start: new Date(event.start),
-      end: new Date(event.end),
+      start: event.start.toISOString(),
+      end: event.end.toISOString(),
     })),
     nextGenericTechId,
-    techSchedules,
   }
+
+  return result
 }
 
 async function tryScheduleUnscheduledEvents(
@@ -337,14 +330,11 @@ function scheduleEventWithBacktracking(
   const backtrackStack = []
   let attempts = 0
 
-  log(
-    `Attempting to schedule event ${event.id} on ${ensureDayjs(event.start).format('YYYY-MM-DD')}`,
-  )
-
+  // Attempting to schedule event with backtracking
   while (attempts < MAX_BACKTRACK_ATTEMPTS) {
     // Try to schedule with existing techs
     for (const techId in techSchedules) {
-      log(`Trying to schedule event ${event.id} with existing tech ${techId}`)
+      // Trying to schedule event with existing tech
       const result = scheduleEventWithRespectToWorkHours(
         event,
         techId,
@@ -352,17 +342,16 @@ function scheduleEventWithBacktracking(
         scheduledEventIdsByDate,
       )
       if (result.scheduled) {
-        log(`Successfully scheduled event ${event.id} with tech ${techId}`)
+        // Successfully scheduled event with existing tech
         return { scheduled: true, nextGenericTechId }
       }
       else {
-        log(`Failed to schedule event ${event.id} with tech ${techId}. Reason: ${result.reason}`)
+        // Failed to schedule event with existing tech
       }
     }
 
     // If we couldn't schedule with existing techs, create a new one
     const newTechId = `Tech ${getNextAvailableTechId(techSchedules, nextGenericTechId)}`
-    log(`Creating new tech ${newTechId} for event ${event.id}`)
     techSchedules[newTechId] = [] // Initialize the new tech's schedule
     const result = scheduleEventWithRespectToWorkHours(
       event,
@@ -371,16 +360,21 @@ function scheduleEventWithBacktracking(
       scheduledEventIdsByDate,
     )
     if (result.scheduled) {
-      log(`Successfully scheduled event ${event.id} with new tech ${newTechId}`)
+      // Successfully scheduled event with the new tech
+      console.log(
+        `Scheduled event ${event.id} ${event.company} with new tech ${newTechId}. Reason: ${result.reason}`,
+      )
       return { scheduled: true, nextGenericTechId: nextGenericTechId + 1 }
     }
 
-    log(`Failed to schedule event ${event.id} with new tech ${newTechId}. Reason: ${result.reason}`)
+    // Failed to schedule event with the new tech
+    console.log(
+      `Failed to schedule event ${event.id} ${event.company} with new tech ${newTechId}. Reason: ${result.reason}`,
+    )
 
-    // If we still couldn't schedule, backtrack
+    // If we still couldn't schedule, backtrack and remove the last event
     if (backtrackStack.length > 0) {
       const { removedEvent, removedFromTechId } = backtrackStack.pop()
-      log(`Backtracking: Removing event ${removedEvent.id} from tech ${removedFromTechId}`)
       removeEventFromSchedule(
         removedEvent,
         removedFromTechId,
@@ -390,12 +384,13 @@ function scheduleEventWithBacktracking(
       attempts++
     }
     else {
-      log(`Unable to backtrack for event ${event.id}`)
+      // Unable to backtrack to remove the last event
       break
     }
   }
 
-  log(`Failed to schedule event ${event.id} after ${attempts} attempts`)
+  // Failed to schedule event
+  console.log(`Failed to schedule event ${event.id} ${event.company} after ${attempts} attempts`)
   return { scheduled: false, nextGenericTechId }
 }
 
@@ -449,14 +444,13 @@ function isWithinWorkHours(schedule, start, end) {
   )
 
   if (dayEvents.length === 0) {
-    log('No events for the day, returning true')
+    // No events on this day, proceed
     return true
   }
 
   dayEvents.sort((a, b) => a.start.diff(b.start))
   const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 
-  log(`Total duration: ${totalDuration}, MAX_SHIFT_DURATION: ${MAX_SHIFT_DURATION}`)
   return totalDuration <= MAX_SHIFT_DURATION
 }
 
@@ -612,7 +606,6 @@ function scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate) {
 
 function printSummary(techSchedules, unscheduledEvents) {
   let scheduleSummary = 'Schedule Summary:\n\n'
-  let hasPrintedEvents = false
 
   Object.entries(techSchedules).forEach(([techId, schedule]) => {
     let techSummary = `${techId}:\n`
@@ -645,7 +638,6 @@ function printSummary(techSchedules, unscheduledEvents) {
 
     if (schedule.length > 0) {
       scheduleSummary += techSummary
-      hasPrintedEvents = true
     }
   })
 
@@ -657,10 +649,7 @@ function printSummary(techSchedules, unscheduledEvents) {
       const timeWindow = formatTimeRange(event.time.range[0], event.time.range[1])
       scheduleSummary += `- ${date}, ${timeWindow} time window, ${event.company} (id: ${event.id}), Reason: ${event.reason}\n`
     })
-    hasPrintedEvents = true
   }
 
-  if (hasPrintedEvents) {
-    log(scheduleSummary)
-  }
+  console.log(scheduleSummary)
 }
