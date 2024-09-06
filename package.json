@@ -48,6 +48,7 @@
     "eslint-plugin-react": "^7.35.0",
     "eslint-plugin-react-compiler": "^0.0.0-experimental-72f06b2-20240822",
     "eslint-plugin-react-hooks": "^4.6.2",
+    "nextjs-node-loader": "^1.1.5",
     "postcss": "^8",
     "prettier": "^3.3.3",
     "prettier-plugin-brace-style": "^0.7.0",

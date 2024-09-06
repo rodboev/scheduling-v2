@@ -3,7 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 
 const CACHE_FILE = path.join(process.cwd(), 'data', 'serviceSetups.json')
-const CACHE_VALIDITY_HOURS = 4
+const CACHE_VALIDITY_HOURS = 72
 
 function formatCacheAge(ageInHours) {
   const hours = Math.floor(ageInHours)
@@ -20,9 +20,12 @@ function formatCacheAge(ageInHours) {
   }
 }
 
-export async function readFromDiskCache() {
+export async function readFromDiskCache({
+  file = CACHE_FILE,
+  cacheAgeAcceptable = CACHE_VALIDITY_HOURS,
+}) {
   try {
-    const data = await fs.readFile(CACHE_FILE, 'utf-8')
+    const data = await fs.readFile(file, 'utf-8')
     const { timestamp, serviceSetups } = JSON.parse(data)
 
     if (!timestamp || !serviceSetups) {
@@ -31,17 +34,17 @@ export async function readFromDiskCache() {
     }
 
     const now = Date.now()
-    const cacheTime = new Date(timestamp).getTime()
+    const cacheTimestamp = new Date(timestamp).getTime()
 
-    if (isNaN(cacheTime)) {
+    if (isNaN(cacheTimestamp)) {
       console.log('Invalid cache timestamp')
       return null
     }
 
-    const cacheAgeHours = (now - cacheTime) / (1000 * 60 * 60) // age in hours
+    const cacheAgeHours = (now - cacheTimestamp) / (1000 * 60 * 60) // age in hours
     const formattedAge = formatCacheAge(cacheAgeHours)
 
-    if (cacheAgeHours < CACHE_VALIDITY_HOURS) {
+    if (cacheAgeHours < cacheAgeAcceptable) {
       console.log(`Using valid cache, age: ${formattedAge}`)
       return serviceSetups
     }
@@ -60,13 +63,13 @@ export async function readFromDiskCache() {
   }
 }
 
-export async function writeToDiskCache(data) {
+export async function writeToDiskCache({ file = CACHE_FILE, cacheAge, data }) {
   try {
     const cacheData = {
       timestamp: Date.now(), // Use milliseconds since epoch
       serviceSetups: data,
     }
-    await fs.writeFile(CACHE_FILE, JSON.stringify(cacheData, null, 2), 'utf-8')
+    await fs.writeFile(file, JSON.stringify(cacheData, null, 2), 'utf-8')
     console.log('Cache written successfully')
   }
   catch (error) {

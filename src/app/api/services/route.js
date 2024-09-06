@@ -2,7 +2,7 @@
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
-import sql from 'mssql/msnodesqlv8'
+import sql from 'msnodesqlv8'
 import { NextResponse } from 'next/server'
 
 const ALLOWED_TECHS = [
@@ -149,25 +149,27 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const idParam = searchParams.get('id')
 
-  if (idParam) {
-    // Handle specific ID request
-    const ids = idParam.split(',')
+  // Always try to read from disk cache first
+  let serviceSetups = await readFromDiskCache({ cacheAgeAcceptable: Infinity })
+
+  if (!serviceSetups) {
     let pool
     try {
-      console.log('Fetching specific service setups from database...')
+      console.log('Fetching service setups from database...')
       pool = await sql.connect(config)
 
-      const query = `${BASE_QUERY} AND ServiceSetups.SetupID IN (${ids.map((id) => `'${id}'`).join(',')})`
-      const serviceSetups = await runQuery(pool, query)
-      console.log('Total specific service setups fetched:', serviceSetups.length)
+      serviceSetups = await runQuery(pool, BASE_QUERY)
+      console.log('Total service setups fetched:', serviceSetups.length)
 
-      // Transform fetched service setups
-      const transformedSetups = serviceSetups.map(transformServiceSetup)
+      // Transform all service setups immediately
+      serviceSetups = serviceSetups.map(transformServiceSetup)
+      console.log('Transformed setups:', serviceSetups.length)
 
-      return NextResponse.json(transformedSetups)
+      // Write all fetched and transformed data to disk cache
+      await writeToDiskCache({ data: serviceSetups })
     }
     catch (error) {
-      console.error('Error fetching specific setups from database:', error)
+      console.error('Error fetching from database:', error)
       return NextResponse.json(
         { error: 'Internal Server Error', details: error.message, stack: error.stack },
         { status: 500 },
@@ -186,55 +188,20 @@ export async function GET(request) {
     }
   }
   else {
-    // Handle full request (use disk cache)
-    let serviceSetups = await readFromDiskCache()
-
-    if (!serviceSetups) {
-      let pool
-      try {
-        console.log('Fetching all service setups from database...')
-        pool = await sql.connect(config)
-
-        serviceSetups = await runQuery(pool, BASE_QUERY)
-        console.log('Total service setups fetched:', serviceSetups.length)
-
-        // Transform all service setups immediately
-        serviceSetups = serviceSetups.map(transformServiceSetup)
-        console.log('Transformed setups:', serviceSetups.length)
-
-        // Write all fetched and transformed data to disk cache
-        await writeToDiskCache(serviceSetups)
-      }
-      catch (error) {
-        console.error('Error fetching from database:', error)
-        return NextResponse.json(
-          { error: 'Internal Server Error', details: error.message, stack: error.stack },
-          { status: 500 },
-        )
-      }
-      finally {
-        if (pool) {
-          try {
-            await pool.close()
-            console.log('Database connection closed')
-          }
-          catch (closeErr) {
-            console.error('Error closing database connection:', closeErr)
-          }
-        }
-      }
-    }
-    else {
-      console.log('Using cached data, total setups:', serviceSetups.length)
-    }
-
-    if (ALLOWED_TECHS?.length > 0) {
-      return NextResponse.json(
-        serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code)),
-      )
-    }
-    else {
-      return NextResponse.json(serviceSetups)
-    }
+    console.log('Using cached data, total setups:', serviceSetups.length)
   }
+
+  // Filter by ALLOWED_TECHS if necessary
+  if (ALLOWED_TECHS?.length > 0) {
+    serviceSetups = serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
+  }
+
+  // Filter by specific IDs if idParam is present
+  if (idParam) {
+    const ids = idParam.split(',')
+    serviceSetups = serviceSetups.filter((setup) => ids.includes(setup.id.toString()))
+    console.log(`Filtered ${serviceSetups.length} setups for requested IDs: ${idParam}`)
+  }
+
+  return NextResponse.json(serviceSetups)
 }
