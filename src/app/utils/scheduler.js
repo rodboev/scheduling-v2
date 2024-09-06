@@ -1,4 +1,3 @@
-import { memoize } from 'lodash'
 import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
 
@@ -16,12 +15,12 @@ function ensureDate(date) {
   return dayjs.isDayjs(date) ? date.toDate() : date
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 function getNextAvailableTechId(techSchedules, nextGenericTechId) {
   const existingIds = Object.keys(techSchedules)
-    .filter((id) => id.startsWith('Tech '))
-    .map((id) => {
+    .filter(id => id.startsWith('Tech '))
+    .map(id => {
       const num = parseInt(id.split(' ')[1])
       return isNaN(num) ? 0 : num // Convert NaN to 0
     })
@@ -66,8 +65,13 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
 
   for (const event of events) {
     let scheduled = false
+    let reason = ''
+
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
+      if (!scheduled) {
+        reason = 'Could not schedule enforced event'
+      }
     }
     else {
       // Try to schedule with existing techs
@@ -81,6 +85,9 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
         if (result.scheduled) {
           scheduled = true
           break
+        }
+        else {
+          reason = result.reason
         }
       }
 
@@ -97,11 +104,14 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
           scheduledEventIdsByDate,
         )
         scheduled = result.scheduled
+        if (!scheduled) {
+          reason = result.reason
+        }
       }
     }
 
     if (!scheduled) {
-      unscheduledEvents.push({ ...event, reason: 'Could not be scheduled' })
+      unscheduledEvents.push({ ...event, reason })
     }
 
     processedCount++
@@ -115,7 +125,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
 
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
-    schedule.map((event) => ({
+    schedule.map(event => ({
       ...event,
       start: new Date(event.start),
       end: new Date(event.end),
@@ -126,7 +136,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
   console.timeEnd('Total scheduling time')
 
   // Remove any empty tech schedules
-  Object.keys(techSchedules).forEach((techId) => {
+  Object.keys(techSchedules).forEach(techId => {
     if (techSchedules[techId].length === 0) {
       delete techSchedules[techId]
     }
@@ -134,30 +144,16 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
 
   printSummary(techSchedules, unscheduledEvents)
 
-  // Print unscheduled events
-  const uniqueUnscheduledEvents = [
-    ...new Set(
-      unscheduledEvents.map((e) => ({
-        id: e.id.split('-')[0],
-        reason: e.reason,
-      })),
-    ),
-  ]
-  console.log(`Unscheduled events (${uniqueUnscheduledEvents.length}):`)
-  for (const event of uniqueUnscheduledEvents) {
-    console.log(`- ${event.id}: ${event.reason}`)
-  }
-
   const result = {
     scheduledEvents: Object.entries(techSchedules).flatMap(([techId, schedule]) =>
-      schedule.map((event) => ({
+      schedule.map(event => ({
         ...event,
         start: event.start.toISOString(),
         end: event.end.toISOString(),
         resourceId: techId,
       })),
     ),
-    unscheduledEvents: unscheduledEvents.map((event) => ({
+    unscheduledEvents: unscheduledEvents.map(event => ({
       ...event,
       start: event.start.toISOString(),
       end: event.end.toISOString(),
@@ -245,9 +241,9 @@ async function tryScheduleUnscheduledEvents(
 
 function calculateWorkload(techSchedule, start, end) {
   const dayEvents = [
-    ...techSchedule.map((e) => ({ start: dayjs(e.start), end: dayjs(e.end) })),
+    ...techSchedule.map(e => ({ start: dayjs(e.start), end: dayjs(e.end) })),
     { start: dayjs(start), end: dayjs(end) },
-  ].filter((e) => e.start.isSame(dayjs(start), 'day'))
+  ].filter(e => e.start.isSame(dayjs(start), 'day'))
 
   if (dayEvents.length === 0) return 0
 
@@ -278,7 +274,7 @@ function findBestSlotForEvent(event, techId, techSchedules) {
       const dayStart = potentialStartTime.startOf('day')
       const dayEnd = dayStart.add(1, 'day')
       const dayEvents = techSchedule.filter(
-        (e) =>
+        e =>
           dayjs(e.start).isBetween(dayStart, dayEnd, null, '[]') ||
           dayjs(e.end).isBetween(dayStart, dayEnd, null, '[]'),
       )
@@ -320,14 +316,14 @@ function findBestSlotForEvent(event, techId, techSchedules) {
 
 function findGapToNearestEvent(start, end, schedule) {
   const nearestBefore = schedule
-    .filter((e) => dayjs(e.end).isBefore(start))
+    .filter(e => dayjs(e.end).isBefore(start))
     .reduce((nearest, e) => {
       const gap = start.diff(dayjs(e.end), 'minute')
       return gap < nearest ? gap : nearest
     }, Infinity)
 
   const nearestAfter = schedule
-    .filter((e) => dayjs(e.start).isAfter(end))
+    .filter(e => dayjs(e.start).isAfter(end))
     .reduce((nearest, e) => {
       const gap = dayjs(e.start).diff(end, 'minute')
       return gap < nearest ? gap : nearest
@@ -451,7 +447,10 @@ function scheduleEventWithRespectToWorkHours(
     }
   }
 
-  return { scheduled: false, reason: 'No available time slot within the specified range' }
+  return {
+    scheduled: false,
+    reason: `No available time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for tech ${techId}`,
+  }
 }
 
 function isWithinWorkHours(schedule, start, end) {
@@ -461,10 +460,10 @@ function isWithinWorkHours(schedule, start, end) {
   const nextDayStart = dayStart.add(1, 'day')
 
   const dayEvents = [
-    ...schedule.map((e) => ({ start: ensureDayjs(e.start), end: ensureDayjs(e.end) })),
+    ...schedule.map(e => ({ start: ensureDayjs(e.start), end: ensureDayjs(e.end) })),
     { start: eventStart, end: eventEnd },
   ].filter(
-    (e) =>
+    e =>
       (e.start.isSameOrAfter(dayStart) && e.start.isBefore(nextDayStart)) ||
       (e.end.isAfter(dayStart) && e.end.isSameOrBefore(nextDayStart)) ||
       (e.start.isBefore(dayStart) && e.end.isAfter(nextDayStart)),
@@ -583,7 +582,7 @@ function findScheduleGaps(schedule, start, end) {
 
   let lastEventEnd = null
 
-  schedule.forEach((event) => {
+  schedule.forEach(event => {
     const eventStart = ensureDayjs(event.start)
     const eventEnd = ensureDayjs(event.end)
 
@@ -613,7 +612,7 @@ function findScheduleGaps(schedule, start, end) {
 }
 
 function addEvent(schedule, event) {
-  const index = schedule.findIndex((e) => ensureDayjs(e.start).isAfter(ensureDayjs(event.start)))
+  const index = schedule.findIndex(e => ensureDayjs(e.start).isAfter(ensureDayjs(event.start)))
   if (index === -1) {
     schedule.push(event)
   }
@@ -623,7 +622,7 @@ function addEvent(schedule, event) {
 }
 
 function removeEventFromSchedule(event, techId, techSchedules, scheduledEventIdsByDate) {
-  techSchedules[techId] = techSchedules[techId].filter((e) => e.id !== event.id)
+  techSchedules[techId] = techSchedules[techId].filter(e => e.id !== event.id)
   const eventDate = ensureDayjs(event.start).format('YYYY-MM-DD')
   const eventKey = `${event.id}-${eventDate}`
   scheduledEventIdsByDate.delete(eventKey)
@@ -658,7 +657,7 @@ function printSummary(techSchedules, unscheduledEvents) {
 
     // Group events by day
     const daySchedules = new Map()
-    schedule.forEach((event) => {
+    schedule.forEach(event => {
       const day = ensureDayjs(event.start).startOf('day').format('YYYY-MM-DD')
       if (!daySchedules.has(day)) {
         daySchedules.set(day, [])
@@ -670,7 +669,7 @@ function printSummary(techSchedules, unscheduledEvents) {
     for (const [day, events] of daySchedules) {
       events.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
-      events.forEach((event) => {
+      events.forEach(event => {
         const date = ensureDayjs(event.start).format('M/D')
         const start = ensureDayjs(event.start).format('h:mma')
         const end = ensureDayjs(event.end).format('h:mma')
@@ -690,11 +689,30 @@ function printSummary(techSchedules, unscheduledEvents) {
   // Unallocated events
   if (unscheduledEvents.length > 0) {
     scheduleSummary += 'Unallocated services:\n'
-    unscheduledEvents.forEach((event) => {
+    unscheduledEvents.forEach(event => {
       const date = ensureDayjs(event.start).format('M/D')
       const timeWindow = formatTimeRange(event.time.range[0], event.time.range[1])
       scheduleSummary += `- ${date}, ${timeWindow} time window, ${event.company} (id: ${event.id}), Reason: ${event.reason}\n`
     })
+
+    // Log events with time range issues
+    const reasonToFilter = 'time range'
+    const eventsWithTimeIssues = [
+      ...new Set(
+        unscheduledEvents
+          .filter(e => e.reason.includes(reasonToFilter))
+          .map(e => ({
+            id: e.id.split('-')[0],
+            reason: e.reason,
+          })),
+      ),
+    ]
+    if (eventsWithTimeIssues.length > 0) {
+      scheduleSummary += `\nUnscheduled due to ${reasonToFilter} issues (${eventsWithTimeIssues.length}): ${eventsWithTimeIssues.map(e => e.id).join(', ')}`
+      for (const event of eventsWithTimeIssues) {
+        scheduleSummary += `\n- ${event.id}: ${event.reason}`
+      }
+    }
   }
 
   console.log(scheduleSummary)
