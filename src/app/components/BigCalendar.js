@@ -49,6 +49,8 @@ export default function BigCalendar() {
     )
   }, [allocatedEvents, enforcedServiceSetups])
 
+  const defaultDate = new Date(2024, 8, 4)
+
   return (
     <div className="flex h-screen">
       {isScheduling && (
@@ -89,12 +91,10 @@ export default function BigCalendar() {
             onView={handleView}
             date={date}
             onNavigate={handleNavigate}
-            views={['day', 'work_week', 'month']}
+            views={['day', 'week', 'month']}
             step={15}
             timeslots={4}
-            defaultDate={new Date(2024, 8, 2)}
-            min={new Date(2024, 8, 2, 0, 0, 0)}
-            max={new Date(2024, 8, 2, 23, 59, 0)}
+            defaultDate={defaultDate}
             onRangeChange={handleRangeChange}
             toolbar={true}
             formats={{

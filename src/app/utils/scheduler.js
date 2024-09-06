@@ -39,7 +39,6 @@ function getNextAvailableTechId(techSchedules, nextGenericTechId) {
 
 export async function scheduleEvents({ events, visibleStart, visibleEnd }, onProgress) {
   console.time('Total scheduling time')
-  console.log(`Starting scheduling process with ${events.length} events:`)
 
   const techSchedules = {}
   const scheduledEventIdsByDate = new Map()
@@ -65,52 +64,54 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
   const totalEvents = events.length
   let processedCount = 0
 
-  // Schedule all events
-  console.time('Scheduling events')
   for (const event of events) {
-    // Processing event
     let scheduled = false
     if (event.tech.enforced) {
       scheduled = scheduleEnforcedEvent(event, techSchedules, scheduledEventIdsByDate)
     }
     else {
-      const result = scheduleEventWithBacktracking(
-        event,
-        techSchedules,
-        scheduledEventIdsByDate,
-        nextGenericTechId,
-      )
-      scheduled = result.scheduled
-      nextGenericTechId = result.nextGenericTechId
+      // Try to schedule with existing techs
+      for (const techId in techSchedules) {
+        const result = scheduleEventWithRespectToWorkHours(
+          event,
+          techId,
+          techSchedules,
+          scheduledEventIdsByDate,
+        )
+        if (result.scheduled) {
+          scheduled = true
+          break
+        }
+      }
+
+      // If not scheduled, create a new tech
+      if (!scheduled) {
+        while (`Tech ${nextGenericTechId}` in techSchedules) {
+          nextGenericTechId++
+        }
+        const newTechId = `Tech ${nextGenericTechId}`
+        const result = scheduleEventWithRespectToWorkHours(
+          event,
+          newTechId,
+          techSchedules,
+          scheduledEventIdsByDate,
+        )
+        scheduled = result.scheduled
+      }
     }
 
     if (!scheduled) {
-      // Failed to schedule event
-      unscheduledEvents.push(event)
+      unscheduledEvents.push({ ...event, reason: 'Could not be scheduled' })
     }
 
     processedCount++
     const percentage = Math.round((processedCount / totalEvents) * 100)
     onProgress(percentage)
 
-    // Force a small delay every 10 events to allow for UI updates
     if (processedCount % 10 === 0) {
       await delay(0)
     }
   }
-
-  // Try to schedule unscheduled events one more time, creating new techs if necessary
-  const remainingUnscheduled = await tryScheduleUnscheduledEvents(
-    unscheduledEvents,
-    techSchedules,
-    scheduledEventIdsByDate,
-    nextGenericTechId,
-    onProgress,
-    totalEvents,
-    processedCount,
-  )
-
-  console.timeEnd('Scheduling events')
 
   // Convert techSchedules to scheduledEvents format
   const scheduledEvents = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -131,7 +132,21 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
     }
   })
 
-  printSummary(techSchedules, remainingUnscheduled)
+  printSummary(techSchedules, unscheduledEvents)
+
+  // Print unscheduled events
+  const uniqueUnscheduledEvents = [
+    ...new Set(
+      unscheduledEvents.map((e) => ({
+        id: e.id.split('-')[0],
+        reason: e.reason,
+      })),
+    ),
+  ]
+  console.log(`Unscheduled events (${uniqueUnscheduledEvents.length}):`)
+  for (const event of uniqueUnscheduledEvents) {
+    console.log(`- ${event.id}: ${event.reason}`)
+  }
 
   const result = {
     scheduledEvents: Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -142,7 +157,7 @@ export async function scheduleEvents({ events, visibleStart, visibleEnd }, onPro
         resourceId: techId,
       })),
     ),
-    unscheduledEvents: remainingUnscheduled.map((event) => ({
+    unscheduledEvents: unscheduledEvents.map((event) => ({
       ...event,
       start: event.start.toISOString(),
       end: event.end.toISOString(),
@@ -400,6 +415,10 @@ function scheduleEventWithRespectToWorkHours(
   techSchedules,
   scheduledEventIdsByDate,
 ) {
+  if (event.time.originalRange.includes('null')) {
+    return { scheduled: false, reason: 'Improper time range' }
+  }
+
   const [rangeStart, rangeEnd] = memoizedParseTimeRange(
     event.time.originalRange,
     event.time.duration,
@@ -436,22 +455,49 @@ function scheduleEventWithRespectToWorkHours(
 }
 
 function isWithinWorkHours(schedule, start, end) {
+  const eventStart = ensureDayjs(start)
+  const eventEnd = ensureDayjs(end)
+  const dayStart = eventStart.startOf('day')
+  const nextDayStart = dayStart.add(1, 'day')
+
   const dayEvents = [
     ...schedule.map((e) => ({ start: ensureDayjs(e.start), end: ensureDayjs(e.end) })),
-    { start: ensureDayjs(start), end: ensureDayjs(end) },
+    { start: eventStart, end: eventEnd },
   ].filter(
-    (e) => e.start.isSame(ensureDayjs(start), 'day') || e.end.isSame(ensureDayjs(start), 'day'),
+    (e) =>
+      (e.start.isSameOrAfter(dayStart) && e.start.isBefore(nextDayStart)) ||
+      (e.end.isAfter(dayStart) && e.end.isSameOrBefore(nextDayStart)) ||
+      (e.start.isBefore(dayStart) && e.end.isAfter(nextDayStart)),
   )
 
   if (dayEvents.length === 0) {
-    // No events on this day, proceed
     return true
   }
 
   dayEvents.sort((a, b) => a.start.diff(b.start))
-  const totalDuration = dayEvents[dayEvents.length - 1].end.diff(dayEvents[0].start, 'minute')
 
-  return totalDuration <= MAX_SHIFT_DURATION
+  let shiftStart = dayEvents[0].start
+  let shiftEnd = dayEvents[0].end
+
+  for (let i = 1; i < dayEvents.length; i++) {
+    const currentEvent = dayEvents[i]
+    const timeSinceLastEvent = currentEvent.start.diff(shiftEnd, 'hour')
+
+    if (timeSinceLastEvent >= MIN_REST_HOURS) {
+      // Check if the previous shift exceeded MAX_SHIFT_DURATION
+      if (shiftEnd.diff(shiftStart, 'minute') > MAX_SHIFT_DURATION) {
+        return false
+      }
+      // Start a new shift
+      shiftStart = currentEvent.start
+    }
+
+    shiftEnd = currentEvent.end
+  }
+
+  // Check the final shift duration
+  const finalShiftDuration = shiftEnd.diff(shiftStart, 'minute')
+  return finalShiftDuration <= MAX_SHIFT_DURATION
 }
 
 function calculateShiftDuration(events) {

@@ -112,7 +112,7 @@ export function useEventGeneration(serviceSetups, currentViewRange, enforcedServ
 
       // Log the setup.id's that occur within the date range
       const occurringSetupIds = [...new Set(rawEvents.map((event) => event.id.split('-')[0]))]
-      console.log('Scheduling:', occurringSetupIds.join(','))
+      console.log(`Scheduling ${occurringSetupIds.length} setups:`, occurringSetupIds.join(','))
 
       const { scheduledEvents, unscheduledEvents, nextGenericTechId } = await scheduleEvents(
         { events: rawEvents, visibleStart, visibleEnd },

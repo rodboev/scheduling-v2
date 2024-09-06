@@ -2,7 +2,7 @@
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
-import sql from 'msnodesqlv8'
+import sql from 'mssql/msnodesqlv8'
 import { NextResponse } from 'next/server'
 
 const ALLOWED_TECHS = [
@@ -130,9 +130,7 @@ function transformServiceSetup(setup) {
       preferred: convertToETTime(setup.WorkTime),
       enforced: false,
       duration: setup.Duration,
-      originalRange:
-        setup.TimeRange ||
-        `${convertToETTime(setup.routeStart)}-${convertToETTime(setup.routeEnd)}`,
+      originalRange: setup.TimeRange,
     },
     route: {
       time: [convertToETTime(setup.routeStart), convertToETTime(setup.routeEnd)],
