@@ -5,10 +5,7 @@ import axios from 'axios'
 
 export const useServiceSetups = () => {
   const queryClient = useQueryClient()
-  const [enforcedServiceSetups, setEnforcedServiceSetups] = useLocalStorage(
-    'enforcedServiceSetups',
-    {},
-  )
+  const [enforcedServices, setEnforcedServices] = useLocalStorage('enforcedServices', {})
 
   const {
     data: serviceSetups,
@@ -23,28 +20,28 @@ export const useServiceSetups = () => {
         ...setup,
         tech: {
           ...setup.tech,
-          enforced: enforcedServiceSetups[setup.id] ?? setup.tech.enforced,
+          enforced: enforcedServices[setup.id] ?? setup.tech.enforced,
         },
       }))
     },
   })
 
-  function updateEnforced(id, enforced) {
+  function updateEnforcedServices(id, enforced) {
     const setupId = id.includes('-') ? id.split('-')[0] : id
-    setEnforcedServiceSetups(prev => {
-      const newEnforcedServiceSetups = { ...prev, [setupId]: enforced }
-      console.log('New enforcedServiceSetups state:', newEnforcedServiceSetups)
-      return newEnforcedServiceSetups
+    setEnforcedServices(prev => {
+      const newEnforcedServices = { ...prev, [setupId]: enforced }
+      console.log('New enforcedServices state:', newEnforcedServices)
+      return newEnforcedServices
     })
   }
 
-  function updateAllEnforced(enforced) {
+  function updateAllEnforcedServices(enforced) {
     if (serviceSetups) {
-      const newEnforcedServiceSetups = serviceSetups.reduce((acc, setup) => {
+      const newEnforcedServices = serviceSetups.reduce((acc, setup) => {
         acc[setup.id] = enforced
         return acc
       }, {})
-      setEnforcedServiceSetups(newEnforcedServiceSetups)
+      setEnforcedServices(newEnforcedServices)
       queryClient.invalidateQueries({ queryKey: ['serviceSetups'] })
     }
   }
@@ -53,8 +50,8 @@ export const useServiceSetups = () => {
     data: serviceSetups,
     isLoading,
     error,
-    updateEnforced,
-    updateAllEnforced,
-    enforcedServiceSetups,
+    updateEnforcedServices,
+    updateAllEnforcedServices,
+    enforcedServices,
   }
 }

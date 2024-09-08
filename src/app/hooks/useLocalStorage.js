@@ -1,5 +1,4 @@
 // src/app/hooks/useLocalStorage.js
-
 import { useState, useEffect, useCallback } from 'react'
 
 export function useLocalStorage(key, initialValue) {
@@ -14,7 +13,8 @@ export function useLocalStorage(key, initialValue) {
     try {
       const item = window.localStorage.getItem(key)
       return item ? JSON.parse(item) : initialValue
-    } catch (error) {
+    }
+    catch (error) {
       console.warn(`Error getting localStorage key "${key}":`, error)
       return initialValue
     }
@@ -22,7 +22,7 @@ export function useLocalStorage(key, initialValue) {
 
   // Function to update both state and localStorage
   const setValue = useCallback(
-    (value) => {
+    value => {
       if (!isBrowser) {
         console.warn(`localStorage is not available.`)
         return
@@ -32,7 +32,8 @@ export function useLocalStorage(key, initialValue) {
         const valueToStore = value instanceof Function ? value(storedValue) : value
         setStoredValue(valueToStore)
         window.localStorage.setItem(key, JSON.stringify(valueToStore))
-      } catch (error) {
+      }
+      catch (error) {
         console.warn(`Error setting localStorage key "${key}":`, error)
       }
     },
@@ -42,7 +43,7 @@ export function useLocalStorage(key, initialValue) {
   // Effect to sync with localStorage
   useEffect(() => {
     if (isBrowser) {
-      const handleStorageChange = (e) => {
+      const handleStorageChange = e => {
         if (e.key === key) {
           setStoredValue(JSON.parse(e.newValue))
         }

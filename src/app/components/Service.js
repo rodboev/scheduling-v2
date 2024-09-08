@@ -1,19 +1,18 @@
-// src/app/components/Event.js
-
+// src/app/components/Service.js
 import React, { useState, useRef } from 'react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
-import { formatTimeRange } from '@/app/utils/timeRange'
-import { capitalize } from '@/app/utils/capitalize'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
+import { capitalize } from '@/app/utils/capitalize'
+import { formatTimeRange } from '@/app/utils/timeRange'
 
-export default function Event({ event, updateEnforced }) {
+export default function Service({ service, updateEnforcedServices }) {
   const [isOpen, setIsOpen] = useState(false)
   const timeoutRef = useRef(null)
   const [offset, setOffset] = useState(0)
 
   const pageHeight = document.documentElement.scrollHeight
 
-  const handleMouseEnter = (e) => {
+  const handleMouseEnter = e => {
     const cursorY = e.clientY + window.scrollY
     setOffset(pageHeight - cursorY)
     clearTimeout(timeoutRef.current)
@@ -27,13 +26,19 @@ export default function Event({ event, updateEnforced }) {
   }
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
+    <Popover
+      open={isOpen}
+      onOpenChange={setIsOpen}
+    >
       <PopoverTrigger asChild>
-        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+        <div
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
           <span className="inline-block text-sm leading-none">
-            {formatTimeRange(event.start, event.end)} —
+            {formatTimeRange(service.start, service.end)} —
           </span>
-          <span className="text-sm leading-none"> {capitalize(event.company)} </span>
+          <span className="text-sm leading-none"> {capitalize(service.company)} </span>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -47,43 +52,45 @@ export default function Event({ event, updateEnforced }) {
       >
         <div className="float-right mb-2 ml-4">
           <EnforceSwitch
-            id={`enforce-service-setup-${event.id}`}
-            checked={event.tech.enforced}
-            onCheckedChange={(checked) => updateEnforced(event.id, checked)}
+            id={`enforce-service-setup-${service.id}`}
+            checked={service.tech.enforced}
+            onCheckedChange={checked => updateEnforcedServices(service.id, checked)}
           >
             Enforce tech
           </EnforceSwitch>
-          <div className="text-center">Tech: {event.tech.code || 'N/A'}</div>
+          <div className="text-center">Tech: {service.tech.code || 'N/A'}</div>
         </div>
 
         <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
-          <div>{capitalize(event.company)}</div>
-          <div className="text-sm font-semibold">#{event.locationCode}</div>
+          <div>{capitalize(service.company)}</div>
+          <div className="text-sm font-semibold">#{service.locationCode}</div>
         </h3>
 
-        <p className="whitespace-nowrap">Scheduled: {formatTimeRange(event.start, event.end)}</p>
-        <p className="whitespace-nowrap">Preferred Time: {event.time.preferred || 'N/A'}</p>
-        <p>Duration: {event.time.duration || 'N/A'} min</p>
-        <p>Calculated to: {formatTimeRange(event.time.range[0], event.time.range[1])}</p>
+        <p className="whitespace-nowrap">
+          Scheduled: {formatTimeRange(service.start, service.end)}
+        </p>
+        <p className="whitespace-nowrap">Preferred Time: {service.time.preferred || 'N/A'}</p>
+        <p>Duration: {service.time.duration || 'N/A'} min</p>
+        <p>Calculated to: {formatTimeRange(service.time.range[0], service.time.range[1])}</p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
-          <p>Route Time: {event.route.time.join(' - ') || 'N/A'}</p>
-          <p>Route Days: {event.route.days || 'N/A'}</p>
+          <p>Route Time: {service.route.time.join(' - ') || 'N/A'}</p>
+          <p>Route Days: {service.route.days || 'N/A'}</p>
         </div>
 
-        {event.comments && (
+        {service.comments && (
           <div className="space-y-2">
             <div className="">
               <p className="break-words text-sm">
                 <span className="block font-semibold">Service Setup comments:</span>
-                {event.comments.serviceSetup || 'N/A'}
+                {service.comments.serviceSetup || 'N/A'}
               </p>
             </div>
-            {event.comments.location && event.comments.location.trim() !== '' && (
+            {service.comments.location && service.comments.location.trim() !== '' && (
               <div className="my-2">
                 <p className="break-words text-sm">
                   <span className="block font-semibold">Location comments:</span>
-                  {event.comments.location}
+                  {service.comments.location}
                 </p>
               </div>
             )}

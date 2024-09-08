@@ -2,14 +2,14 @@
 
 import React, { useMemo, useEffect } from 'react'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
-import Event from '@/app/components/Event'
 import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
-import UnallocatedEvents from '@/app/components/UnallocatedEvents'
+import Service from '@/app/components/Service'
+import UnassignedServices from '@/app/components/UnassignedServices'
 import { Progress } from '@/app/components/ui/progress'
-import { useCalendarState } from '@/app/hooks/useCalendarState'
-import { useEventGeneration } from '@/app/hooks/useEventGeneration'
+import { useCalendar } from '@/app/hooks/useCalendar'
 import { useServiceSetups } from '@/app/hooks/useServiceSetups'
+import { useServices } from '@/app/hooks/useServices'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
@@ -20,34 +20,34 @@ const localizer = dayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
-    useCalendarState()
+    useCalendar()
 
   const {
     data: serviceSetups,
     isLoading,
     error,
-    updateEnforced,
-    updateAllEnforced,
-    enforcedServiceSetups,
+    updateEnforcedServices,
+    updateAllEnforcedServices,
+    enforcedServices,
   } = useServiceSetups()
 
   const {
-    allocatedEvents,
+    assignedServices,
     resources,
-    filteredUnallocatedEvents,
+    filteredUnassignedServices,
     isScheduling,
     schedulingProgress,
-  } = useEventGeneration(serviceSetups, currentViewRange, enforcedServiceSetups)
+  } = useServices(serviceSetups, currentViewRange, enforcedServices)
 
-  const allServiceSetupsEnforced = useMemo(() => {
+  const allServicesEnforced = useMemo(() => {
     return (
-      allocatedEvents.length > 0 &&
-      allocatedEvents.every((event) => {
-        const setupId = event.id.split('-')[0]
-        return enforcedServiceSetups[setupId] ?? event.tech.enforced
+      assignedServices.length > 0 &&
+      assignedServices.every(service => {
+        const setupId = service.id.split('-')[0]
+        return enforcedServices[setupId] ?? service.tech.enforced
       })
     )
-  }, [allocatedEvents, enforcedServiceSetups])
+  }, [assignedServices, enforcedServices])
 
   const defaultDate = new Date(2024, 8, 4)
 
@@ -65,16 +65,16 @@ export default function BigCalendar() {
         </div>
       )}
       <div className="w-64 border-r">
-        <UnallocatedEvents events={filteredUnallocatedEvents} />
+        <UnassignedServices services={filteredUnassignedServices} />
       </div>
       <div className="flex flex-grow flex-col">
         <Header>
           <EnforceSwitch
             id="enforce-all-service-setups"
-            checked={allServiceSetupsEnforced}
-            onCheckedChange={updateAllEnforced}
+            checked={allServicesEnforced}
+            onCheckedChange={updateAllEnforcedServices}
           >
-            Enforce all techs
+            Enforce techs for all
           </EnforceSwitch>
           <Logo />
         </Header>
@@ -82,10 +82,10 @@ export default function BigCalendar() {
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"
-            events={allocatedEvents}
+            events={assignedServices}
             resources={resources}
             resourceIdAccessor="id"
-            resourceTitleAccessor={(resource) => resource.title}
+            resourceTitleAccessor={resource => resource.title}
             defaultView={Views.DAY}
             view={view}
             onView={handleView}
@@ -101,19 +101,19 @@ export default function BigCalendar() {
               eventTimeRangeFormat: () => null,
             }}
             components={{
-              event: (props) => {
+              event: props => {
                 const setupId = props.event.id.split('-')[0]
-                const enforced = enforcedServiceSetups[setupId] ?? props.event.tech.enforced
+                const enforced = enforcedServices[setupId] ?? props.event.tech.enforced
                 return (
-                  <Event
-                    event={{
+                  <Service
+                    service={{
                       ...props.event,
                       tech: {
                         ...props.event.tech,
                         enforced: enforced,
                       },
                     }}
-                    updateEnforced={updateEnforced}
+                    updateEnforcedServices={updateEnforcedServices}
                   />
                 )
               },
