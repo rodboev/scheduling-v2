@@ -1,7 +1,6 @@
 // src/app/hooks/useServiceSetups.js
-
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocalStorage } from '@/app/hooks/useLocalStorage'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 
 export const useServiceSetups = () => {
@@ -17,10 +16,10 @@ export const useServiceSetups = () => {
     error,
   } = useQuery({
     queryKey: ['serviceSetups'],
-    queryFn: () => axios.get('api/services').then((res) => res.data),
-    select: (data) => {
+    queryFn: () => axios.get('api/serviceSetups').then(res => res.data),
+    select: data => {
       console.log('Filtered service setups:', data.length)
-      return data.map((setup) => ({
+      return data.map(setup => ({
         ...setup,
         tech: {
           ...setup.tech,
@@ -32,7 +31,7 @@ export const useServiceSetups = () => {
 
   function updateEnforced(id, enforced) {
     const setupId = id.includes('-') ? id.split('-')[0] : id
-    setEnforcedServiceSetups((prev) => {
+    setEnforcedServiceSetups(prev => {
       const newEnforcedServiceSetups = { ...prev, [setupId]: enforced }
       console.log('New enforcedServiceSetups state:', newEnforcedServiceSetups)
       return newEnforcedServiceSetups
