@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/pop
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTimeRange } from '@/app/utils/timeRange'
 
-export default function Service({ service, updateEnforcedServices }) {
+export default function Service({ service, updateServiceEnforcement }) {
   const [isOpen, setIsOpen] = useState(false)
   const timeoutRef = useRef(null)
   const [offset, setOffset] = useState(0)
@@ -54,7 +54,7 @@ export default function Service({ service, updateEnforcedServices }) {
           <EnforceSwitch
             id={`enforce-service-setup-${service.id}`}
             checked={service.tech.enforced}
-            onCheckedChange={checked => updateEnforcedServices(service.id, checked)}
+            onCheckedChange={checked => updateServiceEnforcement(service.id, checked)}
           >
             Enforce tech
           </EnforceSwitch>

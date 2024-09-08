@@ -57,9 +57,9 @@ const BASE_QUERY = `
       ServiceSetups.WorkTime,
       ServiceSetups.TimeRange,
       ServiceSetups.Duration,
-      ServiceSetups.RouteOptTime1Beg as routeStart,
-      ServiceSetups.RouteOptTime1End as routeEnd,
-			ServiceSetups.RouteOptIncludeDays,
+      ServiceSetups.RouteOptTime1Beg as RouteStartTime,
+      ServiceSetups.RouteOptTime1End as RouteEndTime,
+      ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
       Locations.LocationCode,
       Schedules.ScheduleID AS ScheduleID,
@@ -67,7 +67,8 @@ const BASE_QUERY = `
       Schedules.Description AS ScheduleDescription,
       Schedules.Schedule AS ScheduleString,
       ServiceSetups.Comment AS ServiceSetupComment,
-      Locations.Comment AS LocationComment
+      Locations.Comment AS LocationComment,
+      FrequencyClasses.AnnualOccurrences
   FROM 
       ServiceSetups
   JOIN 
@@ -76,6 +77,8 @@ const BASE_QUERY = `
       Schedules ON ServiceSetups.ScheduleID = Schedules.ScheduleID
   LEFT JOIN
       Technicians ON ServiceSetups.TechID1 = Technicians.TechID
+  LEFT JOIN
+      FrequencyClasses ON Schedules.FrequencyID = FrequencyClasses.FrequencyID
   WHERE 
       ServiceSetups.Active = 1
 `
@@ -105,8 +108,8 @@ function transformServiceSetup(setup) {
 
   // If Time Range is empty, use Route Time
   if (!rangeStart && !rangeEnd) {
-    rangeStart = setup.routeStart
-    rangeEnd = setup.routeEnd
+    rangeStart = setup.RouteStartTime
+    rangeEnd = setup.RouteEndTime
   }
 
   return {
@@ -114,10 +117,9 @@ function transformServiceSetup(setup) {
     locationCode: setup.LocationCode,
     company: setup.Company,
     schedule: {
-      id: setup.ScheduleID,
       code: setup.ScheduleCode,
-      description: setup.ScheduleDescription,
       string: setup.ScheduleString,
+      timesPerYear: setup.AnnualOccurrences,
     },
     tech: {
       id: setup.TechID1,
@@ -133,7 +135,7 @@ function transformServiceSetup(setup) {
       originalRange: setup.TimeRange,
     },
     route: {
-      time: [convertToETTime(setup.routeStart), convertToETTime(setup.routeEnd)],
+      time: [convertToETTime(setup.RouteStartTime), convertToETTime(setup.RouteEndTime)],
       days: setup.RouteOptIncludeDays,
     },
     comments: {
@@ -191,14 +193,17 @@ export async function GET(request) {
 
   // Filter by ALLOWED_TECHS if necessary
   if (ALLOWED_TECHS?.length > 0) {
-    serviceSetups = serviceSetups.filter((setup) => ALLOWED_TECHS.includes(setup.tech.code))
+    serviceSetups = serviceSetups.filter(setup => ALLOWED_TECHS.includes(setup.tech.code))
+    console.log(
+      `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
+    )
   }
 
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
-    serviceSetups = serviceSetups.filter((setup) => ids.includes(setup.id.toString()))
-    console.log(`Filtered ${serviceSetups.length} setups for requested IDs: ${idParam}`)
+    serviceSetups = serviceSetups.filter(setup => ids.includes(setup.id.toString()))
+    console.log(`Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`)
   }
 
   return NextResponse.json(serviceSetups)

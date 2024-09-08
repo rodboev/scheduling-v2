@@ -60,7 +60,7 @@ function ServicePopover({ service }) {
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
             <p>Route Time: {service.route.time.join(' - ') || 'N/A'}</p>
             <p>Route Days: {service.route.days || 'N/A'}</p>
-            <p>Sched code: {service.schedule.code || 'N/A'}</p>
+            <p>Sched code: {service.schedule?.code ?? 'N/A'}</p>
           </div>
           {service.comments &&
             service.comments.location &&

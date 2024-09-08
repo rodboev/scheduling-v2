@@ -47,8 +47,8 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
   // Sort services by date, then by time window size (ascending) and duration (descending)
   console.time('Sorting services')
   services.sort((a, b) => {
-    const aDate = ensureDayjs(a.start).startOf('day')
-    const bDate = ensureDayjs(b.start).startOf('day')
+    const aDate = dayjs(a.start).startOf('day')
+    const bDate = dayjs(b.start).startOf('day')
     if (!aDate.isSame(bDate)) {
       return aDate.diff(bDate)
     }
@@ -63,7 +63,14 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
   const totalServices = services.length
   let processedCount = 0
 
-  for (const service of services) {
+  for (let service of services) {
+    // Convert ISO string to Date object if necessary
+    service = {
+      ...service,
+      start: service.start instanceof Date ? service.start : new Date(service.start),
+      end: service.end instanceof Date ? service.end : new Date(service.end),
+    }
+
     let scheduled = false
     let reason = ''
 
@@ -148,15 +155,15 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     scheduledServices: Object.entries(techSchedules).flatMap(([techId, schedule]) =>
       schedule.map(service => ({
         ...service,
-        start: service.start.toISOString(),
-        end: service.end.toISOString(),
+        start: new Date(service.start),
+        end: new Date(service.end),
         resourceId: techId,
       })),
     ),
     unscheduledServices: unscheduledServices.map(service => ({
       ...service,
-      start: service.start.toISOString(),
-      end: service.end.toISOString(),
+      start: new Date(service.start),
+      end: new Date(service.end),
     })),
     nextGenericTechId,
   }
@@ -413,7 +420,7 @@ function scheduleServiceWithRespectToWorkHours(
   techSchedules,
   scheduledServiceIdsByDate,
 ) {
-  if (service.time.originalRange.includes('null')) {
+  if (service.time.originalRange.includes('null') || service.time.originalRange.length === 0) {
     return { scheduled: false, reason: 'Improper time range' }
   }
 
@@ -455,7 +462,7 @@ function scheduleServiceWithRespectToWorkHours(
 
   return {
     scheduled: false,
-    reason: `No available time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for tech ${techId}`,
+    reason: `No available time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for ${techId}`,
   }
 }
 

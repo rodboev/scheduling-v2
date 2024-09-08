@@ -1,27 +1,54 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { scheduleServices } from '@/app/utils/scheduler'
-import { parseTime, parseTimeRange } from '@/app/utils/timeRange'
+import { useQuery } from '@tanstack/react-query'
+import axios from 'axios'
+import { useEnforcement } from './useEnforcement'
 
-export function useServices(serviceSetups, currentViewRange, enforcedServices) {
-  const [loading, setLoading] = useState(false)
+export function useServices(currentViewRange) {
+  const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState({
     assignedServices: [],
     resources: [],
     filteredUnassignedServices: [],
-    allServicesEnforced: false,
+  })
+  const progressRef = useRef(0)
+
+  const dateRange = useMemo(
+    () => ({
+      start: dayjs(currentViewRange.start).startOf('day').toISOString(),
+      end: dayjs(currentViewRange.end).endOf('day').toISOString(),
+    }),
+    [currentViewRange],
+  )
+
+  const { data: services, isLoading: isServicesLoading } = useQuery({
+    queryKey: ['services', dateRange],
+    queryFn: () =>
+      axios
+        .get('/api/services', {
+          params: {
+            start: dateRange.start,
+            end: dateRange.end,
+          },
+        })
+        .then(res => res.data.map(({ schedule, ...rest }) => rest)),
+    enabled: !!dateRange.start && !!dateRange.end,
   })
 
-  const progressRef = useRef(0)
+  const {
+    enforcedServicesList,
+    updateServiceEnforcement,
+    updateAllServicesEnforcement,
+    allServicesEnforced,
+  } = useEnforcement(services || [])
 
   const updateProgress = useCallback(newProgress => {
     progressRef.current = newProgress
-    // Force a re-render
     setProgress(newProgress)
   }, [])
 
-  // Create a stable onProgress function
   const onProgress = useCallback(
     newProgress => {
       updateProgress(newProgress)
@@ -29,67 +56,8 @@ export function useServices(serviceSetups, currentViewRange, enforcedServices) {
     [updateProgress],
   )
 
-  function createServicesForDateRange(setup, startDate, endDate) {
-    const services = []
-    const start = dayjs(startDate)
-    const end = dayjs(endDate)
-
-    for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
-      if (shouldServiceOccur(setup.schedule.string, date)) {
-        const baseService = {
-          ...setup,
-          id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
-          date: date.toDate(),
-        }
-
-        if (setup.time.enforced) {
-          services.push({
-            ...baseService,
-            start: date.add(parseTime(setup.time.preferred), 'second').toDate(),
-            end: date
-              .add(parseTime(setup.time.preferred) + setup.time.duration * 60, 'second')
-              .toDate(),
-          })
-        }
-        else {
-          const [rangeStart, rangeEnd] = parseTimeRange(
-            setup.time.originalRange,
-            setup.time.duration,
-          )
-          services.push({
-            ...baseService,
-            start: date.add(rangeStart, 'second').toDate(),
-            end: date.add(rangeEnd, 'second').toDate(),
-          })
-        }
-
-        // Ensure the tech.enforced property is carried over
-        services[services.length - 1].tech.enforced = setup.tech.enforced
-      }
-    }
-
-    return services.map(service => {
-      let serviceEnd = dayjs(service.end)
-      if (serviceEnd.isBefore(service.start)) {
-        // If the end time is before the start time, it means the service spans past midnight
-        serviceEnd = serviceEnd.add(1, 'day')
-      }
-      return {
-        ...service,
-        end: serviceEnd.toDate(),
-      }
-    })
-  }
-
-  function shouldServiceOccur(scheduleString, date) {
-    const dayOfYear = date.dayOfYear()
-    const scheduleIndex = dayOfYear
-    const shouldOccur = scheduleString[scheduleIndex] === '1'
-    return shouldOccur
-  }
-
   useEffect(() => {
-    if (!serviceSetups || !currentViewRange) {
+    if (!enforcedServicesList || isServicesLoading) {
       return
     }
 
@@ -98,29 +66,22 @@ export function useServices(serviceSetups, currentViewRange, enforcedServices) {
     progressRef.current = 0
 
     const scheduleServicesAsync = async () => {
-      const visibleStart = dayjs(currentViewRange.start).startOf('day')
-      const visibleEnd = dayjs(currentViewRange.end).endOf('day')
-
-      const rawServices = serviceSetups.flatMap(setup => {
-        const isEnforced = enforcedServices[setup.id] ?? setup.tech.enforced
-        return createServicesForDateRange(
-          { ...setup, tech: { ...setup.tech, enforced: isEnforced } },
-          visibleStart,
-          visibleEnd,
-        )
-      })
-
-      // Log the setup.id's that occur within the date range
-      const occurringSetupIds = [...new Set(rawServices.map(service => service.id.split('-')[0]))]
-      console.log(`Scheduling ${occurringSetupIds.length} setups:`, occurringSetupIds.join(','))
-
-      const { scheduledServices, unscheduledServices, nextGenericTechId } = await scheduleServices(
-        { services: rawServices, visibleStart, visibleEnd },
+      const { scheduledServices, unscheduledServices } = await scheduleServices(
+        {
+          services: enforcedServicesList,
+          visibleStart: new Date(dateRange.start),
+          visibleEnd: new Date(dateRange.end),
+        },
         onProgress,
       )
 
-      // Create resources from scheduledServices
-      const techSet = new Set(scheduledServices.map(service => service.resourceId))
+      const formattedScheduledServices = scheduledServices.map(service => ({
+        ...service,
+        start: new Date(service.start),
+        end: new Date(service.end),
+      }))
+
+      const techSet = new Set(formattedScheduledServices.map(service => service.resourceId))
       const resources = Array.from(techSet)
         .map(techId => ({
           id: techId,
@@ -137,36 +98,27 @@ export function useServices(serviceSetups, currentViewRange, enforcedServices) {
           return a.id.localeCompare(b.id)
         })
 
-      const allServicesEnforced =
-        scheduledServices.length > 0 &&
-        scheduledServices.every(service => enforcedServices[service.id.split('-')[0]])
-
       setResult({
-        assignedServices: scheduledServices.map(service => ({
-          ...service,
-          start: new Date(service.start),
-          end: new Date(service.end),
-        })),
+        assignedServices: formattedScheduledServices,
         resources,
         filteredUnassignedServices: unscheduledServices.map(service => ({
           ...service,
           start: new Date(service.start),
           end: new Date(service.end),
         })),
-        allServicesEnforced,
       })
       setLoading(false)
     }
 
     scheduleServicesAsync()
+  }, [enforcedServicesList, dateRange, onProgress])
 
-    const intervalId = setInterval(() => {
-      setProgress(progressRef.current)
-    }, 100) // Update every 100ms
-
-    // Clean up the interval when the effect is cleaned up
-    return () => clearInterval(intervalId)
-  }, [serviceSetups, currentViewRange, enforcedServices, updateProgress, onProgress])
-
-  return { ...result, isScheduling: loading, schedulingProgress: progress }
+  return {
+    ...result,
+    isScheduling: loading || isServicesLoading,
+    schedulingProgress: progress,
+    updateServiceEnforcement,
+    updateAllServicesEnforcement,
+    allServicesEnforced,
+  }
 }

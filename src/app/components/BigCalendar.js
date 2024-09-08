@@ -8,7 +8,7 @@ import Service from '@/app/components/Service'
 import UnassignedServices from '@/app/components/UnassignedServices'
 import { Progress } from '@/app/components/ui/progress'
 import { useCalendar } from '@/app/hooks/useCalendar'
-import { useServiceSetups } from '@/app/hooks/useServiceSetups'
+import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { useServices } from '@/app/hooks/useServices'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
@@ -23,31 +23,15 @@ export default function BigCalendar() {
     useCalendar()
 
   const {
-    data: serviceSetups,
-    isLoading,
-    error,
-    updateEnforcedServices,
-    updateAllEnforcedServices,
-    enforcedServices,
-  } = useServiceSetups()
-
-  const {
     assignedServices,
     resources,
     filteredUnassignedServices,
     isScheduling,
     schedulingProgress,
-  } = useServices(serviceSetups, currentViewRange, enforcedServices)
-
-  const allServicesEnforced = useMemo(() => {
-    return (
-      assignedServices.length > 0 &&
-      assignedServices.every(service => {
-        const setupId = service.id.split('-')[0]
-        return enforcedServices[setupId] ?? service.tech.enforced
-      })
-    )
-  }, [assignedServices, enforcedServices])
+    updateServiceEnforcement,
+    updateAllServicesEnforcement,
+    allServicesEnforced,
+  } = useServices(currentViewRange)
 
   const defaultDate = new Date(2024, 8, 4)
 
@@ -70,9 +54,9 @@ export default function BigCalendar() {
       <div className="flex flex-grow flex-col">
         <Header>
           <EnforceSwitch
-            id="enforce-all-service-setups"
+            id="enforce-all-services"
             checked={allServicesEnforced}
-            onCheckedChange={updateAllEnforcedServices}
+            onCheckedChange={updateAllServicesEnforcement}
           >
             Enforce techs for all
           </EnforceSwitch>
@@ -102,18 +86,10 @@ export default function BigCalendar() {
             }}
             components={{
               event: props => {
-                const setupId = props.event.id.split('-')[0]
-                const enforced = enforcedServices[setupId] ?? props.event.tech.enforced
                 return (
                   <Service
-                    service={{
-                      ...props.event,
-                      tech: {
-                        ...props.event.tech,
-                        enforced: enforced,
-                      },
-                    }}
-                    updateEnforcedServices={updateEnforcedServices}
+                    service={props.event}
+                    updateServiceEnforcement={updateServiceEnforcement}
                   />
                 )
               },
