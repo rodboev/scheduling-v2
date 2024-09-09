@@ -83,10 +83,14 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     let scheduled = false
     let reason = ''
 
-    if (service.tech.enforced) {
+    const serviceSetupId = service.id.split('-')[0]
+
+    if (service.tech.enforced && service.tech.code) {
+			// Attempt to schedule enforced service with named tech
       scheduled = scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDate)
       if (!scheduled) {
         reason = 'Could not schedule enforced service'
+        console.log(`Failed to schedule enforced service ${serviceSetupId}: ${reason}`)
       }
     }
     else {
@@ -144,13 +148,6 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
   }
 
   console.timeEnd('Total scheduling time')
-
-  // // Remove any empty tech schedules
-  // Object.keys(techSchedules).forEach(techId => {
-  //   if (techSchedules[techId].length === 0) {
-  //     delete techSchedules[techId]
-  //   }
-  // })
 
   printSummary(techSchedules, unscheduledServices)
 
@@ -652,16 +649,35 @@ function removeServiceFromSchedule(service, techId, techSchedules, scheduledServ
 
 function scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDate) {
   const techId = service.tech.code
+  if (!techId) {
+    console.log(`Warning: Enforced service ${service.id} has no tech code. Skipping enforcement.`)
+    return false
+  }
+
   if (!techSchedules[techId]) techSchedules[techId] = []
 
   const preferredTime = parseTime(service.time.preferred)
   const startTime = ensureDayjs(service.start).startOf('day').add(preferredTime, 'second')
   const endTime = startTime.add(service.time.duration, 'minute')
 
+  // Check for conflicts
+  const conflict = techSchedules[techId].find(
+    existingService =>
+      startTime.isBefore(ensureDayjs(existingService.end)) &&
+      endTime.isAfter(ensureDayjs(existingService.start)),
+  )
+
+  if (conflict) {
+    console.log(
+      `Warning: Conflict detected for enforced service ${service.id} with tech ${techId}. Skipping enforcement.`,
+    )
+    return false
+  }
+
   techSchedules[techId].push({
     ...service,
-    start: startTime,
-    end: endTime,
+    start: startTime.toDate(),
+    end: endTime.toDate(),
   })
 
   const serviceDate = startTime.format('YYYY-MM-DD')

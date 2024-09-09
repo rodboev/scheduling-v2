@@ -25,6 +25,7 @@ export async function GET(request) {
         )
         const services = servicesResponse.data
         console.log('Services fetched:', services.length)
+        console.log('Enforced services:', services.filter(s => s.tech.enforced).length)
 
         console.log('Scheduling services...')
         const { scheduledServices, unscheduledServices } = await scheduleServices(

@@ -1,7 +1,9 @@
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { parseTimeRange } from '@/app/utils/timeRange'
+import { parseTimeRange, parseTime } from '@/app/utils/timeRange'
 import axios from 'axios'
+import fs from 'fs/promises'
 import { NextResponse } from 'next/server'
+import path from 'path'
 
 function createServicesForDateRange(setup, startDate, endDate) {
   const services = []
@@ -33,9 +35,6 @@ function createServicesForDateRange(setup, startDate, endDate) {
           end: date.add(rangeEnd, 'second').toDate(),
         })
       }
-
-      // Ensure the tech.enforced property is carried over
-      services[services.length - 1].tech.enforced = setup.tech.enforced
     }
   }
 
@@ -92,19 +91,36 @@ export async function GET(request) {
       createServicesForDateRange(setup, startDate, endDate),
     )
 
-    // Strip out the schedule.string key from the services
-    const strippedServices = services.map(service => {
-      const { schedule, ...rest } = service
-      return {
-        ...rest,
-        schedule: {
-          ...schedule,
-          string: undefined,
-        },
+    // Read enforcement state directly from file
+    const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
+    let enforcementState = {}
+    try {
+      const rawEnforcementState = await fs.readFile(filePath, 'utf8')
+      const parsedState = JSON.parse(rawEnforcementState)
+      if (parsedState && parsedState.cacheData) {
+        enforcementState = parsedState.cacheData
       }
-    })
+    }
+    catch (error) {
+      console.error('Error reading or parsing enforcement state file:', error)
+    }
 
-    return NextResponse.json(strippedServices)
+    // Apply enforcement state to services and remove the schedule.string key
+    const processedServices = services.map(
+      ({ schedule: { string, ...restSchedule }, ...restService }) => {
+        const serviceSetupId = restService.id.split('-')[0]
+        return {
+          ...restService,
+          schedule: restSchedule,
+          tech: {
+            ...restService.tech,
+            enforced: enforcementState[serviceSetupId] || false,
+          },
+        }
+      },
+    )
+
+    return NextResponse.json(processedServices)
   }
   catch (error) {
     console.error('Error processing services:', error)

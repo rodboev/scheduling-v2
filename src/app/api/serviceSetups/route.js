@@ -4,6 +4,9 @@ import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
 import sql from 'mssql/msnodesqlv8'
 import { NextResponse } from 'next/server'
+import path from 'path'
+
+const CACHE_FILE = 'serviceSetups.json'
 
 const ALLOWED_TECHS = [
   'BELTRAN',
@@ -125,7 +128,6 @@ function transformServiceSetup(setup) {
       id: setup.TechID1,
       code: setup.TechCode,
       name: formatTechName(setup.TechFName, setup.TechLName),
-      enforced: false,
     },
     time: {
       range: [rangeStart, rangeEnd],
@@ -150,7 +152,7 @@ export async function GET(request) {
   const idParam = searchParams.get('id')
 
   // Always try to read from disk cache first
-  let serviceSetups = await readFromDiskCache({ cacheAgeAcceptable: Infinity })
+  let serviceSetups = await readFromDiskCache({ file: CACHE_FILE })
 
   if (!serviceSetups) {
     let pool
@@ -166,7 +168,7 @@ export async function GET(request) {
       console.log('Transformed setups:', serviceSetups.length)
 
       // Write all fetched and transformed data to disk cache
-      await writeToDiskCache({ data: serviceSetups })
+      await writeToDiskCache({ file: CACHE_FILE, data: serviceSetups })
     }
     catch (error) {
       console.error('Error fetching from database:', error)

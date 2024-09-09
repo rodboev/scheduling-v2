@@ -6,6 +6,7 @@ import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
 import Service from '@/app/components/Service'
 import UnassignedServices from '@/app/components/UnassignedServices'
+import { Button } from '@/app/components/ui/button'
 import { Progress } from '@/app/components/ui/progress'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
@@ -19,7 +20,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css'
 const localizer = dayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
-  const defaultDate = new Date(2024, 8, 3)
+  const defaultDate = new Date(2024, 8, 2)
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
     useCalendar(defaultDate)
 
@@ -29,11 +30,11 @@ export default function BigCalendar() {
     filteredUnassignedServices,
     isScheduling,
     schedulingProgress,
-    updateServiceEnforcement,
-    updateAllServicesEnforcement,
-    allServicesEnforced,
     refetchSchedule,
   } = useSchedule(currentViewRange)
+
+  const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
+    useEnforcement(assignedServices, refetchSchedule)
 
   const handleForceReschedule = () => {
     refetchSchedule()
@@ -56,7 +57,7 @@ export default function BigCalendar() {
         <UnassignedServices services={filteredUnassignedServices} />
       </div>
       <div className="flex flex-grow flex-col">
-        <Header onForceReschedule={handleForceReschedule}>
+        <Header>
           <EnforceSwitch
             id="enforce-all-services"
             checked={allServicesEnforced}
@@ -65,6 +66,7 @@ export default function BigCalendar() {
             Enforce techs for all
           </EnforceSwitch>
           <Logo />
+          <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
         <div className="flex-grow p-4">
           <Calendar

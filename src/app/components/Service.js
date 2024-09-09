@@ -54,7 +54,7 @@ export default function Service({ service, updateServiceEnforcement }) {
           <EnforceSwitch
             id={`enforce-service-setup-${service.id}`}
             checked={service.tech.enforced}
-            onCheckedChange={checked => updateServiceEnforcement(service.id, checked)}
+            onCheckedChange={checked => updateServiceEnforcement(service.id.split('-')[0], checked)}
           >
             Enforce tech
           </EnforceSwitch>

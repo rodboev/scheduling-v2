@@ -1,45 +1,26 @@
 import { useMemo } from 'react'
-import { useLocalStorage } from '@/app/hooks/useLocalStorage'
+import { updateEnforcementState, updateAllEnforcementState } from '@/app/actions/enforcementActions'
 
-export const useEnforcement = services => {
-  const [enforcedServices, setEnforcedServices] = useLocalStorage('enforcedServices', {})
-
-  const updateServiceEnforcement = (id, enforced) => {
-    const setupId = id.split('-')[0]
-    setEnforcedServices(prev => ({ ...prev, [setupId]: enforced }))
+export const useEnforcement = (services, refetchSchedule) => {
+  const updateServiceEnforcement = async (id, enforced) => {
+    const result = await updateEnforcementState(id.split('-')[0], enforced)
+    if (result.success) {
+      refetchSchedule()
+    }
   }
 
-  const updateAllServicesEnforcement = enforced => {
-    const newEnforcedServices = {}
-    services.forEach(service => {
-      const setupId = service.id.split('-')[0]
-      newEnforcedServices[setupId] = enforced
-    })
-    setEnforcedServices(newEnforcedServices)
+  const updateAllServicesEnforcement = async enforced => {
+    const result = await updateAllEnforcementState(services, enforced)
+    if (result.success) {
+      refetchSchedule()
+    }
   }
 
-  const enforcedServicesList = useMemo(() => {
-    return services.map(service => {
-      const setupId = service.id.split('-')[0]
-      return {
-        ...service,
-        tech: {
-          ...service.tech,
-          enforced: enforcedServices[setupId] ?? false,
-        },
-      }
-    })
-  }, [services, enforcedServices])
+  const enforcedServicesList = useMemo(() => services, [services])
 
   const allServicesEnforced = useMemo(() => {
-    return (
-      services.length > 0 &&
-      services.every(service => {
-        const setupId = service.id.split('-')[0]
-        return enforcedServices[setupId] ?? false
-      })
-    )
-  }, [services, enforcedServices])
+    return services.length > 0 && services.every(service => service.tech.enforced)
+  }, [services])
 
   return {
     updateServiceEnforcement,

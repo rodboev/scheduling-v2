@@ -2,7 +2,6 @@
 import fs from 'fs/promises'
 import path from 'path'
 
-const CACHE_FILE = path.join(process.cwd(), 'data', 'serviceSetups.json')
 const CACHE_VALIDITY_HOURS = 72
 
 function formatCacheAge(ageInHours) {
@@ -20,15 +19,13 @@ function formatCacheAge(ageInHours) {
   }
 }
 
-export async function readFromDiskCache({
-  file = CACHE_FILE,
-  cacheAgeAcceptable = CACHE_VALIDITY_HOURS,
-}) {
+export async function readFromDiskCache({ file, cacheAgeAcceptable = CACHE_VALIDITY_HOURS }) {
   try {
-    const data = await fs.readFile(file, 'utf-8')
-    const { timestamp, serviceSetups } = JSON.parse(data)
+    const filePath = path.join(process.cwd(), 'data', file)
+    const data = await fs.readFile(filePath, 'utf-8')
+    const { timestamp, cacheData } = JSON.parse(data)
 
-    if (!timestamp || !serviceSetups) {
+    if (!timestamp || !cacheData) {
       console.log('Cache data is invalid')
       return null
     }
@@ -46,7 +43,7 @@ export async function readFromDiskCache({
 
     if (cacheAgeHours < cacheAgeAcceptable) {
       console.log(`Using valid cache, age: ${formattedAge}`)
-      return serviceSetups
+      return cacheData
     }
     else {
       console.log(`Cache expired, age: ${formattedAge}`)
@@ -63,13 +60,14 @@ export async function readFromDiskCache({
   }
 }
 
-export async function writeToDiskCache({ file = CACHE_FILE, cacheAge, data }) {
+export async function writeToDiskCache({ file, data }) {
   try {
+    const filePath = path.join(process.cwd(), 'data', file)
     const cacheData = {
       timestamp: Date.now(), // Use milliseconds since epoch
-      serviceSetups: data,
+      cacheData: data,
     }
-    await fs.writeFile(file, JSON.stringify(cacheData, null, 2), 'utf-8')
+    await fs.writeFile(filePath, JSON.stringify(cacheData, null, 2), 'utf-8')
     console.log('Cache written successfully')
   }
   catch (error) {

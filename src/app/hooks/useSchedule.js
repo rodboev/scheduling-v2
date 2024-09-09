@@ -96,8 +96,7 @@ export function useSchedule(currentViewRange) {
     updateAllServicesEnforcement,
     enforcedServicesList,
     allServicesEnforced,
-    enforcedServices,
-  } = useEnforcement(allServices)
+  } = useEnforcement(allServices, fetchSchedule)
 
   return {
     ...result,
@@ -106,7 +105,6 @@ export function useSchedule(currentViewRange) {
     updateServiceEnforcement,
     updateAllServicesEnforcement,
     allServicesEnforced,
-    enforcedServices,
     refetchSchedule: fetchSchedule,
   }
 }
