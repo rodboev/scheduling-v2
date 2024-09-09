@@ -3,8 +3,8 @@ import { useState, useCallback } from 'react'
 import { dayjsInstance as dayjs, createDateRange } from '@/app/utils/dayjs'
 import { Views } from 'react-big-calendar'
 
-export function useCalendar() {
-  const [date, setDate] = useState(new Date(2024, 8, 2))
+export function useCalendar(defaultDate = new Date()) {
+  const [date, setDate] = useState(defaultDate)
   const [view, setView] = useState(Views.DAY)
   const [currentViewRange, setCurrentViewRange] = useState(() => createDateRange(date, date))
 

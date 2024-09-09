@@ -9,7 +9,7 @@ import UnassignedServices from '@/app/components/UnassignedServices'
 import { Progress } from '@/app/components/ui/progress'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
-import { useServices } from '@/app/hooks/useServices'
+import { useSchedule } from '@/app/hooks/useSchedule'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
@@ -19,8 +19,9 @@ import 'react-big-calendar/lib/css/react-big-calendar.css'
 const localizer = dayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
+  const defaultDate = new Date(2024, 8, 3)
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
-    useCalendar()
+    useCalendar(defaultDate)
 
   const {
     assignedServices,
@@ -31,9 +32,12 @@ export default function BigCalendar() {
     updateServiceEnforcement,
     updateAllServicesEnforcement,
     allServicesEnforced,
-  } = useServices(currentViewRange)
+    refetchSchedule,
+  } = useSchedule(currentViewRange)
 
-  const defaultDate = new Date(2024, 8, 4)
+  const handleForceReschedule = () => {
+    refetchSchedule()
+  }
 
   return (
     <div className="flex h-screen">
@@ -52,7 +56,7 @@ export default function BigCalendar() {
         <UnassignedServices services={filteredUnassignedServices} />
       </div>
       <div className="flex flex-grow flex-col">
-        <Header>
+        <Header onForceReschedule={handleForceReschedule}>
           <EnforceSwitch
             id="enforce-all-services"
             checked={allServicesEnforced}
@@ -78,7 +82,6 @@ export default function BigCalendar() {
             views={['day', 'week', 'month']}
             step={15}
             timeslots={4}
-            defaultDate={defaultDate}
             onRangeChange={handleRangeChange}
             toolbar={true}
             formats={{

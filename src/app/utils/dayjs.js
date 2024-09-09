@@ -1,23 +1,26 @@
 // src/app/utils/dayjs.js
-
 import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc'
-import timezone from 'dayjs/plugin/timezone'
 import dayOfYear from 'dayjs/plugin/dayOfYear'
+import isBetween from 'dayjs/plugin/isBetween'
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
 dayjs.extend(dayOfYear)
 dayjs.extend(isSameOrBefore)
+dayjs.extend(isSameOrAfter)
+dayjs.extend(isBetween)
 
 export const dayjsInstance = dayjs
 
 // Set the default timezone to 'America/New_York'
 dayjs.tz.setDefault('America/New_York')
 
-export const startOfDay = (date) => dayjs(date).tz('America/New_York').startOf('day')
-export const endOfDay = (date) => dayjs(date).tz('America/New_York').endOf('day')
+export const startOfDay = date => dayjs(date).tz('America/New_York').startOf('day')
+export const endOfDay = date => dayjs(date).tz('America/New_York').endOf('day')
 
 export function convertToETTime(timeString) {
   if (!timeString) return null
