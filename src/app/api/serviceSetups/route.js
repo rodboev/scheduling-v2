@@ -117,7 +117,10 @@ function transformServiceSetup(setup) {
 
   return {
     id: setup.id,
-    locationCode: setup.LocationCode,
+    location: {
+      code: setup.LocationCode,
+      id: setup.LocationID,
+    },
     company: setup.Company,
     schedule: {
       code: setup.ScheduleCode,

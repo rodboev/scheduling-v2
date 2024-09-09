@@ -38,5 +38,5 @@ next-env.d.ts
 # envfile
 .env
 
-# data
-data/serviceSetups.json
+# ephemeral data
+data/

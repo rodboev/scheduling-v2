@@ -43,8 +43,13 @@ function ServicePopover({ service }) {
         {/* PopoverContent remains the same */}
         <div className="">
           <h3 className="flex items-center justify-between space-x-2 pb-4 pt-1 font-bold leading-none">
-            <div>{capitalize(service.company) || 'Unknown Company'}</div>
-            <div className="font-semibold">#{service.locationCode || 'N/A'}</div>
+            <a
+              href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
+              target="_new"
+            >
+              <div>{capitalize(service.company) || 'Unknown Company'}</div>
+              <div className="font-semibold">#{service.location.code || 'N/A'}</div>
+            </a>
           </h3>
           <div className="-mx-4 border-y-2 border-dashed border-gray-300 px-4 py-1">
             <h4 className="font-bold">Unassigned: {service.reason || 'Unknown reason'}</h4>

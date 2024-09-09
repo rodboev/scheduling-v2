@@ -3,7 +3,8 @@ import React, { useState, useRef } from 'react'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
-import { formatTimeRange } from '@/app/utils/timeRange'
+import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
+import dayjs from 'dayjs'
 
 export default function Service({ service, updateServiceEnforcement }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -62,12 +63,18 @@ export default function Service({ service, updateServiceEnforcement }) {
         </div>
 
         <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
-          <div>{capitalize(service.company)}</div>
-          <div className="text-sm font-semibold">#{service.locationCode}</div>
+          <a
+            href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
+            target="_new"
+          >
+            <div>{capitalize(service.company)}</div>
+            <div className="text-sm font-semibold">#{service.location.code}</div>
+          </a>
         </h3>
 
         <p className="whitespace-nowrap">
-          Scheduled: {formatTimeRange(service.start, service.end)}
+          {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
+          {dayjs(service.end).format('M/D')} {formatTime(service.end)}
         </p>
         <p className="whitespace-nowrap">Preferred Time: {service.time.preferred || 'N/A'}</p>
         <p>Duration: {service.time.duration || 'N/A'} min</p>

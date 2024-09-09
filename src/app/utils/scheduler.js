@@ -86,7 +86,7 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     const serviceSetupId = service.id.split('-')[0]
 
     if (service.tech.enforced && service.tech.code) {
-			// Attempt to schedule enforced service with named tech
+      // Attempt to schedule enforced service with named tech
       scheduled = scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDate)
       if (!scheduled) {
         reason = 'Could not schedule enforced service'
@@ -527,21 +527,6 @@ function calculateShiftDuration(services) {
   return shiftEnd.diff(shiftStart, 'minute')
 }
 
-function isIsolatedService(services, index) {
-  const service = services[index]
-  const prevService = index > 0 ? services[index - 1] : null
-  const nextService = index < services.length - 1 ? services[index + 1] : null
-
-  const gapBefore = prevService
-    ? ensureDayjs(service.start).diff(ensureDayjs(prevService.end), 'minute')
-    : Infinity
-  const gapAfter = nextService
-    ? ensureDayjs(nextService.start).diff(ensureDayjs(service.end), 'minute')
-    : Infinity
-
-  return gapBefore > MAX_GAP_BETWEEN_SERVICES && gapAfter > MAX_GAP_BETWEEN_SERVICES
-}
-
 function findBestStartTimeInGap(gap, duration, schedule) {
   const gapStart = gap.start
   const gapEnd = gap.end.subtract(duration, 'minute')
@@ -693,31 +678,45 @@ function printSummary(techSchedules, unscheduledServices) {
   Object.entries(techSchedules).forEach(([techId, schedule]) => {
     let techSummary = `${techId}:\n`
 
-    // Group services by day
-    const daySchedules = new Map()
-    schedule.forEach(service => {
-      const day = ensureDayjs(service.start).startOf('day').format('YYYY-MM-DD')
-      if (!daySchedules.has(day)) {
-        daySchedules.set(day, [])
+    // Sort all services by start time
+    schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+
+    // Group services into shifts
+    const shifts = []
+    let currentShift = []
+
+    schedule.forEach((service, index) => {
+      if (index === 0 || areServicesInSameShift(schedule[index - 1], service)) {
+        currentShift.push(service)
       }
-      daySchedules.get(day).push(service)
+      else {
+        shifts.push(currentShift)
+        currentShift = [service]
+      }
     })
 
-    // Print services and calculate shift duration for each day
-    for (const [day, services] of daySchedules) {
-      services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+    if (currentShift.length > 0) {
+      shifts.push(currentShift)
+    }
 
-      services.forEach(service => {
+    // Print services and calculate shift duration for each shift
+    shifts.forEach((shift, shiftIndex) => {
+      const shiftStart = ensureDayjs(shift[0].start)
+      const shiftEnd = ensureDayjs(shift[shift.length - 1].end)
+
+      techSummary += `Shift ${shiftIndex + 1}:\n`
+
+      shift.forEach(service => {
         const date = ensureDayjs(service.start).format('M/D')
         const start = ensureDayjs(service.start).format('h:mma')
         const end = ensureDayjs(service.end).format('h:mma')
         techSummary += `- ${date}, ${start}-${end}, ${service.company} (id: ${service.id})\n`
       })
 
-      const shiftDuration = calculateShiftDuration(services)
+      const shiftDuration = shiftEnd.diff(shiftStart, 'minute')
       const shiftDurationHours = (shiftDuration / 60).toFixed(1)
       techSummary += `Shift duration: ${shiftDurationHours} hours\n\n`
-    }
+    })
 
     if (schedule.length > 0) {
       scheduleSummary += techSummary
@@ -754,4 +753,9 @@ function printSummary(techSchedules, unscheduledServices) {
   }
 
   console.log(scheduleSummary)
+}
+
+function areServicesInSameShift(service1, service2) {
+  const timeBetween = ensureDayjs(service2.start).diff(ensureDayjs(service1.end), 'minute')
+  return timeBetween <= MAX_GAP_BETWEEN_SERVICES
 }
