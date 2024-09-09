@@ -479,6 +479,7 @@ function scheduleServiceWithRespectToWorkHours(
 
 function isWithinWorkHours(schedule, start, end) {
   const dayStart = start.startOf('day')
+  const prevDayStart = dayStart.subtract(1, 'day')
   const nextDayStart = dayStart.add(1, 'day')
 
   const dayServices = [...schedule, { start, end }].filter(
@@ -497,6 +498,17 @@ function isWithinWorkHours(schedule, start, end) {
 
   let shiftStart = dayServices[0].start
   let shiftEnd = dayServices[0].end
+
+  // Check if there's a previous day shift that ended less than MIN_REST_HOURS ago
+  const previousDayServices = schedule.filter(
+    e => e.end.isSameOrAfter(prevDayStart) && e.end.isBefore(dayStart),
+  )
+  if (previousDayServices.length > 0) {
+    const lastPreviousDayShift = previousDayServices[previousDayServices.length - 1]
+    if (shiftStart.diff(lastPreviousDayShift.end, 'hour') < MIN_REST_HOURS) {
+      return false
+    }
+  }
 
   for (let i = 1; i < dayServices.length; i++) {
     const currentService = dayServices[i]
