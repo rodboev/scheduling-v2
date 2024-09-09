@@ -5,8 +5,27 @@ import { Views } from 'react-big-calendar'
 
 export function useCalendar(defaultDate = new Date()) {
   const [date, setDate] = useState(defaultDate)
-  const [view, setView] = useState(Views.DAY)
-  const [currentViewRange, setCurrentViewRange] = useState(() => createDateRange(date, date))
+  const [view, setView] = useState(Views.WEEK)
+  const [currentViewRange, setCurrentViewRange] = useState(() => {
+    if (view === Views.DAY) {
+      return createDateRange(date, date)
+    }
+    else if (view === Views.WEEK) {
+      return createDateRange(
+        dayjs(date).startOf('week').toDate(),
+        dayjs(date).endOf('week').toDate(),
+      )
+    }
+    else if (view === Views.MONTH) {
+      return createDateRange(
+        dayjs(date).startOf('month').toDate(),
+        dayjs(date).endOf('month').toDate(),
+      )
+    }
+    else {
+      return createDateRange(date, date)
+    }
+  })
 
   const handleView = useCallback(newView => {
     setView(newView)
