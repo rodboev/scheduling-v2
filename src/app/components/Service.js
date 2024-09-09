@@ -78,7 +78,7 @@ export default function Service({ service, updateServiceEnforcement }) {
         </p>
         <p className="whitespace-nowrap">Preferred Time: {service.time.preferred || 'N/A'}</p>
         <p>Duration: {service.time.duration || 'N/A'} min</p>
-        <p>Calculated to: {formatTimeRange(service.time.range[0], service.time.range[1])}</p>
+        <p>Calculated to: {formatTimeRange(service.time.range[0], service.time.range[1])} (from "{service.time.originalRange}")</p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
           <p>Route Time: {service.route.time.join(' - ') || 'N/A'}</p>

@@ -54,10 +54,6 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     ...service,
     start: ensureDayjs(service.start),
     end: ensureDayjs(service.end),
-    time: {
-      ...service.time,
-      range: service.time.range ? service.time.range.map(ensureDayjs) : undefined,
-    },
   }))
 
   // Sort services by date, then by time window size (ascending) and duration (descending)
