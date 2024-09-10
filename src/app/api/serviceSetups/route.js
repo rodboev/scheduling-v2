@@ -16,19 +16,19 @@ const ALLOWED_TECHS = [
   'CAPPA T.',
   'CHIN SAU',
   'CORA JOSE',
-  // 'CRUZ N.',
-  // 'FERNANDEZ',
-  // 'GHANIM MO',
-  // 'GUITEREZ O',
-  // 'FORD J.',
-  // 'HARRIS',
-  // 'HUNTLEY E.',
-  // 'JOHNI',
-  // 'JONES H.',
-  // 'LOPEZ A.',
-  // 'MADERA M.',
-  // 'RIVERS',
-  // 'VASTA RICK',
+  'CRUZ N.',
+  'FERNANDEZ',
+  'GHANIM MO',
+  'GUITEREZ O',
+  'FORD J.',
+  'HARRIS',
+  'HUNTLEY E.',
+  'JOHNI',
+  'JONES H.',
+  'LOPEZ A.',
+  'MADERA M.',
+  'RIVERS',
+  'VASTA RICK',
 ]
 
 sql.driver = 'FreeTDS'
@@ -91,8 +91,7 @@ async function runQuery(pool, query) {
     const result = await pool.request().query(query)
     console.log('Query executed successfully')
     return result.recordset
-  }
-  catch (err) {
+  } catch (err) {
     console.error(`Error executing query:`, err)
     throw err
   }
@@ -140,7 +139,10 @@ function transformServiceSetup(setup) {
       originalRange: setup.TimeRange,
     },
     route: {
-      time: [convertToETTime(setup.RouteStartTime), convertToETTime(setup.RouteEndTime)],
+      time: [
+        convertToETTime(setup.RouteStartTime),
+        convertToETTime(setup.RouteEndTime),
+      ],
       days: setup.RouteOptIncludeDays,
     },
     comments: {
@@ -172,33 +174,35 @@ export async function GET(request) {
 
       // Write all fetched and transformed data to disk cache
       await writeToDiskCache({ file: CACHE_FILE, data: serviceSetups })
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Error fetching from database:', error)
       return NextResponse.json(
-        { error: 'Internal Server Error', details: error.message, stack: error.stack },
+        {
+          error: 'Internal Server Error',
+          details: error.message,
+          stack: error.stack,
+        },
         { status: 500 },
       )
-    }
-    finally {
+    } finally {
       if (pool) {
         try {
           await pool.close()
           console.log('Database connection closed')
-        }
-        catch (closeErr) {
+        } catch (closeErr) {
           console.error('Error closing database connection:', closeErr)
         }
       }
     }
-  }
-  else {
+  } else {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
   // Filter by ALLOWED_TECHS if necessary
   if (ALLOWED_TECHS?.length > 0) {
-    serviceSetups = serviceSetups.filter(setup => ALLOWED_TECHS.includes(setup.tech.code))
+    serviceSetups = serviceSetups.filter(setup =>
+      ALLOWED_TECHS.includes(setup.tech.code),
+    )
     console.log(
       `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
     )
@@ -207,8 +211,12 @@ export async function GET(request) {
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
-    serviceSetups = serviceSetups.filter(setup => ids.includes(setup.id.toString()))
-    console.log(`Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`)
+    serviceSetups = serviceSetups.filter(setup =>
+      ids.includes(setup.id.toString()),
+    )
+    console.log(
+      `Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`,
+    )
   }
 
   return NextResponse.json(serviceSetups)

@@ -14,7 +14,6 @@
   "multilineArraysWrapThreshold": 1,
   "importOrder": ["^react$", "<THIRD_PARTY_MODULES>", "^[./]"],
   "importOrderParserPlugins": ["javascript", "jsx"],
-  "braceStyle": "stroustrup",
-  "printWidth": 100,
+  "printWidth": 80,
   "singleAttributePerLine": true
 }

@@ -4,14 +4,16 @@ import { parseTime, parseTimeRange, formatTimeRange } from './timeRange'
 const MAX_SHIFT_DURATION = 8 * 60 // 8 hours in minutes
 const MAX_GAP_BETWEEN_SERVICES = 7 * 60 // 8 hours minus two 30 minute services
 const MIN_REST_HOURS = 16 // 16 hours minimum rest between shifts
-const MINUTE_INCREMENT = 15
 
 function ensureDayjs(date) {
   return dayjs.isDayjs(date) ? date : dayjs(date)
 }
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-export async function scheduleServices({ services, visibleStart, visibleEnd }, onProgress) {
+export async function scheduleServices(
+  { services, visibleStart, visibleEnd },
+  onProgress,
+) {
   console.time('Total time')
   console.time('Total scheduling time')
 
@@ -41,10 +43,7 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     }
     const aWindowSize = a.time.range[1] - a.time.range[0]
     const bWindowSize = b.time.range[1] - b.time.range[0]
-    if (aWindowSize !== bWindowSize) {
-      return aWindowSize - bWindowSize
-    }
-    return b.time.duration - a.time.duration
+    return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
   console.timeEnd('Sorting services')
 
@@ -59,13 +58,18 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
 
     if (service.tech.enforced && service.tech.code) {
       // Attempt to schedule enforced service with named tech
-      scheduled = scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDate)
+      scheduled = scheduleEnforcedService(
+        service,
+        techSchedules,
+        scheduledServiceIdsByDate,
+      )
       if (!scheduled) {
         reason = 'Could not schedule enforced service'
-        console.log(`Failed to schedule enforced service ${serviceSetupId}: ${reason}`)
+        console.log(
+          `Failed to schedule enforced service ${serviceSetupId}: ${reason}`,
+        )
       }
-    }
-    else {
+    } else {
       // Try to schedule with existing techs
       for (const techId in techSchedules) {
         const result = scheduleServiceWithRespectToWorkHours(
@@ -77,8 +81,7 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
         if (result.scheduled) {
           scheduled = true
           break
-        }
-        else {
+        } else {
           reason = result.reason
         }
       }
@@ -99,8 +102,7 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
         scheduled = result.scheduled
         if (!scheduled) {
           reason = result.reason
-        }
-        else {
+        } else {
           nextGenericTechId++
         }
       }
@@ -119,18 +121,24 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     }
   }
 
+  // // Compact all schedules after initial scheduling
+  // for (const techId in techSchedules) {
+  //   techSchedules[techId] = compactSchedule(techSchedules[techId])
+  // }
+
   console.timeEnd('Total scheduling time')
 
   printSummary(techSchedules, unscheduledServices)
 
   // Convert techSchedules to scheduledServices format
-  const scheduledServices = Object.entries(techSchedules).flatMap(([techId, schedule]) =>
-    schedule.map(service => ({
-      ...service,
-      start: new Date(service.start),
-      end: new Date(service.end),
-      resourceId: techId,
-    })),
+  const scheduledServices = Object.entries(techSchedules).flatMap(
+    ([techId, schedule]) =>
+      schedule.map(service => ({
+        ...service,
+        start: new Date(service.start),
+        end: new Date(service.end),
+        resourceId: techId,
+      })),
   )
 
   // Convert unscheduledServices dates to Date objects
@@ -155,71 +163,74 @@ function scheduleServiceWithRespectToWorkHours(
   techSchedules,
   scheduledServiceIdsByDate,
 ) {
-  if (service.time.originalRange.includes('null') || service.time.originalRange.length === 0) {
+  if (
+    service.time.originalRange.includes('null') ||
+    service.time.originalRange.length === 0
+  ) {
     return { scheduled: false, reason: 'Improper time range' }
   }
 
   const [rangeStart, rangeEnd] = [service.time.range[0], service.time.range[1]]
   const earliestStart = service.start.startOf('day').add(rangeStart, 'second')
   const latestEnd = service.start.startOf('day').add(rangeEnd, 'second')
+  const preferredTime = service.time.preferred
+    ? parseTime(service.time.preferred)
+    : rangeStart
 
-  if (!techSchedules[techId]) techSchedules[techId] = []
-
-  // Convert schedule dates to dayjs objects
-  const schedule = techSchedules[techId].map(s => ({
-    ...s,
-    start: dayjs(s.start),
-    end: dayjs(s.end),
-  }))
-
-  // Sort existing schedule
-  schedule.sort((a, b) => a.start.diff(b.start))
-
-  // Round up the earliest start time to the next 15-minute increment
-  let startTime = earliestStart.minute(
-    Math.ceil(earliestStart.minute() / MINUTE_INCREMENT) * MINUTE_INCREMENT,
-  )
-  if (startTime.isBefore(earliestStart)) {
-    startTime = startTime.add(MINUTE_INCREMENT, 'minute')
+  if (!techSchedules[techId]) {
+    techSchedules[techId] = []
   }
 
-  while (startTime.isBefore(latestEnd)) {
-    const endTime = startTime.add(service.time.duration, 'minute')
+  const schedule = techSchedules[techId].map(s => ({
+    ...s,
+    start: ensureDayjs(s.start),
+    end: ensureDayjs(s.end),
+  }))
 
-    if (endTime.isAfter(latestEnd)) {
-      break // The service can't fit within the allowed time range
-    }
+  const gaps = findScheduleGaps(schedule, earliestStart, latestEnd)
 
-    const overlap = schedule.find(
-      s =>
-        (startTime.isBefore(s.end) && endTime.isAfter(s.start)) ||
-        (startTime.isSameOrBefore(s.start) && endTime.isAfter(s.start)) ||
-        (startTime.isBefore(s.end) && endTime.isSameOrAfter(s.end)),
+  for (const gap of gaps) {
+    const gapStart = dayjs.max(gap.start, earliestStart)
+    const gapEnd = dayjs.min(gap.end, latestEnd)
+    const preferredStart = dayjs.max(
+      gapStart,
+      service.start.startOf('day').add(preferredTime, 'second'),
     )
 
-    if (!overlap && isWithinWorkHours(schedule, startTime, endTime)) {
-      const scheduledService = {
-        ...service,
-        start: startTime.toDate(),
-        end: endTime.toDate(),
+    if (gapEnd.diff(gapStart, 'minute') >= service.time.duration) {
+      let startTime = preferredStart
+      if (startTime.add(service.time.duration, 'minute').isAfter(gapEnd)) {
+        startTime = gapEnd.subtract(service.time.duration, 'minute')
       }
-      techSchedules[techId].push(scheduledService)
-      techSchedules[techId].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+      const endTime = startTime.add(service.time.duration, 'minute')
 
-      const serviceDate = startTime.format('YYYY-MM-DD')
-      const serviceKey = `${service.id}-${serviceDate}`
-      scheduledServiceIdsByDate.set(serviceKey, techId)
+      if (
+        startTime.isSameOrAfter(gapStart) &&
+        endTime.isSameOrBefore(gapEnd) &&
+        isWithinWorkHours(schedule, startTime, endTime)
+      ) {
+        const scheduledService = {
+          ...service,
+          start: startTime.toDate(),
+          end: endTime.toDate(),
+        }
+        techSchedules[techId].push(scheduledService)
+        techSchedules[techId].sort((a, b) =>
+          dayjs(a.start).diff(dayjs(b.start)),
+        )
 
-      return { scheduled: true, reason: null }
+        const serviceDate = startTime.format('YYYY-MM-DD')
+        const serviceKey = `${service.id}-${serviceDate}`
+        scheduledServiceIdsByDate.set(serviceKey, techId)
+
+        return { scheduled: true, reason: null }
+      }
     }
-
-    // Move to the next 15-minute increment
-    startTime = startTime.add(MINUTE_INCREMENT, 'minute')
   }
 
   return {
     scheduled: false,
-    reason: `No available time slot found between ${earliestStart.format('h:mma')} and ${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for ${techId}`,
+    reason: `No available time slot found within the time range ${earliestStart.format('h:mma')}-${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for ${techId}`,
   }
 }
 
@@ -250,7 +261,8 @@ function isWithinWorkHours(schedule, start, end) {
     e => e.end.isSameOrAfter(prevDayStart) && e.end.isBefore(dayStart),
   )
   if (previousDayServices.length > 0) {
-    const lastPreviousDayShift = previousDayServices[previousDayServices.length - 1]
+    const lastPreviousDayShift =
+      previousDayServices[previousDayServices.length - 1]
     if (shiftStart.diff(lastPreviousDayShift.end, 'hour') < MIN_REST_HOURS) {
       return false
     }
@@ -289,24 +301,34 @@ function findScheduleGaps(schedule, start, end) {
     const serviceStart = ensureDayjs(service.start)
     const serviceEnd = ensureDayjs(service.end)
 
-    if (lastServiceEnd && serviceStart.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS) {
+    if (
+      lastServiceEnd &&
+      serviceStart.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS
+    ) {
       // Add a gap that respects the minimum rest period
-      gaps.push({ start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'), end: serviceStart })
-    }
-    else if (serviceStart.isAfter(currentTime)) {
+      gaps.push({
+        start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'),
+        end: serviceStart,
+      })
+    } else if (serviceStart.isAfter(currentTime)) {
       gaps.push({ start: currentTime, end: serviceStart })
     }
 
-    currentTime = dayjs.max(currentTime, serviceEnd)
+    currentTime = serviceEnd.isAfter(currentTime) ? serviceEnd : currentTime
     lastServiceEnd = serviceEnd
   })
 
   if (endTime.isAfter(currentTime)) {
-    if (lastServiceEnd && endTime.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS) {
+    if (
+      lastServiceEnd &&
+      endTime.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS
+    ) {
       // Add a final gap that respects the minimum rest period
-      gaps.push({ start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'), end: endTime })
-    }
-    else {
+      gaps.push({
+        start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'),
+        end: endTime,
+      })
+    } else {
       gaps.push({ start: currentTime, end: endTime })
     }
   }
@@ -314,24 +336,46 @@ function findScheduleGaps(schedule, start, end) {
   return gaps
 }
 
-function scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDate) {
+function scheduleEnforcedService(
+  service,
+  techSchedules,
+  scheduledServiceIdsByDate,
+) {
+  // No need to respect time range for enforced services
   const techId = service.tech.code
   if (!techId) {
-    console.log(`Warning: Enforced service ${service.id} has no tech code. Skipping enforcement.`)
+    console.log(
+      `Warning: Enforced service ${service.id} has no tech code. Skipping enforcement.`,
+    )
     return false
   }
 
   if (!techSchedules[techId]) techSchedules[techId] = []
 
-  const preferredTime = parseTime(service.time.preferred)
-  const startTime = ensureDayjs(service.start).startOf('day').add(preferredTime, 'second')
+  const [rangeStart, rangeEnd] = [service.time.range[0], service.time.range[1]]
+  const earliestStart = service.start.startOf('day').add(rangeStart, 'second')
+  const latestEnd = service.start.startOf('day').add(rangeEnd, 'second')
+  const preferredTime = service.time.preferred
+    ? parseTime(service.time.preferred)
+    : rangeStart
+  const startTime = dayjs.max(
+    earliestStart,
+    service.start.startOf('day').add(preferredTime, 'second'),
+  )
   const endTime = startTime.add(service.time.duration, 'minute')
 
+  if (endTime.isAfter(latestEnd)) {
+    console.log(
+      `Warning: Enforced service ${service.id} cannot be scheduled within its time range. Skipping enforcement.`,
+    )
+    return false
+  }
+
   // Check for conflicts
-  const conflict = techSchedules[techId].find(existingService =>
-    dayjs
-      .max(startTime, ensureDayjs(existingService.start))
-      .isBefore(dayjs.min(endTime, ensureDayjs(existingService.end))),
+  const conflict = techSchedules[techId].find(
+    existingService =>
+      startTime.isBefore(ensureDayjs(existingService.end)) &&
+      endTime.isAfter(ensureDayjs(existingService.start)),
   )
 
   if (conflict) {
@@ -354,6 +398,75 @@ function scheduleEnforcedService(service, techSchedules, scheduledServiceIdsByDa
   return true
 }
 
+function compactSchedule(schedule) {
+  const compactedSchedule = []
+  let currentShift = []
+  let shiftStart = null
+
+  schedule.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+
+  for (let i = 0; i < schedule.length; i++) {
+    const service = schedule[i]
+    const serviceStart = dayjs(service.start)
+    const serviceEnd = dayjs(service.end)
+
+    if (!shiftStart) {
+      shiftStart = serviceStart
+      currentShift.push(service)
+    } else if (serviceStart.diff(shiftStart, 'minute') <= MAX_SHIFT_DURATION) {
+      currentShift.push(service)
+    } else {
+      compactedSchedule.push(...compactShift(currentShift))
+      currentShift = [service]
+      shiftStart = serviceStart
+    }
+  }
+
+  if (currentShift.length > 0) {
+    compactedSchedule.push(...compactShift(currentShift))
+  }
+
+  return compactedSchedule
+}
+
+function compactShift(shift) {
+  if (shift.length === 0) return []
+
+  const compactedShift = []
+  let currentTime = dayjs(shift[0].start)
+
+  for (const service of shift) {
+    const serviceStart = ensureDayjs(service.start)
+    const serviceEnd = ensureDayjs(service.end)
+    const serviceDuration = service.time.duration
+    const [rangeStart, rangeEnd] = [
+      service.time.range[0],
+      service.time.range[1],
+    ]
+    const earliestStart = serviceStart.startOf('day').add(rangeStart, 'second')
+    const latestEnd = serviceStart.startOf('day').add(rangeEnd, 'second')
+
+    const newStart = dayjs.max(currentTime, earliestStart)
+    const newEnd = dayjs.min(newStart.add(serviceDuration, 'minute'), latestEnd)
+
+    if (
+      newEnd.diff(newStart, 'minute') === serviceDuration &&
+      newEnd.diff(currentTime, 'minute') <= MAX_SHIFT_DURATION
+    ) {
+      compactedShift.push({
+        ...service,
+        start: newStart.toDate(),
+        end: newEnd.toDate(),
+      })
+      currentTime = newEnd
+    } else {
+      break
+    }
+  }
+
+  return compactedShift
+}
+
 function printSummary(techSchedules, unscheduledServices) {
   let scheduleSummary = 'Schedule Summary:\n\n'
 
@@ -370,8 +483,7 @@ function printSummary(techSchedules, unscheduledServices) {
     schedule.forEach((service, index) => {
       if (index === 0 || areServicesInSameShift(schedule[index - 1], service)) {
         currentShift.push(service)
-      }
-      else {
+      } else {
         shifts.push(currentShift)
         currentShift = [service]
       }
@@ -383,8 +495,8 @@ function printSummary(techSchedules, unscheduledServices) {
 
     // Print services and calculate shift duration for each shift
     shifts.forEach((shift, shiftIndex) => {
-      const shiftStart = dayjs.min(...shift.map(s => ensureDayjs(s.start)))
-      const shiftEnd = dayjs.max(...shift.map(s => ensureDayjs(s.end)))
+      const shiftStart = ensureDayjs(shift[0].start)
+      const shiftEnd = ensureDayjs(shift[shift.length - 1].end)
 
       techSummary += `Shift ${shiftIndex + 1}:\n`
 
@@ -392,7 +504,7 @@ function printSummary(techSchedules, unscheduledServices) {
         const date = ensureDayjs(service.start).format('M/D')
         const start = ensureDayjs(service.start).format('h:mma')
         const end = ensureDayjs(service.end).format('h:mma')
-        techSummary += `- ${date}, ${start}-${end}, ${service.company} (id: ${service.id})\n`
+        techSummary += `- ${date}, ${start}-${end}, ${service.company} (time range: ${formatTimeRange(service.time.range[0], service.time.range[1])}) (id: ${service.id.split('-')[0]})\n`
       })
 
       const shiftDuration = shiftEnd.diff(shiftStart, 'minute')
@@ -410,7 +522,10 @@ function printSummary(techSchedules, unscheduledServices) {
     scheduleSummary += 'Unassigned services:\n'
     unscheduledServices.forEach(service => {
       const date = ensureDayjs(service.start).format('M/D')
-      const timeWindow = formatTimeRange(service.time.range[0], service.time.range[1])
+      const timeWindow = formatTimeRange(
+        service.time.range[0],
+        service.time.range[1],
+      )
       scheduleSummary += `- ${date}, ${timeWindow} time window, ${service.company} (id: ${service.id}), Reason: ${service.reason}\n`
     })
 
@@ -438,6 +553,9 @@ function printSummary(techSchedules, unscheduledServices) {
 }
 
 function areServicesInSameShift(service1, service2) {
-  const timeBetween = ensureDayjs(service2.start).diff(ensureDayjs(service1.end), 'minute')
+  const timeBetween = ensureDayjs(service2.start).diff(
+    ensureDayjs(service1.end),
+    'minute',
+  )
   return timeBetween <= MAX_GAP_BETWEEN_SERVICES
 }
