@@ -4,6 +4,7 @@ import dayOfYear from 'dayjs/plugin/dayOfYear'
 import isBetween from 'dayjs/plugin/isBetween'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
+import minMax from 'dayjs/plugin/minMax'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 
@@ -13,6 +14,7 @@ dayjs.extend(dayOfYear)
 dayjs.extend(isSameOrBefore)
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isBetween)
+dayjs.extend(minMax)
 
 export const dayjsInstance = dayjs
 
