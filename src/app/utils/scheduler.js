@@ -29,6 +29,14 @@ export async function scheduleServices(
   // Convert all date fields in services to dayjs objects
   services = services.map(service => ({
     ...service,
+    priority: [
+      'Purple Rice',
+      'FULTON BURGER - DUMBO',
+      'MOZZARELLA',
+      'CAFE LULUC',
+    ].includes(service.company)
+      ? 1
+      : 0,
     start: ensureDayjs(service.start),
     end: ensureDayjs(service.end),
   }))
@@ -36,6 +44,9 @@ export async function scheduleServices(
   // Sort services by date, then by time window size (ascending) and duration (descending)
   console.time('Sorting services')
   services.sort((a, b) => {
+    if (a.priority !== b.priority) {
+      return b.priority - a.priority // Higher priority first
+    }
     const aDate = a.start.startOf('day')
     const bDate = b.start.startOf('day')
     if (!aDate.isSame(bDate)) {
@@ -179,7 +190,15 @@ function scheduleServiceWithRespectToWorkHours(
     end: ensureDayjs(s.end),
   }))
 
-  const gaps = findScheduleGaps(schedule, earliestPossibleStart, latestPossibleEnd)
+  // Sort the schedule
+  schedule.sort((a, b) => a.start.diff(b.start))
+
+  // Find all gaps in the schedule
+  const gaps = findScheduleGaps(
+    schedule,
+    earliestPossibleStart,
+    latestPossibleEnd,
+  )
 
   for (const gap of gaps) {
     const gapStart = dayjs.max(gap.start, earliestPossibleStart)
@@ -221,31 +240,6 @@ function scheduleServiceWithRespectToWorkHours(
     scheduled: false,
     reason: `No available time slot found within the time range ${earliestPossibleStart.format('M/D h:mma')}-${latestPossibleEnd.format('M/D h:mma')} for ${techId}`,
   }
-}
-
-function findShifts(schedule) {
-  const shifts = []
-  let currentShift = null
-
-  for (const service of schedule) {
-    if (
-      !currentShift ||
-      !areServicesInSameShift(currentShift.end, service.start)
-    ) {
-      if (currentShift) {
-        shifts.push(currentShift)
-      }
-      currentShift = { start: service.start, end: service.end }
-    } else {
-      currentShift.end = service.end
-    }
-  }
-
-  if (currentShift) {
-    shifts.push(currentShift)
-  }
-
-  return shifts
 }
 
 function isWithinWorkHours(schedule, start, end) {
@@ -300,6 +294,34 @@ function isWithinWorkHours(schedule, start, end) {
   const finalShiftDuration = shiftEnd.diff(shiftStart, 'minute')
   const result = finalShiftDuration <= MAX_SHIFT_DURATION
   return result
+}
+
+function findShifts(schedule) {
+  const shifts = []
+  let currentShift = null
+
+  for (const service of schedule) {
+    if (
+      !currentShift ||
+      !areServicesInSameShift(
+        currentShift.services[currentShift.services.length - 1],
+        service,
+      )
+    ) {
+      if (currentShift) {
+        shifts.push(currentShift)
+      }
+      currentShift = { start: service.start, services: [service] }
+    } else {
+      currentShift.services.push(service)
+    }
+  }
+
+  if (currentShift) {
+    shifts.push(currentShift)
+  }
+
+  return shifts
 }
 
 function findScheduleGaps(schedule, start, end) {
