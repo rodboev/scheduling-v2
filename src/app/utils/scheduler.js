@@ -496,9 +496,16 @@ function printSummary(techSchedules, unscheduledServices) {
     // Print services and calculate shift duration for each shift
     shifts.forEach((shift, shiftIndex) => {
       const shiftStart = ensureDayjs(shift[0].start)
-      const shiftEnd = ensureDayjs(shift[shift.length - 1].end)
+      const actualShiftEnd = ensureDayjs(shift[shift.length - 1].end)
+      const potentialShiftEnd = shiftStart.add(8, 'hours')
 
-      techSummary += `Shift ${shiftIndex + 1}:\n`
+      const formatShiftTime = time => {
+        return `${time.format('M/D')} ${time.format('ha').toLowerCase()}`
+      }
+
+      const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(actualShiftEnd)}, or as late as ${formatShiftTime(potentialShiftEnd)}`
+
+      techSummary += `Shift ${shiftIndex + 1} (${shiftTimeRange}):\n`
 
       shift.forEach(service => {
         const date = ensureDayjs(service.start).format('M/D')
@@ -507,9 +514,10 @@ function printSummary(techSchedules, unscheduledServices) {
         techSummary += `- ${date}, ${start}-${end}, ${service.company} (time range: ${formatTimeRange(service.time.range[0], service.time.range[1])}) (id: ${service.id.split('-')[0]})\n`
       })
 
-      const shiftDuration = shiftEnd.diff(shiftStart, 'minute')
-      const shiftDurationHours = (shiftDuration / 60).toFixed(1)
-      techSummary += `Shift duration: ${shiftDurationHours} hours\n\n`
+      const actualShiftDuration = actualShiftEnd
+        .diff(shiftStart, 'hours', true)
+        .toFixed(2)
+      techSummary += `Actual shift duration: ${actualShiftDuration} hours (potential: 8.00 hours)\n\n`
     })
 
     if (schedule.length > 0) {
