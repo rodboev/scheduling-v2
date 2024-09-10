@@ -29,14 +29,6 @@ export async function scheduleServices(
   // Convert all date fields in services to dayjs objects
   services = services.map(service => ({
     ...service,
-    priority: [
-      'Purple Rice',
-      'FULTON BURGER - DUMBO',
-      'MOZZARELLA',
-      'CAFE LULUC',
-    ].includes(service.company)
-      ? 1
-      : 0,
     start: ensureDayjs(service.start),
     end: ensureDayjs(service.end),
   }))
@@ -44,9 +36,6 @@ export async function scheduleServices(
   // Sort services by date, then by time window size (ascending) and duration (descending)
   console.time('Sorting services')
   services.sort((a, b) => {
-    if (a.priority !== b.priority) {
-      return b.priority - a.priority // Higher priority first
-    }
     const aDate = a.start.startOf('day')
     const bDate = b.start.startOf('day')
     if (!aDate.isSame(bDate)) {
@@ -65,7 +54,10 @@ export async function scheduleServices(
     let scheduled = false
     let reason = ''
 
+    const serviceSetupId = service.id.split('-')[0]
+
     if (service.tech.enforced && service.tech.code) {
+      // Attempt to schedule enforced service with named tech
       scheduled = scheduleEnforcedService(
         service,
         techSchedules,
@@ -73,6 +65,9 @@ export async function scheduleServices(
       )
       if (!scheduled) {
         reason = 'Could not schedule enforced service'
+        console.log(
+          `Failed to schedule enforced service ${serviceSetupId}: ${reason}`,
+        )
       }
     } else {
       // Try to schedule with existing techs
@@ -123,10 +118,37 @@ export async function scheduleServices(
     }
   }
 
-  // Compact schedules after initial scheduling
+  // // Compact schedules after initial scheduling
   // for (const techId in techSchedules) {
   //   techSchedules[techId] = compactSchedule(techSchedules[techId])
   // }
+
+  // Second pass: Try to fill gaps for each tech
+  const allTechs = Object.keys(techSchedules).sort()
+  for (const techId of allTechs) {
+    const gaps = findScheduleGaps(
+      techSchedules[techId],
+      visibleStart,
+      visibleEnd,
+    )
+    // for (const gap of gaps) {
+    //   for (let i = 0; i < unscheduledServices.length; i++) {
+    //     const service = unscheduledServices[i]
+    //     if (
+    //       tryScheduleServiceInGap(
+    //         service,
+    //         gap,
+    //         techId,
+    //         techSchedules,
+    //         scheduledServiceIdsByDate,
+    //       )
+    //     ) {
+    //       unscheduledServices.splice(i, 1)
+    //       i--
+    //     }
+    //   }
+    // }
+  }
 
   console.timeEnd('Total scheduling time')
 
@@ -173,9 +195,8 @@ function scheduleServiceWithRespectToWorkHours(
   }
 
   const [rangeStart, rangeEnd] = [service.time.range[0], service.time.range[1]]
-  const serviceDate = service.start.startOf('day')
-  const earliestPossibleStart = serviceDate.add(rangeStart, 'second')
-  const latestPossibleEnd = serviceDate.add(rangeEnd, 'second')
+  const earliestStart = service.start.startOf('day').add(rangeStart, 'second')
+  const latestEnd = service.start.startOf('day').add(rangeEnd, 'second')
   const preferredTime = service.time.preferred
     ? parseTime(service.time.preferred)
     : rangeStart
@@ -190,23 +211,18 @@ function scheduleServiceWithRespectToWorkHours(
     end: ensureDayjs(s.end),
   }))
 
-  // Sort the schedule
-  schedule.sort((a, b) => a.start.diff(b.start))
-
-  // Find all gaps in the schedule
-  const gaps = findScheduleGaps(
-    schedule,
-    earliestPossibleStart,
-    latestPossibleEnd,
-  )
+  const gaps = findScheduleGaps(schedule, earliestStart, latestEnd)
 
   for (const gap of gaps) {
-    const gapStart = dayjs.max(gap.start, earliestPossibleStart)
-    const gapEnd = dayjs.min(gap.end, latestPossibleEnd)
-    const preferredStart = serviceDate.add(preferredTime, 'second')
+    const gapStart = dayjs.max(gap.start, earliestStart)
+    const gapEnd = dayjs.min(gap.end, latestEnd)
+    const preferredStart = dayjs.max(
+      gapStart,
+      service.start.startOf('day').add(preferredTime, 'second'),
+    )
 
     if (gapEnd.diff(gapStart, 'minute') >= service.time.duration) {
-      let startTime = dayjs.max(gapStart, preferredStart)
+      let startTime = preferredStart
       if (startTime.add(service.time.duration, 'minute').isAfter(gapEnd)) {
         startTime = gapEnd.subtract(service.time.duration, 'minute')
       }
@@ -238,7 +254,7 @@ function scheduleServiceWithRespectToWorkHours(
 
   return {
     scheduled: false,
-    reason: `No available time slot found within the time range ${earliestPossibleStart.format('M/D h:mma')}-${latestPossibleEnd.format('M/D h:mma')} for ${techId}`,
+    reason: `No available time slot found within the time range ${earliestStart.format('h:mma')}-${latestEnd.format('h:mma')} on ${earliestStart.format('M/D')} for ${techId}`,
   }
 }
 
@@ -296,34 +312,6 @@ function isWithinWorkHours(schedule, start, end) {
   return result
 }
 
-function findShifts(schedule) {
-  const shifts = []
-  let currentShift = null
-
-  for (const service of schedule) {
-    if (
-      !currentShift ||
-      !areServicesInSameShift(
-        currentShift.services[currentShift.services.length - 1],
-        service,
-      )
-    ) {
-      if (currentShift) {
-        shifts.push(currentShift)
-      }
-      currentShift = { start: service.start, services: [service] }
-    } else {
-      currentShift.services.push(service)
-    }
-  }
-
-  if (currentShift) {
-    shifts.push(currentShift)
-  }
-
-  return shifts
-}
-
 function findScheduleGaps(schedule, start, end) {
   const gaps = []
   let currentTime = ensureDayjs(start)
@@ -331,15 +319,42 @@ function findScheduleGaps(schedule, start, end) {
 
   schedule.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
+  let lastServiceEnd = null
+
   schedule.forEach(service => {
-    if (currentTime.isBefore(service.start)) {
-      gaps.push({ start: currentTime, end: service.start })
+    const serviceStart = ensureDayjs(service.start)
+    const serviceEnd = ensureDayjs(service.end)
+
+    if (
+      lastServiceEnd &&
+      serviceStart.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS
+    ) {
+      // Add a gap that respects the minimum rest period
+      gaps.push({
+        start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'),
+        end: serviceStart,
+      })
+    } else if (serviceStart.isAfter(currentTime)) {
+      gaps.push({ start: currentTime, end: serviceStart })
     }
-    currentTime = dayjs.max(currentTime, service.end)
+
+    currentTime = serviceEnd.isAfter(currentTime) ? serviceEnd : currentTime
+    lastServiceEnd = serviceEnd
   })
 
-  if (currentTime.isBefore(end)) {
-    gaps.push({ start: currentTime, end: end })
+  if (endTime.isAfter(currentTime)) {
+    if (
+      lastServiceEnd &&
+      endTime.diff(lastServiceEnd, 'hour') >= MIN_REST_HOURS
+    ) {
+      // Add a final gap that respects the minimum rest period
+      gaps.push({
+        start: lastServiceEnd.add(MIN_REST_HOURS, 'hour'),
+        end: endTime,
+      })
+    } else {
+      gaps.push({ start: currentTime, end: endTime })
+    }
   }
 
   return gaps
@@ -502,14 +517,14 @@ function printSummary(techSchedules, unscheduledServices) {
       shifts.push(currentShift)
     }
 
-    // Print services and calculate shift duration for each shift
+    // Print services, calculate shift duration, and find gaps for each shift
     shifts.forEach((shift, shiftIndex) => {
       const shiftStart = ensureDayjs(shift[0].start)
       const actualShiftEnd = ensureDayjs(shift[shift.length - 1].end)
       const potentialShiftEnd = shiftStart.add(8, 'hours')
 
       const formatShiftTime = time => {
-        return `${time.format('M/D')} ${time.format('ha').toLowerCase()}`
+        return `${time.format('M/D')} ${time.format('h:mma').toLowerCase()}`
       }
 
       const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(actualShiftEnd)}, or as late as ${formatShiftTime(potentialShiftEnd)}`
@@ -526,7 +541,23 @@ function printSummary(techSchedules, unscheduledServices) {
       const actualShiftDuration = actualShiftEnd
         .diff(shiftStart, 'hours', true)
         .toFixed(2)
-      techSummary += `Shift duration: ${actualShiftDuration} hours\n\n`
+      techSummary += `Shift duration: ${actualShiftDuration} hours\n`
+
+      // Find and print gaps
+      const gaps = findScheduleGaps(shift, shiftStart, potentialShiftEnd)
+      if (gaps.length > 0) {
+        techSummary += 'Gaps in this shift:\n'
+        gaps.forEach((gap, index) => {
+          const gapStart = formatShiftTime(gap.start)
+          const gapEnd = formatShiftTime(gap.end)
+          const gapDuration = gap.end.diff(gap.start, 'hours', true).toFixed(2)
+          techSummary += `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${gapDuration} hours)\n`
+        })
+      } else {
+        techSummary += 'No gaps found in this shift.\n'
+      }
+
+      techSummary += '\n'
     })
 
     if (schedule.length > 0) {
@@ -534,7 +565,7 @@ function printSummary(techSchedules, unscheduledServices) {
     }
   })
 
-  // Unassigned services
+  // Unassigned services (unchanged)
   if (unscheduledServices.length > 0) {
     scheduleSummary += 'Unassigned services:\n'
     unscheduledServices.forEach(service => {
