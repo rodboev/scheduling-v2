@@ -1,8 +1,8 @@
 import { dayjsInstance as dayjs } from './dayjs'
-import { parseTime, parseTimeRange, memoizedParseTimeRange, formatTimeRange } from './timeRange'
+import { parseTime, parseTimeRange, formatTimeRange } from './timeRange'
 
 const MAX_SHIFT_DURATION = 8 * 60 // 8 hours in minutes
-const MAX_GAP_BETWEEN_SERVICES = 120 // 2 hours
+const MAX_GAP_BETWEEN_SERVICES = 7 * 60 // 8 hours minus two 30 minute services
 const MIN_REST_HOURS = 16 // 16 hours minimum rest between shifts
 
 function ensureDayjs(date) {
@@ -38,10 +38,8 @@ export async function scheduleServices({ services, visibleStart, visibleEnd }, o
     if (!aDate.isSame(bDate)) {
       return aDate.diff(bDate)
     }
-    const aWindow = memoizedParseTimeRange(a.time.originalRange, a.time.duration)
-    const bWindow = memoizedParseTimeRange(b.time.originalRange, b.time.duration)
-    const aWindowSize = aWindow[1] - aWindow[0]
-    const bWindowSize = bWindow[1] - bWindow[0]
+    const aWindowSize = a.time.range[1] - a.time.range[0]
+    const bWindowSize = b.time.range[1] - b.time.range[0]
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
   console.timeEnd('Sorting services')
@@ -157,10 +155,7 @@ function scheduleServiceWithRespectToWorkHours(
     return { scheduled: false, reason: 'Improper time range' }
   }
 
-  const [rangeStart, rangeEnd] = memoizedParseTimeRange(
-    service.time.originalRange,
-    service.time.duration,
-  )
+  const [rangeStart, rangeEnd] = [service.time.range[0], service.time.range[1]]
   const earliestStart = service.start.startOf('day').add(rangeStart, 'second')
   const latestEnd = service.start.startOf('day').add(rangeEnd, 'second')
 
@@ -190,7 +185,7 @@ function scheduleServiceWithRespectToWorkHours(
           end: endTime.toDate(),
         }
         techSchedules[techId].push(scheduledService)
-        techSchedules[techId].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+        // techSchedules[techId].sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
 
         const serviceDate = startTime.format('YYYY-MM-DD')
         const serviceKey = `${service.id}-${serviceDate}`
