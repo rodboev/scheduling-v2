@@ -1,6 +1,10 @@
 // src/app/components/ChangedServices.js
 import React from 'react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/app/components/ui/popover'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
 export default function ChangedServices({ services }) {
@@ -32,10 +36,7 @@ export default function ChangedServices({ services }) {
                 </p>
                 <p>
                   <strong>Preferred Time:</strong>{' '}
-                  {dayjs()
-                    .startOf('day')
-                    .add(service.service.time.preferred, 'second')
-                    .format('h:mm A')}
+                  {dayjs(service.time.preferred).format('h:mm A')}
                 </p>
               </PopoverContent>
             </Popover>

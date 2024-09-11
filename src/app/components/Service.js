@@ -1,7 +1,11 @@
 // src/app/components/Service.js
 import React, { useState, useRef } from 'react'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
-import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
@@ -39,7 +43,10 @@ export default function Service({ service, updateServiceEnforcement }) {
           <span className="inline-block text-sm leading-none">
             {formatTimeRange(service.start, service.end)} —
           </span>
-          <span className="text-sm leading-none"> {capitalize(service.company)} </span>
+          <span className="text-sm leading-none">
+            {' '}
+            {capitalize(service.company)}{' '}
+          </span>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -55,7 +62,9 @@ export default function Service({ service, updateServiceEnforcement }) {
           <EnforceSwitch
             id={`enforce-service-setup-${service.id}`}
             checked={service.tech.enforced}
-            onCheckedChange={checked => updateServiceEnforcement(service.id.split('-')[0], checked)}
+            onCheckedChange={checked =>
+              updateServiceEnforcement(service.id.split('-')[0], checked)
+            }
           >
             Enforce tech
           </EnforceSwitch>
@@ -68,7 +77,9 @@ export default function Service({ service, updateServiceEnforcement }) {
             target="_new"
           >
             <div>{capitalize(service.company)}</div>
-            <div className="text-sm font-semibold">#{service.location.code}</div>
+            <div className="text-sm font-semibold">
+              #{service.location.code}
+            </div>
           </a>
         </h3>
 
@@ -76,9 +87,15 @@ export default function Service({ service, updateServiceEnforcement }) {
           {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
           {dayjs(service.end).format('M/D')} {formatTime(service.end)}
         </p>
-        <p className="whitespace-nowrap">Preferred Time: {service.time.preferred || 'N/A'}</p>
+        <p className="whitespace-nowrap">
+          Preferred Time: {dayjs(service.time.preferred).format('h:mm A')}
+        </p>
         <p>Duration: {service.time.duration || 'N/A'} min</p>
-        <p>Calculated to: {formatTimeRange(service.time.range[0], service.time.range[1])} (from "{service.time.originalRange}")</p>
+        <p>
+          Calculated to:{' '}
+          {formatTimeRange(service.time.range[0], service.time.range[1])} (from
+          "{service.time.meta.originalRange}")
+        </p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
           <p>Route Time: {service.route.time.join(' - ') || 'N/A'}</p>
@@ -89,18 +106,23 @@ export default function Service({ service, updateServiceEnforcement }) {
           <div className="space-y-2">
             <div className="">
               <p className="break-words text-sm">
-                <span className="block font-semibold">Service Setup comments:</span>
+                <span className="block font-semibold">
+                  Service Setup comments:
+                </span>
                 {service.comments.serviceSetup || 'N/A'}
               </p>
             </div>
-            {service.comments.location && service.comments.location.trim() !== '' && (
-              <div className="my-2">
-                <p className="break-words text-sm">
-                  <span className="block font-semibold">Location comments:</span>
-                  {service.comments.location}
-                </p>
-              </div>
-            )}
+            {service.comments.location &&
+              service.comments.location.trim() !== '' && (
+                <div className="my-2">
+                  <p className="break-words text-sm">
+                    <span className="block font-semibold">
+                      Location comments:
+                    </span>
+                    {service.comments.location}
+                  </p>
+                </div>
+              )}
           </div>
         )}
       </PopoverContent>

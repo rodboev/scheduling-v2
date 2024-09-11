@@ -1,6 +1,10 @@
 // src/app/components/UnassignedServices.js
 import React, { useState, useRef } from 'react'
-import { Popover, PopoverTrigger, PopoverContent } from '@/app/components/ui/popover'
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTimeRange } from '@/app/utils/timeRange'
 
@@ -23,8 +27,8 @@ function ServicePopover({ service }) {
     <Popover open={isOpen}>
       <PopoverTrigger asChild>
         <button
-          className="mb-1 block w-full rounded-lg px-2 py-1 text-left text-sm text-neutral-500 hover:bg-neutral-100
-            hover:text-black"
+          className="mb-1 block w-full rounded-lg px-2 py-1 text-left text-sm text-neutral-500
+            hover:bg-neutral-100 hover:text-black"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -48,31 +52,37 @@ function ServicePopover({ service }) {
               target="_new"
             >
               <div>{capitalize(service.company) || 'Unknown Company'}</div>
-              <div className="font-semibold">#{service.location.code || 'N/A'}</div>
+              <div className="font-semibold">#{service.location.code}</div>
             </a>
           </h3>
           <div className="-mx-4 border-y-2 border-dashed border-gray-300 px-4 py-1">
-            <h4 className="font-bold">Unassigned: {service.reason || 'Unknown reason'}</h4>
+            <h4 className="font-bold">
+              Unassigned: {service.reason || 'Unknown reason'}
+            </h4>
             <p className="text-neutral-500"></p>
           </div>
           <div className="py-4">
-            <p>Preferred Time: {service.time.preferred || 'N/A'}</p>
-            <p>Duration: {service.time.duration || 'N/A'} min</p>
-            <p>Tech: {service.tech.code || 'N/A'}</p>
-            <p>Calc Range: {formatTimeRange(service.time.range[0], service.time.range[1])}</p>
+            <p>Preferred Time: {service.time.preferred}</p>
+            <p>Duration: {service.time.duration} min</p>
+            <p>Tech: {service.tech.code}</p>
+            <p>
+              Calc Range:{' '}
+              {formatTimeRange(service.time.range[0], service.time.range[1])}
+            </p>
             <p>Original: {service.time.originalRange}</p>
           </div>
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
-            <p>Route Time: {service.route.time.join(' - ') || 'N/A'}</p>
-            <p>Route Days: {service.route.days || 'N/A'}</p>
-            <p>Sched code: {service.schedule?.code ?? 'N/A'}</p>
+            <p>Route Time: {service.route.time.join(' - ')}</p>
+            <p>Route Days: {service.route.days}</p>
           </div>
           {service.comments &&
             service.comments.location &&
             service.comments.location.trim() !== '' && (
               <div className="-mx-4 -mb-4 border-t-2 border-dashed border-gray-300 p-3">
                 <h4 className="font-medium">Location Comments:</h4>
-                <p className="break-words text-sm">{service.comments.location}</p>
+                <p className="break-words text-sm">
+                  {service.comments.location}
+                </p>
               </div>
             )}
         </div>
