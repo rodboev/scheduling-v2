@@ -134,7 +134,7 @@ function transformServiceSetup(setup) {
     time: {
       range: [rangeStart, rangeEnd],
       preferred: convertToETTime(setup.WorkTime),
-      enforced: false,
+      // enforced: false,
       duration: setup.Duration,
       originalRange: setup.TimeRange,
     },
