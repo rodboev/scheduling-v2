@@ -5,6 +5,13 @@ import fs from 'fs/promises'
 import { NextResponse } from 'next/server'
 import path from 'path'
 
+function round(time) {
+  if (!time) return null
+  const minutes = time.minute()
+  const roundedMinutes = Math.round(minutes / 15) * 15
+  return time.minute(roundedMinutes).second(0).millisecond(0)
+}
+
 function createServicesForDateRange(setup, startDate, endDate) {
   const services = []
   const start = dayjs(startDate)
@@ -12,22 +19,27 @@ function createServicesForDateRange(setup, startDate, endDate) {
 
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
+      const rangeStart =
+        setup.time.range[0] !== null
+          ? round(date.add(setup.time.range[0], 'seconds'))
+          : null
+      const rangeEnd =
+        setup.time.range[1] !== null
+          ? round(date.add(setup.time.range[1], 'seconds'))
+          : null
+      const preferred = round(
+        date.add(parseTime(setup.time.preferred), 'seconds'),
+      )
+      const duration = Math.round(setup.time.duration / 15) * 15
+
       services.push({
         ...setup,
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
         date: date.toDate(),
         time: {
-          // Use route.time if time.range is no good
-          range: [
-            setup.time.range[0] !== null
-              ? date.add(setup.time.range[0], 'seconds')
-              : null,
-            setup.time.range[1] !== null
-              ? date.add(setup.time.range[1], 'seconds')
-              : null,
-          ],
-          preferred: date.add(parseTime(setup.time.preferred), 'seconds'),
-          duration: setup.time.duration,
+          range: [rangeStart, rangeEnd],
+          preferred,
+          duration,
           meta: {
             dayRange: setup.time.range,
             originalRange: setup.time.originalRange,
@@ -113,7 +125,7 @@ export async function GET(request) {
       },
     )
 
-    return NextResponse.json(processedServices)
+    return NextResponse.json(processedServices) // .slice(0, 200))
   } catch (error) {
     console.error('Error processing services:', error)
     return NextResponse.json(
