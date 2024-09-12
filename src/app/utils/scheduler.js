@@ -146,9 +146,8 @@ function scheduleService({
   scheduledServiceIdsByDate,
   nextGenericTechId,
 }) {
-  // TODO: Try to schedule on all existing techs, creating new shifts as needed?
-  // Create shift only if service in question can fit in it?
-  // Should we only iterate once to the next tech?
+  // IN PROGRESS: Try to schedule on all existing techs, create shift only if service in question can fit in it
+  // Are we iterating more than once to the next, next, next, etc. tech?
 
   // Try to schedule on all existing techs without creating new shifts
   for (const techId in techSchedules) {
@@ -165,7 +164,7 @@ function scheduleService({
     }
   }
 
-  // TODO: If cannot schedule the service in the existing tech, including in the new shift created:
+  // IN PROGRESS: If cannot schedule the service in the existing tech, including in the new shift created:
   // - Create a new tech if does not exist
   // - Schedule the service on the new tech, on a shift starting at the range start
 
@@ -221,6 +220,9 @@ function scheduleServiceForTech({
   if (allowNewShift) {
     const lastShift = techSchedule.shifts[techSchedule.shifts.length - 1]
     let newShiftStart = ensureDayjs(rangeStart)
+    console.log(
+      `NEW SHIFT: ${techId} starting at ${newShiftStart.format('h:mma')}`,
+    )
     if (lastShift) {
       const minStartTime = ensureDayjs(lastShift.shiftEnd).add(
         MIN_REST_HOURS,
@@ -334,18 +336,19 @@ function scheduleEnforcedService(
     techSchedules[techId] = { shifts: [] }
   }
 
-  const [rangeStart, rangeEnd] = service.time.range
+  const [rangeStart, rangeEnd] = service.time.range // rangeStart and rangeEnd may be null
   const serviceDuration = service.time.duration
   const preferredTime = service.time.preferred
 
   // Ensure the service starts no earlier than its range start and preferred time
-  const startTime = dayjs.max(rangeStart, preferredTime)
+  // const startTime = dayjs.max(rangeStart, preferredTime)
+  const startTime = preferredTime
   const endTime = startTime.add(serviceDuration, 'minute')
 
   // Ensure the service ends no later than its range end
-  if (endTime.isAfter(rangeEnd)) {
-    return false
-  }
+  // if (endTime.isAfter(rangeEnd)) {
+  //   return false
+  // }
 
   // Find or create an appropriate shift
   let targetShift
@@ -455,10 +458,13 @@ function printSummary({ techSchedules, unscheduledServices }) {
     scheduleSummary += 'Unassigned services:\n'
     unscheduledServices.forEach(service => {
       const date = ensureDayjs(service.date).format('M/D')
-      const timeRange = formatTimeRange(
-        service.time.range[0],
-        service.time.range[1],
-      )
+      const timeRange =
+        service.time.range[0] && service.time.range[0]
+          ? [
+              ensureDayjs(service.time.range[0]).format('h:mma'),
+              ensureDayjs(service.time.range[1]).format('h:mma'),
+            ].join(' - ')
+          : 'Invalid'
       scheduleSummary += `- ${date}, ${timeRange} time range, ${service.company} (id: ${service.id})\n`
     })
   }

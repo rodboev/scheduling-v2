@@ -70,11 +70,10 @@ function ServicePopover({ service }) {
             <p>Duration: {service.time.duration} min</p>
             <p>Tech: {service.tech.code}</p>
             <p>
-              Calc Range:{' '}
-              {formatTimeRange(service.time.range[0], service.time.range[1])}{' '}
-              (from "{service.time.meta.originalRange}")
+              Calc Range: {dayjs(service.time.range[0]).format('h:mma')} -{' '}
+              {dayjs(service.time.range[1]).format('h:mma')} (from "
+              {service.time.meta.originalRange}")
             </p>
-            <p>Original: {service.time.meta.originalRange}</p>
           </div>
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
             <p>Route Time: {service.route.time.join(' - ')}</p>
