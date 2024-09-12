@@ -7,6 +7,7 @@ import {
 } from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTimeRange } from '@/app/utils/timeRange'
+import dayjs from 'dayjs'
 
 function ServicePopover({ service }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -62,14 +63,18 @@ function ServicePopover({ service }) {
             <p className="text-neutral-500"></p>
           </div>
           <div className="py-4">
-            <p>Preferred Time: {service.time.preferred}</p>
+            <p>
+              Preferred Time:{' '}
+              {dayjs(service.time.preferred).format('M/D h:mm A')}
+            </p>
             <p>Duration: {service.time.duration} min</p>
             <p>Tech: {service.tech.code}</p>
             <p>
               Calc Range:{' '}
-              {formatTimeRange(service.time.range[0], service.time.range[1])}
+              {formatTimeRange(service.time.range[0], service.time.range[1])}{' '}
+              (from "{service.time.meta.originalRange}")
             </p>
-            <p>Original: {service.time.originalRange}</p>
+            <p>Original: {service.time.meta.originalRange}</p>
           </div>
           <div className="-mx-4 border-t-2 border-dashed border-gray-300 p-3 py-3">
             <p>Route Time: {service.route.time.join(' - ')}</p>

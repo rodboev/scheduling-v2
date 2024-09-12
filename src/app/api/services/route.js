@@ -17,9 +17,14 @@ function createServicesForDateRange(setup, startDate, endDate) {
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
         date: date.toDate(),
         time: {
+          // Use route.time if time.range is no good
           range: [
-            date.add(setup.time.range[0], 'seconds'),
-            date.add(setup.time.range[1], 'seconds'),
+            setup.time.range[0] !== null
+              ? date.add(setup.time.range[0], 'seconds')
+              : null,
+            setup.time.range[1] !== null
+              ? date.add(setup.time.range[1], 'seconds')
+              : null,
           ],
           preferred: date.add(parseTime(setup.time.preferred), 'seconds'),
           duration: setup.time.duration,
@@ -46,7 +51,7 @@ function shouldServiceOccur(scheduleString, date) {
 async function fetchServiceSetups() {
   try {
     const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/serviceSetups`,
+      `http://localhost:${process.env.PORT}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923
     )
     const serviceSetups = response.data
     console.log('Fetched service setups:', serviceSetups.length)

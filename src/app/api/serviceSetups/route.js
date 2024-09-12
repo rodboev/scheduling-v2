@@ -108,12 +108,6 @@ function transformServiceSetup(setup) {
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
 
-  // If Time Range is empty, use Route Time
-  if (!rangeStart && !rangeEnd) {
-    rangeStart = setup.RouteStartTime
-    rangeEnd = setup.RouteEndTime
-  }
-
   return {
     id: setup.id,
     location: {
@@ -127,7 +121,6 @@ function transformServiceSetup(setup) {
       timesPerYear: setup.AnnualOccurrences,
     },
     tech: {
-      id: setup.TechID1,
       code: setup.TechCode,
       name: formatTechName(setup.TechFName, setup.TechLName),
     },
