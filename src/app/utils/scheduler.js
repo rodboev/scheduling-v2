@@ -2,9 +2,8 @@ import { dayjsInstance as dayjs } from './dayjs'
 import { parseTime, parseTimeRange, formatTimeRange } from './timeRange'
 
 const MAX_SHIFT_HOURS = 8
-const MAX_SHIFT_DURATION = MAX_SHIFT_HOURS * 60 // 8 hours in minutes
-const MAX_GAP_BETWEEN_SERVICES = 7 * 60 // 8 hours minus two 30 minute services
 const MIN_REST_HOURS = 16 // 16 hours minimum rest between shifts
+const MAX_SHIFT_GAP = MIN_REST_HOURS
 
 function ensureDayjs(date) {
   return dayjs.isDayjs(date) ? date : dayjs(date)
@@ -94,6 +93,7 @@ export async function scheduleServices(
         techSchedules,
         scheduledServiceIdsByDate,
         nextGenericTechId,
+        remainingServices: servicesToSchedule.slice(serviceIndex + 1),
       })
       // If we scheduled the service, increment the next generic tech id
       if (scheduled) {
@@ -145,6 +145,7 @@ function scheduleService({
   techSchedules,
   scheduledServiceIdsByDate,
   nextGenericTechId,
+  remainingServices,
 }) {
   // IN PROGRESS: Try to schedule on all existing techs, create shift only if service in question can fit in it
   // Are we iterating more than once to the next, next, next, etc. tech?
@@ -157,6 +158,7 @@ function scheduleService({
       techSchedules,
       scheduledServiceIdsByDate,
       allowNewShift: false,
+      remainingServices,
     })
 
     if (result.scheduled) {
@@ -176,6 +178,7 @@ function scheduleService({
       techSchedules,
       scheduledServiceIdsByDate,
       allowNewShift: true,
+      remainingServices,
     })
 
     if (result.scheduled) {
@@ -192,6 +195,7 @@ function scheduleService({
     techSchedules,
     scheduledServiceIdsByDate,
     allowNewShift: true,
+    remainingServices,
   })
 }
 
@@ -201,6 +205,7 @@ function scheduleServiceForTech({
   techSchedules,
   scheduledServiceIdsByDate,
   allowNewShift,
+  remainingServices,
 }) {
   const techSchedule = techSchedules[techId]
   const [rangeStart, rangeEnd] = service.time.range.map(ensureDayjs)
@@ -209,6 +214,9 @@ function scheduleServiceForTech({
   // Try to fit the service into an existing shift
   for (let shift of techSchedule.shifts) {
     if (tryScheduleInShift(service, shift, scheduledServiceIdsByDate, techId)) {
+      // console.log(
+      //   `${techId}: Scheduled ${service.company} at ${ensureDayjs(service.start).format('h:mma')}`,
+      // )
       return {
         scheduled: true,
         reason: `Scheduled in existing shift for Tech ${techId}`,
@@ -220,22 +228,37 @@ function scheduleServiceForTech({
   if (allowNewShift) {
     const lastShift = techSchedule.shifts[techSchedule.shifts.length - 1]
     let newShiftStart = ensureDayjs(rangeStart)
-    console.log(
-      `NEW SHIFT: ${techId} starting at ${newShiftStart.format('h:mma')}`,
-    )
+    // console.log(
+    //   `[NEW SHIFT] ${techId}: ${newShiftStart.format('M/D')} (${newShiftStart.format('h:mma')} - ${newShiftStart.add(MAX_SHIFT_HOURS, 'hours').format('h:mma')})`,
+    // )
     if (lastShift) {
       const minStartTime = ensureDayjs(lastShift.shiftEnd).add(
         MIN_REST_HOURS,
         'hour',
       )
-      newShiftStart = dayjs.max(newShiftStart, minStartTime)
-    }
+      const preferredStartTime = ensureDayjs(lastShift.shiftEnd).add(16, 'hour')
 
-    // Check if the service duration exceeds the remaining time in the range
-    if (newShiftStart.add(serviceDuration, 'minute').isAfter(rangeEnd)) {
-      return {
-        scheduled: false,
-        reason: 'Service too long for remaining shift time',
+      // Look for services within the preferred 16-hour window
+      const servicesWithinWindow = remainingServices.filter(s =>
+        ensureDayjs(s.time.range[0]).isBetween(
+          minStartTime,
+          preferredStartTime,
+          null,
+          '[]',
+        ),
+      )
+
+      if (servicesWithinWindow.length > 0) {
+        // If there are services within the window, start the shift at the earliest service
+        newShiftStart = dayjs.min(
+          servicesWithinWindow.map(s => ensureDayjs(s.time.range[0])),
+        )
+      } else {
+        // If no services within the window, use the current service start time, but cap the gap
+        newShiftStart = dayjs.min([
+          dayjs.max([newShiftStart, minStartTime]),
+          ensureDayjs(lastShift.shiftEnd).add(MAX_SHIFT_GAP, 'hours'),
+        ])
       }
     }
 
