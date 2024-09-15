@@ -34,6 +34,7 @@
     "mssql": "^11.0.1",
     "next": "^15.0.0-rc.0",
     "odbc": "^2.4.9",
+    "pm2": "^5.4.2",
     "priorityqueuejs": "^2.0.0",
     "react": "19.0.0-rc-e56f4ae3-20240830",
     "react-big-calendar": "^1.13.4",
