@@ -38,9 +38,12 @@ chmod 700 /app/.ssh
 echo "$SSH_PRIVATE_KEY" > /app/.ssh/id_rsa
 chmod 600 /app/.ssh/id_rsa
 
-# Set up the script to run the SSH tunnel from Procfile
-echo "#!/bin/bash
-ssh -N -L $SSH_TUNNEL_FORWARD -i /app/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET
-" > /app/ssh_tunnel.sh
+# Start the SSH tunnel in the background
+ssh -N -L $SSH_TUNNEL_FORWARD -i /app/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET &
+if [ $? -ne 0 ]; then
+    echo "Tunnel setup failed!"
+    exit 1
+fi
 
-chmod +x /app/scripts/ssh_tunnel.sh
+echo "Tunnel setup successful."
+echo "setup.sh script completed"
