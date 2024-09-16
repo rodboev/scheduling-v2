@@ -8,34 +8,87 @@ import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 export function compactShift(shift) {
   shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
-  // Push services as late as possible, except for the last service
-  for (let i = shift.services.length - 2; i >= 0; i--) {
+  // First pass: Move services forward
+  for (let i = 0; i < shift.services.length - 1; i++) {
     const currentService = shift.services[i]
     const nextService = shift.services[i + 1]
-    const currentEnd = ensureDayjs(currentService.end)
-    const latestPossibleEnd = dayjs.min(
-      ensureDayjs(nextService.start),
-      ensureDayjs(currentService.time.range[1]),
-    )
 
-    if (latestPossibleEnd.isAfter(currentEnd)) {
-      const newEnd = latestPossibleEnd
-      const newStart = newEnd.subtract(currentService.time.duration, 'minute')
-      currentService.start = newStart.toDate()
-      currentService.end = newEnd.toDate()
+    const currentEnd = ensureDayjs(currentService.end)
+    const nextStart = ensureDayjs(nextService.start)
+    const earliestPossibleStart = ensureDayjs(currentService.time.range[0])
+
+    if (nextStart.isAfter(currentEnd)) {
+      const latestPossibleStart = dayjs.min(
+        nextStart.subtract(currentService.time.duration, 'minute'),
+        ensureDayjs(currentService.time.range[1]).subtract(
+          currentService.time.duration,
+          'minute',
+        ),
+      )
+
+      if (latestPossibleStart.isAfter(earliestPossibleStart)) {
+        const newStart = dayjs.max(earliestPossibleStart, latestPossibleStart)
+        const newEnd = newStart.add(currentService.time.duration, 'minute')
+        currentService.start = newStart.toDate()
+        currentService.end = newEnd.toDate()
+      }
     }
   }
 
-  // Calculate shiftEndLater based on the first service's start time
-  if (shift.services.length > 0) {
-    const firstServiceStart = ensureDayjs(shift.services[0].start)
-    shift.shiftEndLater = firstServiceStart
-      .add(MAX_SHIFT_HOURS, 'hours')
-      .toDate()
+  // Second pass: Move services backward
+  for (let i = shift.services.length - 1; i > 0; i--) {
+    const currentService = shift.services[i]
+    const previousService = shift.services[i - 1]
+
+    const currentStart = ensureDayjs(currentService.start)
+    const previousEnd = ensureDayjs(previousService.end)
+    const latestPossibleEnd = ensureDayjs(currentService.time.range[1])
+
+    if (currentStart.isAfter(previousEnd)) {
+      const earliestPossibleStart = dayjs.max(
+        previousEnd,
+        ensureDayjs(currentService.time.range[0]),
+      )
+
+      if (earliestPossibleStart.isBefore(currentStart)) {
+        const newStart = earliestPossibleStart
+        const newEnd = dayjs.min(
+          newStart.add(currentService.time.duration, 'minute'),
+          latestPossibleEnd,
+        )
+        currentService.start = newStart.toDate()
+        currentService.end = newEnd.toDate()
+      }
+    }
+  }
+}
+
+export function fillGaps(shift) {
+  shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+
+  for (let i = 1; i < shift.services.length; i++) {
+    const currentService = shift.services[i]
+    const previousService = shift.services[i - 1]
+    const currentStart = ensureDayjs(currentService.start)
+    const previousEnd = ensureDayjs(previousService.end)
+
+    if (currentStart.isAfter(previousEnd)) {
+      const earliestPossibleStart = dayjs.max(
+        previousEnd,
+        ensureDayjs(currentService.time.range[0]),
+      )
+      if (earliestPossibleStart.isBefore(currentStart)) {
+        const newStart = earliestPossibleStart
+        const newEnd = newStart.add(currentService.time.duration, 'minute')
+        currentService.start = newStart.toDate()
+        currentService.end = newEnd.toDate()
+      }
+    }
   }
 }
 
 export function flattenServices(techSchedules) {
+  // Convert techSchedules to flat scheduledServices array with start and end dates
   return Object.entries(techSchedules).flatMap(([techId, schedule]) =>
     schedule.shifts.flatMap(shift =>
       shift.services.map(service => ({
