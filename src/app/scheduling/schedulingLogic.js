@@ -2,7 +2,7 @@ import { MAX_SHIFT_HOURS } from '@/app/scheduling'
 import {
   createNewShift,
   compactShift,
-  fillGaps,
+  findGaps,
 } from '@/app/scheduling/shiftManagement'
 import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 
@@ -85,11 +85,49 @@ function scheduleForTech({
     ) {
       if (shiftIndex === techSchedule.shifts.length - 1) {
         compactShift(shift)
-        fillGaps(shift)
       }
       return {
         scheduled: true,
-        reason: `Scheduled in existing shift for Tech ${techId}`,
+        reason: `Scheduled for Tech ${techId}`,
+      }
+    }
+
+    // Try to schedule in the gap between shiftEnd and shiftEndLater
+    if (shift.shiftEndLater && shift.shiftEndLater > shift.shiftEnd) {
+      const gapShift = {
+        shiftStart: ensureDayjs(shift.shiftEnd),
+        shiftEnd: ensureDayjs(shift.shiftEndLater),
+        services: [],
+      }
+      if (
+        tryScheduleInShift({
+          service,
+          shift: gapShift,
+          scheduledServiceIdsByDate,
+          techId,
+        })
+      ) {
+        // If scheduled in the gap, add to extendedServices
+        if (!shift.extendedServices) {
+          shift.extendedServices = []
+        }
+        shift.extendedServices.push(...gapShift.services)
+        // Sort all services including extended ones
+        const allServices = [...shift.services, ...shift.extendedServices]
+        allServices.sort((a, b) =>
+          ensureDayjs(a.start).diff(ensureDayjs(b.start)),
+        )
+        // Reassign sorted services
+        shift.services = allServices.filter(s =>
+          ensureDayjs(s.end).isSameOrBefore(shift.shiftEnd),
+        )
+        shift.extendedServices = allServices.filter(s =>
+          ensureDayjs(s.start).isAfter(shift.shiftEnd),
+        )
+        return {
+          scheduled: true,
+          reason: `Scheduled in extended time for Tech ${techId}`,
+        }
       }
     }
   }
@@ -111,9 +149,7 @@ function scheduleForTech({
       })
     ) {
       techSchedule.shifts.push(newShift)
-      // After scheduling all services, compact the shift and fill gaps
       compactShift(newShift)
-      fillGaps(newShift)
       return {
         scheduled: true,
         reason: `Scheduled in new shift for Tech ${techId}`,
@@ -133,12 +169,14 @@ function tryScheduleInShift({
   const [rangeStart, rangeEnd] = service.time.range
   const serviceDuration = service.time.duration
   const shiftStart = ensureDayjs(shift.shiftStart)
-  const shiftEnd = ensureDayjs(shift.shiftEnd)
+  const shiftEndLater = shift.shiftEndLater
+    ? ensureDayjs(shift.shiftEndLater)
+    : ensureDayjs(shift.shiftEnd)
 
   // Ensure the service starts no earlier than its range start and the shift start
   let startTime = dayjs.max(shiftStart, rangeStart)
   const latestPossibleStart = dayjs
-    .min(shiftEnd, rangeEnd)
+    .min(shiftEndLater, rangeEnd)
     .subtract(serviceDuration, 'minute')
 
   while (startTime.isSameOrBefore(latestPossibleStart)) {

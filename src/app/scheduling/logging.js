@@ -17,12 +17,14 @@ export function printSummary({ techSchedules, unassignedServices }) {
       schedule.shifts.forEach((shift, shiftIndex) => {
         const shiftStart = ensureDayjs(shift.shiftStart)
         const shiftEnd = ensureDayjs(shift.shiftEnd)
+        const shiftEndLater = ensureDayjs(shift.shiftEndLater)
+        const shiftEndLatest = dayjs.max(shiftEnd, shiftEndLater)
 
         const formatShiftTime = time => {
           return `${time.format('M/D')} ${time.format('h:mma').toLowerCase()}`
         }
 
-        const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(shiftEnd)}`
+        const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(shiftEndLatest)}`
 
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
