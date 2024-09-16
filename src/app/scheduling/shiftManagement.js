@@ -9,7 +9,7 @@ export function compactShift(shift) {
   shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
 
   // Push services as late as possible, except for the last service
-  for (let i = shift.services.length - 1; i >= 0; i--) {
+  for (let i = shift.services.length - 2; i >= 0; i--) {
     const currentService = shift.services[i]
     const nextService = shift.services[i + 1]
     const currentEnd = ensureDayjs(currentService.end)
