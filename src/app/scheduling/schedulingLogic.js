@@ -24,7 +24,7 @@ export function scheduleService({
       remainingServices,
     })
 
-    if (result.scheduled) return result.scheduled
+    if (result.scheduled) return result
   }
 
   // Try again on all techs, this time allowing new shifts
@@ -38,20 +38,28 @@ export function scheduleService({
       remainingServices,
     })
 
-    if (result.scheduled) return result.scheduled
+    if (result.scheduled) return result
   }
 
   // Create a new tech and try to schedule
   const newTechId = `Tech ${nextGenericTechId}`
   techSchedules[newTechId] = { shifts: [] }
-  return scheduleForTech({
+  const result = scheduleForTech({
     service,
     techId: newTechId,
     techSchedules,
     scheduledServiceIdsByDate,
     allowNewShift: true,
     remainingServices,
-  }).scheduled
+  })
+
+  if (result.scheduled) return result
+
+  // If we reach this point, the service couldn't be scheduled
+  return {
+    scheduled: false,
+    reason: "Couldn't be scheduled with any tech or in a new shift",
+  }
 }
 
 function scheduleForTech({

@@ -12,6 +12,8 @@ function round(time) {
   return time.minute(roundedMinutes).second(0).millisecond(0)
 }
 
+const isProduction = process.env.NODE_ENV === 'production'
+
 function createServicesForDateRange(setup, startDate, endDate) {
   const services = []
   const start = dayjs(startDate)
@@ -32,6 +34,7 @@ function createServicesForDateRange(setup, startDate, endDate) {
       )
       const duration = Math.round(setup.time.duration / 15) * 15
 
+      if (!isProduction) delete setup.comments
       services.push({
         ...setup,
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
@@ -63,7 +66,7 @@ function shouldServiceOccur(scheduleString, date) {
 async function fetchServiceSetups() {
   try {
     const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923
+      `http://localhost:${process.env.PORT}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923,20700,480,12271,18923,5143,20513,20730
     )
     const serviceSetups = response.data
     console.log('Fetched service setups:', serviceSetups.length)

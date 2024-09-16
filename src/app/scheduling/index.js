@@ -44,31 +44,36 @@ export async function scheduleServices({ services, onProgress }) {
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
   for (const [serviceIndex, service] of servicesToSchedule.entries()) {
-    let scheduled = false
+    let result
     if (service.tech.enforced && service.tech.code) {
-      scheduled = scheduleEnforcedService({
+      result = scheduleEnforcedService({
         service,
         techSchedules,
         scheduledServiceIdsByDate,
       })
     } else {
       // Main scheduling loop for non-enforced services
-      scheduled = scheduleService({
+      result = scheduleService({
         service,
         techSchedules,
         scheduledServiceIdsByDate,
         nextGenericTechId,
         remainingServices: servicesToSchedule.slice(serviceIndex + 1),
       })
-      if (!scheduled) {
-        unassignedServices.push(service)
-      }
     }
+
+    if (!result.scheduled) {
+      unassignedServices.push({
+        ...service,
+        reason: result.reason,
+      })
+    } else {
+      // If we scheduled the service, increment the next generic tech id
+      nextGenericTechId = getNextGenericTechId(techSchedules)
+    }
+
     const progress = Math.round((serviceIndex / totalServices) * 100)
     onProgress(progress)
-
-    // If we scheduled the service, increment the next generic tech id
-    if (scheduled) nextGenericTechId = getNextGenericTechId(techSchedules)
 
     if (serviceIndex % 10 === 0) await delay(0)
   }
