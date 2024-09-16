@@ -21,12 +21,16 @@ export const dayjsInstance = dayjs
 // Set the default timezone to 'America/New_York'
 dayjs.tz.setDefault('America/New_York')
 
-export const startOfDay = date => dayjs(date).tz('America/New_York').startOf('day')
+export const startOfDay = date =>
+  dayjs(date).tz('America/New_York').startOf('day')
 export const endOfDay = date => dayjs(date).tz('America/New_York').endOf('day')
 
 export function convertToETTime(timeString) {
   if (!timeString) return null
-  return dayjs(timeString).tz('America/New_York').add(5, 'hours').format('h:mma')
+  return dayjs(timeString)
+    .tz('America/New_York')
+    .add(5, 'hours')
+    .format('h:mma')
 }
 
 export function createDateRange(start, end) {
@@ -43,4 +47,8 @@ export function secondsSinceMidnight(date) {
 
 export function dateFromSecondsSinceMidnight(seconds) {
   return startOfDay().add(seconds, 'second')
+}
+
+export function ensureDayjs(date) {
+  return dayjs.isDayjs(date) ? date : dayjs(date)
 }
