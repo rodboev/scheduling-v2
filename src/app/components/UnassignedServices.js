@@ -57,9 +57,7 @@ function ServicePopover({ service }) {
             </a>
           </h3>
           <div className="-mx-4 border-y-2 border-dashed border-gray-300 px-4 py-1">
-            <h4 className="font-bold">
-              Unassigned: {service.reason || 'Unknown reason'}
-            </h4>
+            <h4 className="font-bold">Unassigned: {service.reason}</h4>
             <p className="text-neutral-500"></p>
           </div>
           <div className="py-4">

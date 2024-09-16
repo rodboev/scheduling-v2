@@ -1,14 +1,14 @@
-import { printSummary } from '@/app/utils/scheduling/logging'
+import { printSummary } from '@/app/scheduling/logging'
 import {
   scheduleService,
   scheduleEnforcedService,
-} from '@/app/utils/scheduling/schedulingLogic'
+} from '@/app/scheduling/schedulingLogic'
 import {
   filterInvalidServices,
   prepareServicesToSchedule,
   sortServices,
-} from '@/app/utils/scheduling/servicePreparation'
-import { flattenServices } from '@/app/utils/scheduling/shiftManagement'
+} from '@/app/scheduling/servicePreparation'
+import { flattenServices } from '@/app/scheduling/shiftManagement'
 
 export const MAX_SHIFT_HOURS = 8
 export const MIN_REST_HOURS = 16
@@ -19,7 +19,7 @@ export async function scheduleServices({ services, onProgress }) {
   console.time('Total scheduling time')
 
   const scheduledServiceIdsByDate = new Map()
-  const unscheduledServices = filterInvalidServices(services)
+  const unassignedServices = filterInvalidServices(services)
   const servicesToSchedule = prepareServicesToSchedule(services)
 
   console.time('Sorting services')
@@ -61,7 +61,7 @@ export async function scheduleServices({ services, onProgress }) {
         remainingServices: servicesToSchedule.slice(serviceIndex + 1),
       })
       if (!scheduled) {
-        unscheduledServices.push(service)
+        unassignedServices.push(service)
       }
     }
     const progress = Math.round((serviceIndex / totalServices) * 100)
@@ -74,12 +74,12 @@ export async function scheduleServices({ services, onProgress }) {
   }
 
   console.timeEnd('Total scheduling time')
-  printSummary({ techSchedules, unscheduledServices })
+  printSummary({ techSchedules, unassignedServices })
   console.timeEnd('Total time')
 
   return {
     scheduledServices: flattenServices(techSchedules),
-    unscheduledServices,
+    unassignedServices,
   }
 }
 

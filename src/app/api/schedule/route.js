@@ -1,4 +1,4 @@
-import { scheduleServices } from '@/app/utils/scheduling'
+import { scheduleServices } from '@/app/scheduling'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 
@@ -34,7 +34,7 @@ export async function GET(request) {
         )
 
         console.log('Scheduling services...')
-        const { scheduledServices, unscheduledServices } =
+        const { scheduledServices, unassignedServices } =
           await scheduleServices({
             services,
             onProgress: progress => {
@@ -47,12 +47,12 @@ export async function GET(request) {
           'Scheduled services:',
           scheduledServices.length,
           'Unassigned:',
-          unscheduledServices.length,
+          unassignedServices.length,
         )
 
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ scheduledServices, unscheduledServices })}\n\n`,
+            `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,
           ),
         )
       } catch (error) {

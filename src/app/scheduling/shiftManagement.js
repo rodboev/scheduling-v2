@@ -1,9 +1,9 @@
-import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 import {
   MIN_REST_HOURS,
   MAX_SHIFT_GAP,
   MAX_SHIFT_HOURS,
-} from '@/app/utils/scheduling'
+} from '@/app/scheduling'
+import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 
 export function compactShift(shift) {
   shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))

@@ -1,10 +1,10 @@
-import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
-import { MAX_SHIFT_HOURS } from '@/app/utils/scheduling'
+import { MAX_SHIFT_HOURS } from '@/app/scheduling'
 import {
   createNewShift,
   compactShift,
   fillGaps,
-} from '@/app/utils/scheduling/shiftManagement'
+} from '@/app/scheduling/shiftManagement'
+import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 
 export function scheduleService({
   service,

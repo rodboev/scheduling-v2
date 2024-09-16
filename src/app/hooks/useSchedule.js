@@ -31,8 +31,7 @@ export function useSchedule(currentViewRange) {
       const data = JSON.parse(event.data)
       if (data.progress !== undefined) {
         setProgress(data.progress)
-      }
-      else if (data.scheduledServices && data.unscheduledServices) {
+      } else if (data.scheduledServices && data.unassignedServices) {
         processScheduleData(data)
         eventSource.close()
       }
@@ -46,7 +45,7 @@ export function useSchedule(currentViewRange) {
   }
 
   const processScheduleData = data => {
-    const { scheduledServices, unscheduledServices } = data
+    const { scheduledServices, unassignedServices } = data
 
     const formattedScheduledServices = scheduledServices.map(service => ({
       ...service,
@@ -54,7 +53,9 @@ export function useSchedule(currentViewRange) {
       end: new Date(service.end),
     }))
 
-    const techSet = new Set(formattedScheduledServices.map(service => service.resourceId))
+    const techSet = new Set(
+      formattedScheduledServices.map(service => service.resourceId),
+    )
     const resources = Array.from(techSet)
       .map(techId => ({
         id: techId,
@@ -74,7 +75,7 @@ export function useSchedule(currentViewRange) {
     setResult({
       assignedServices: formattedScheduledServices,
       resources,
-      filteredUnassignedServices: unscheduledServices.map(service => ({
+      filteredUnassignedServices: unassignedServices.map(service => ({
         ...service,
         start: new Date(service.start),
         end: new Date(service.end),

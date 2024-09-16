@@ -1,6 +1,6 @@
 import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 
-export function printSummary({ techSchedules, unscheduledServices }) {
+export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
 
   let techSummaries = []
@@ -85,9 +85,9 @@ export function printSummary({ techSchedules, unscheduledServices }) {
   })
 
   // Unassigned services
-  if (unscheduledServices.length > 0) {
+  if (unassignedServices.length > 0) {
     console.log('Unassigned services:')
-    unscheduledServices.forEach(service => {
+    unassignedServices.forEach(service => {
       const date = ensureDayjs(service.date).format('M/D')
       const timeRange =
         service.time.range[0] && service.time.range[1]
