@@ -212,11 +212,18 @@ function scheduleServiceForTech({
   const serviceDuration = service.time.duration
 
   // Try to fit the service into an existing shift
-  for (let shift of techSchedule.shifts) {
+  for (
+    let shiftIndex = 0;
+    shiftIndex < techSchedule.shifts.length;
+    shiftIndex++
+  ) {
+    let shift = techSchedule.shifts[shiftIndex]
     if (tryScheduleInShift(service, shift, scheduledServiceIdsByDate, techId)) {
-      // console.log(
-      //   `${techId}: Scheduled ${service.company} at ${ensureDayjs(service.start).format('h:mma')}`,
-      // )
+      // After scheduling all services, compact the shift and fill gaps
+      if (shiftIndex === techSchedule.shifts.length - 1) {
+        compactShift(shift)
+        fillGaps(shift)
+      }
       return {
         scheduled: true,
         reason: `Scheduled in existing shift for Tech ${techId}`,
@@ -224,13 +231,10 @@ function scheduleServiceForTech({
     }
   }
 
-  // If allowed and necessary (we couldn't fit the service in any existing shift), try to create a new shift
+  // If allowed and necessary, try to create a new shift
   if (allowNewShift) {
     const lastShift = techSchedule.shifts[techSchedule.shifts.length - 1]
     let newShiftStart = ensureDayjs(rangeStart)
-    // console.log(
-    //   `[NEW SHIFT] ${techId}: ${newShiftStart.format('M/D')} (${newShiftStart.format('h:mma')} - ${newShiftStart.add(MAX_SHIFT_HOURS, 'hours').format('h:mma')})`,
-    // )
     if (lastShift) {
       const minStartTime = ensureDayjs(lastShift.shiftEnd).add(
         MIN_REST_HOURS,
@@ -274,6 +278,9 @@ function scheduleServiceForTech({
       tryScheduleInShift(service, newShift, scheduledServiceIdsByDate, techId)
     ) {
       techSchedule.shifts.push(newShift)
+      // After scheduling all services, compact the shift and fill gaps
+      compactShift(newShift)
+      fillGaps(newShift)
       return {
         scheduled: true,
         reason: `Scheduled in new shift for Tech ${techId}`,
@@ -413,12 +420,19 @@ function scheduleEnforcedService(
 }
 
 function printSummary({ techSchedules, unscheduledServices }) {
-  let scheduleSummary = 'Schedule Summary:\n\n'
+  console.log('Schedule Summary:\n')
+
+  let techSummaries = []
+  let totalHours = 0
+  let techCount = 0
 
   Object.entries(techSchedules).forEach(([techId, schedule]) => {
-    let techSummary = `${techId}:\n`
+    if (schedule.shifts && schedule.shifts.length > 0) {
+      console.log(`${techId}:`)
+      techCount++
 
-    if (Array.isArray(schedule.shifts)) {
+      let techTotalHours = 0
+
       schedule.shifts.forEach((shift, shiftIndex) => {
         const shiftStart = ensureDayjs(shift.shiftStart)
         const shiftEnd = ensureDayjs(shift.shiftEnd)
@@ -429,9 +443,9 @@ function printSummary({ techSchedules, unscheduledServices }) {
 
         const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(shiftEnd)}`
 
-        techSummary += `Shift ${shiftIndex + 1} (${shiftTimeRange}):\n`
+        console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
-        if (Array.isArray(shift.services)) {
+        if (Array.isArray(shift.services) && shift.services.length > 0) {
           shift.services.forEach(service => {
             const startTime = ensureDayjs(service.start)
             const endTime = ensureDayjs(service.end)
@@ -442,57 +456,80 @@ function printSummary({ techSchedules, unscheduledServices }) {
               service.time.range[0],
               service.time.range[1],
             )
-            techSummary += `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]})\n`
+            console.log(
+              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]})`,
+            )
           })
-        }
 
-        const shiftDuration = shiftEnd
-          .diff(shiftStart, 'hours', true)
-          .toFixed(2)
-        techSummary += `Shift duration: ${shiftDuration} hours\n`
+          const firstServiceStart = ensureDayjs(shift.services[0].start)
+          const lastServiceEnd = ensureDayjs(
+            shift.services[shift.services.length - 1].end,
+          )
+          const shiftDuration = lastServiceEnd.diff(
+            firstServiceStart,
+            'hours',
+            true,
+          )
+          techTotalHours += shiftDuration
+          console.log(`Shift duration: ${formatHours(shiftDuration)} hours`)
+        } else {
+          console.log('No services scheduled in this shift.')
+        }
 
         // Find and print gaps
         const gaps = findScheduleGaps(shift, shiftStart, shiftEnd)
         if (gaps.length > 0) {
-          techSummary += 'Gaps in this shift:\n'
+          console.log('Gaps in this shift:')
           gaps.forEach((gap, index) => {
             const gapStart = formatShiftTime(gap.start)
             const gapEnd = formatShiftTime(gap.end)
-            const gapDuration = gap.end
-              .diff(gap.start, 'hours', true)
-              .toFixed(2)
-            techSummary += `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${gapDuration} hours)\n`
+            const gapDuration = gap.end.diff(gap.start, 'hours', true)
+            console.log(
+              `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${formatHours(gapDuration)} hours)`,
+            )
           })
         } else {
-          techSummary += 'No gaps found in this shift.\n'
+          console.log('No gaps found in this shift.')
         }
 
-        techSummary += '\n'
+        console.log('')
       })
-    }
 
-    if (schedule.shifts && schedule.shifts.length > 0) {
-      scheduleSummary += techSummary
+      techSummaries.push(techTotalHours)
+      totalHours += techTotalHours
     }
   })
 
   // Unassigned services
   if (unscheduledServices.length > 0) {
-    scheduleSummary += 'Unassigned services:\n'
+    console.log('Unassigned services:')
     unscheduledServices.forEach(service => {
       const date = ensureDayjs(service.date).format('M/D')
       const timeRange =
-        service.time.range[0] && service.time.range[0]
+        service.time.range[0] && service.time.range[1]
           ? [
               ensureDayjs(service.time.range[0]).format('h:mma'),
               ensureDayjs(service.time.range[1]).format('h:mma'),
             ].join(' - ')
           : 'Invalid'
-      scheduleSummary += `- ${date}, ${timeRange} time range, ${service.company} (id: ${service.id})\n`
+      console.log(
+        `- ${date}, ${timeRange} time range, ${service.company} (id: ${service.id})`,
+      )
     })
+    console.log('')
   }
 
-  console.log(scheduleSummary)
+  // Print total hours summary
+  const averageHours = totalHours / techCount
+  const formattedTechHours = techSummaries.map(formatHours).join(', ')
+  console.log(
+    `Total hours (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
+  )
+}
+
+// Helper function to format hours
+function formatHours(hours) {
+  return Number.isInteger(hours) ? hours.toString() : hours.toFixed(2)
 }
 
 function findScheduleGaps(shift, from, to) {
@@ -524,4 +561,51 @@ function findScheduleGaps(shift, from, to) {
   }
 
   return gaps
+}
+
+function compactShift(shift) {
+  shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+
+  // Push services as late as possible, except for the last service
+  for (let i = shift.services.length - 2; i >= 0; i--) {
+    const currentService = shift.services[i]
+    const nextService = shift.services[i + 1]
+    const currentEnd = ensureDayjs(currentService.end)
+    const latestPossibleEnd = dayjs.min(
+      ensureDayjs(nextService.start),
+      ensureDayjs(currentService.time.range[1]),
+    )
+
+    if (latestPossibleEnd.isAfter(currentEnd)) {
+      const newEnd = latestPossibleEnd
+      const newStart = newEnd.subtract(currentService.time.duration, 'minute')
+      currentService.start = newStart.toDate()
+      currentService.end = newEnd.toDate()
+    }
+  }
+}
+
+function fillGaps(shift) {
+  shift.services.sort((a, b) => ensureDayjs(a.start).diff(ensureDayjs(b.start)))
+
+  for (let i = 1; i < shift.services.length; i++) {
+    const currentService = shift.services[i]
+    const previousService = shift.services[i - 1]
+    const currentStart = ensureDayjs(currentService.start)
+    const previousEnd = ensureDayjs(previousService.end)
+
+    if (currentStart.isAfter(previousEnd)) {
+      // There's a gap, try to move the current service earlier
+      const earliestPossibleStart = dayjs.max(
+        previousEnd,
+        ensureDayjs(currentService.time.range[0]),
+      )
+      if (earliestPossibleStart.isBefore(currentStart)) {
+        const newStart = earliestPossibleStart
+        const newEnd = newStart.add(currentService.time.duration, 'minute')
+        currentService.start = newStart.toDate()
+        currentService.end = newEnd.toDate()
+      }
+    }
+  }
 }
