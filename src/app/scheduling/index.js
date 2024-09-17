@@ -11,7 +11,7 @@ import {
 import { flattenServices } from '@/app/scheduling/shiftManagement'
 
 export const MAX_SHIFT_HOURS = 8
-export const MIN_REST_HOURS = 16
+export const MIN_REST_HOURS = 15
 export const MAX_SHIFT_GAP = MIN_REST_HOURS
 
 export async function scheduleServices({ services, onProgress }) {
