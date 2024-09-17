@@ -113,37 +113,62 @@ export function createNewShift({
       MIN_REST_HOURS,
       'hour',
     )
-    const preferredStartTime = ensureDayjs(lastShift.shiftEnd).add(16, 'hour')
+    newShiftStart = dayjs.max(newShiftStart, minStartTime)
+  }
 
-    // Look for services within the preferred 16-hour window
-    const servicesWithinWindow = remainingServices.filter(s =>
-      ensureDayjs(s.time.range[0]).isBetween(
-        minStartTime,
-        preferredStartTime,
-        null,
-        '[]',
-      ),
-    )
+  return {
+    shiftStart: newShiftStart.toDate(),
+    shiftEnd: newShiftStart.add(MAX_SHIFT_HOURS, 'hours').toDate(),
+    services: [],
+  }
+}
 
-    if (servicesWithinWindow.length > 0) {
-      // If there are services within the window, start the shift at the earliest service
-      newShiftStart = dayjs.min(
-        servicesWithinWindow.map(s => ensureDayjs(s.time.range[0])),
+export function createNewShiftWithConsistentStartTime({
+  techSchedule,
+  rangeStart,
+  remainingServices,
+}) {
+  const lastShift = techSchedule.shifts[techSchedule.shifts.length - 1]
+  let newShiftStart = ensureDayjs(rangeStart)
+
+  if (lastShift) {
+    const lastShiftEnd = ensureDayjs(lastShift.shiftEnd)
+    const minStartTime = lastShiftEnd.add(MIN_REST_HOURS, 'hour')
+
+    // If the range start is before the minimum start time, use the minimum start time
+    if (newShiftStart.isBefore(minStartTime)) {
+      newShiftStart = minStartTime
+    }
+
+    // If the new shift would start more than MAX_SHIFT_GAP hours after the last shift,
+    // try to find a service that starts earlier
+    if (newShiftStart.diff(lastShiftEnd, 'hour') > MAX_SHIFT_GAP) {
+      const earlierService = remainingServices.find(
+        s =>
+          ensureDayjs(s.time.range[0]).isBefore(newShiftStart) &&
+          ensureDayjs(s.time.range[0]).isAfter(minStartTime),
       )
-    } else {
-      // If no services within the window, use the current service start time, but cap the gap
-      newShiftStart = dayjs.min([
-        dayjs.max([newShiftStart, minStartTime]),
-        ensureDayjs(lastShift.shiftEnd).add(MAX_SHIFT_GAP, 'hours'),
-      ])
+      if (earlierService) {
+        newShiftStart = ensureDayjs(earlierService.time.range[0])
+      }
     }
   }
 
   return {
-    shiftStart: newShiftStart,
-    shiftEnd: newShiftStart.add(MAX_SHIFT_HOURS, 'hours'),
+    shiftStart: newShiftStart.toDate(),
+    shiftEnd: newShiftStart.add(MAX_SHIFT_HOURS, 'hours').toDate(),
     services: [],
   }
+}
+
+function getNextPreferredStartTime(fromTime, lastShiftStart) {
+  const preferredTime = lastShiftStart
+    .hour(lastShiftStart.hour())
+    .minute(lastShiftStart.minute())
+    .second(0)
+  return fromTime.isAfter(preferredTime)
+    ? preferredTime.add(24, 'hours')
+    : preferredTime
 }
 
 export function findGaps({ shift, from, to }) {

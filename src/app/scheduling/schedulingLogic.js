@@ -1,8 +1,10 @@
-import { MAX_SHIFT_HOURS } from '@/app/scheduling'
+import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from '@/app/scheduling'
 import {
   createNewShift,
   compactShift,
   fillGaps,
+  findGaps,
+  createNewShiftWithConsistentStartTime,
 } from '@/app/scheduling/shiftManagement'
 import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
 
@@ -13,9 +15,15 @@ export function scheduleService({
   nextGenericTechId,
   remainingServices,
 }) {
-  // Try to schedule on existing techs without creating new shifts
-  for (const techId in techSchedules) {
-    const result = scheduleForTech({
+  // Sort techs by the number of shifts they have, in descending order
+  const sortedTechs = Object.keys(techSchedules).sort(
+    (a, b) => techSchedules[b].shifts.length - techSchedules[a].shifts.length,
+  )
+
+  // Try to schedule on existing techs, first in existing shifts, then allowing new shifts
+  for (const techId of sortedTechs) {
+    // First, try to schedule in existing shifts
+    const resultExisting = scheduleForTech({
       service,
       techId,
       techSchedules,
@@ -24,12 +32,10 @@ export function scheduleService({
       remainingServices,
     })
 
-    if (result.scheduled) return result
-  }
+    if (resultExisting.scheduled) return resultExisting
 
-  // Try again on all techs, this time allowing new shifts
-  for (const techId in techSchedules) {
-    const result = scheduleForTech({
+    // If not possible, try allowing a new shift
+    const resultNew = scheduleForTech({
       service,
       techId,
       techSchedules,
@@ -38,10 +44,10 @@ export function scheduleService({
       remainingServices,
     })
 
-    if (result.scheduled) return result
+    if (resultNew.scheduled) return resultNew
   }
 
-  // Create a new tech and try to schedule
+  // If we couldn't schedule on existing techs, create a new tech and try to schedule
   const newTechId = `Tech ${nextGenericTechId}`
   techSchedules[newTechId] = { shifts: [] }
   const result = scheduleForTech({
@@ -83,10 +89,8 @@ function scheduleForTech({
     if (
       tryScheduleInShift({ service, shift, scheduledServiceIdsByDate, techId })
     ) {
-      if (shiftIndex === techSchedule.shifts.length - 1) {
-        compactShift(shift)
-        fillGaps(shift)
-      }
+      compactShift(shift)
+      fillGaps(shift)
       return {
         scheduled: true,
         reason: `Scheduled in existing shift for Tech ${techId}`,
@@ -94,14 +98,22 @@ function scheduleForTech({
     }
   }
 
-  // If allowed and necessary, try to create a new shift
+  // If allowed, try to create a new shift
   if (allowNewShift) {
-    const newShift = createNewShift({
+    const newShift = createNewShiftWithConsistentStartTime({
       techSchedule,
       rangeStart,
       remainingServices,
     })
-    // Attempt to schedule the service in the new shift, on the same tech
+
+    // Safeguard: ensure the new shift starts within the service's time range
+    if (ensureDayjs(newShift.shiftStart).isAfter(rangeEnd)) {
+      return {
+        scheduled: false,
+        reason: `New shift would start after service's time range for Tech ${techId}`,
+      }
+    }
+
     if (
       tryScheduleInShift({
         service,
@@ -111,7 +123,6 @@ function scheduleForTech({
       })
     ) {
       techSchedule.shifts.push(newShift)
-      // After scheduling all services, compact the shift and fill gaps
       compactShift(newShift)
       fillGaps(newShift)
       return {
@@ -130,7 +141,7 @@ function tryScheduleInShift({
   scheduledServiceIdsByDate,
   techId,
 }) {
-  const [rangeStart, rangeEnd] = service.time.range
+  const [rangeStart, rangeEnd] = service.time.range.map(ensureDayjs)
   const serviceDuration = service.time.duration
   const shiftStart = ensureDayjs(shift.shiftStart)
   const shiftEnd = ensureDayjs(shift.shiftEnd)
@@ -138,11 +149,17 @@ function tryScheduleInShift({
   // Ensure the service starts no earlier than its range start and the shift start
   let startTime = dayjs.max(shiftStart, rangeStart)
   const latestPossibleStart = dayjs
-    .min(shiftEnd, rangeEnd)
+    .min(shiftEnd, rangeEnd, shiftStart.add(MAX_SHIFT_HOURS, 'hours'))
     .subtract(serviceDuration, 'minute')
 
   while (startTime.isSameOrBefore(latestPossibleStart)) {
     let endTime = startTime.add(serviceDuration, 'minute')
+
+    // Ensure the service doesn't extend beyond MAX_SHIFT_HOURS
+    if (endTime.isAfter(shiftStart.add(MAX_SHIFT_HOURS, 'hours'))) {
+      return false
+    }
+
     let canSchedule = true
 
     // Check if this time slot conflicts with any existing services
@@ -178,6 +195,11 @@ function tryScheduleInShift({
       const serviceDate = startTime.format('YYYY-MM-DD')
       const serviceKey = `${service.id}-${serviceDate}`
       scheduledServiceIdsByDate.set(serviceKey, techId)
+
+      // Update shift end time if necessary
+      if (endTime.isAfter(shiftEnd)) {
+        shift.shiftEnd = endTime.toDate()
+      }
 
       return true
     }
