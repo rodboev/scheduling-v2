@@ -1,18 +1,11 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
-import {
-  createNewShift,
-  compactShift,
-  fillGaps,
-  findGaps,
-  createNewShiftWithConsistentStartTime,
-} from './shiftManagement.js'
+import { createNewShiftWithConsistentStartTime } from './shiftManagement.js'
 
 export function scheduleService({
   service,
   techSchedules,
   scheduledServiceIdsByDate,
-  nextGenericTechId,
   remainingServices,
 }) {
   // Sort techs by the number of shifts they have, in descending order
@@ -20,42 +13,26 @@ export function scheduleService({
     (a, b) => techSchedules[b].shifts.length - techSchedules[a].shifts.length,
   )
 
-  // Try to schedule on existing techs, first in existing shifts, then allowing new shifts
   for (const techId of sortedTechs) {
-    // First, try to schedule in existing shifts
-    const resultExisting = scheduleForTech({
+    const result = tryScheduleForTech({
       service,
       techId,
       techSchedules,
       scheduledServiceIdsByDate,
-      allowNewShift: false,
       remainingServices,
     })
 
-    if (resultExisting.scheduled) return resultExisting
-
-    // If not possible, try allowing a new shift
-    const resultNew = scheduleForTech({
-      service,
-      techId,
-      techSchedules,
-      scheduledServiceIdsByDate,
-      allowNewShift: true,
-      remainingServices,
-    })
-
-    if (resultNew.scheduled) return resultNew
+    if (result.scheduled) return result
   }
 
   // If we couldn't schedule on existing techs, create a new tech and try to schedule
-  const newTechId = `Tech ${nextGenericTechId}`
+  const newTechId = `Tech ${Object.keys(techSchedules).length + 1}`
   techSchedules[newTechId] = { shifts: [] }
-  const result = scheduleForTech({
+  const result = tryScheduleForTech({
     service,
     techId: newTechId,
     techSchedules,
     scheduledServiceIdsByDate,
-    allowNewShift: true,
     remainingServices,
   })
 
@@ -68,16 +45,14 @@ export function scheduleService({
   }
 }
 
-function scheduleForTech({
+function tryScheduleForTech({
   service,
   techId,
   techSchedules,
   scheduledServiceIdsByDate,
-  allowNewShift,
   remainingServices,
 }) {
   const techSchedule = techSchedules[techId]
-  const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
 
   // Try to fit the service into an existing shift
   for (
@@ -85,12 +60,15 @@ function scheduleForTech({
     shiftIndex < techSchedule.shifts.length;
     shiftIndex++
   ) {
-    let shift = techSchedule.shifts[shiftIndex]
+    const shift = techSchedule.shifts[shiftIndex]
     if (
-      tryScheduleInShift({ service, shift, scheduledServiceIdsByDate, techId })
+      tryScheduleInShift({
+        service,
+        shift,
+        scheduledServiceIdsByDate,
+        techId,
+      })
     ) {
-      compactShift(shift)
-      fillGaps(shift)
       return {
         scheduled: true,
         reason: `Scheduled in existing shift for Tech ${techId}`,
@@ -98,37 +76,25 @@ function scheduleForTech({
     }
   }
 
-  // If allowed, try to create a new shift
-  if (allowNewShift) {
-    const newShift = createNewShiftWithConsistentStartTime({
-      techSchedule,
-      rangeStart,
-      remainingServices,
+  // If not possible, try creating a new shift
+  const newShift = createNewShiftWithConsistentStartTime({
+    techSchedule,
+    rangeStart: new Date(service.time.range[0]),
+    remainingServices,
+  })
+
+  if (
+    tryScheduleInShift({
+      service,
+      shift: newShift,
+      scheduledServiceIdsByDate,
+      techId,
     })
-
-    // Safeguard: ensure the new shift starts within the service's time range
-    if (new Date(newShift.shiftStart) > rangeEnd) {
-      return {
-        scheduled: false,
-        reason: `New shift would start after service's time range for Tech ${techId}`,
-      }
-    }
-
-    if (
-      tryScheduleInShift({
-        service,
-        shift: newShift,
-        scheduledServiceIdsByDate,
-        techId,
-      })
-    ) {
-      techSchedule.shifts.push(newShift)
-      compactShift(newShift)
-      fillGaps(newShift)
-      return {
-        scheduled: true,
-        reason: `Scheduled in new shift for Tech ${techId}`,
-      }
+  ) {
+    techSchedule.shifts.push(newShift)
+    return {
+      scheduled: true,
+      reason: `Scheduled in new shift for Tech ${techId}`,
     }
   }
 

@@ -2,6 +2,7 @@ import axios from 'axios'
 import { NextResponse } from 'next/server'
 import path from 'path'
 import { Worker } from 'worker_threads'
+import { printSummary } from '../../scheduling/logging.js'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -51,8 +52,24 @@ export async function GET(request) {
               ),
             )
           } else if (message.type === 'result') {
+            const { techSchedules, unassignedServices } = message.data
+            console.log('Printing summary...')
+            printSummary({ techSchedules, unassignedServices })
+
+            const scheduledServices = Object.entries(techSchedules).flatMap(
+              ([techId, schedule]) =>
+                schedule.shifts.flatMap(shift =>
+                  shift.services.map(service => ({
+                    ...service,
+                    resourceId: techId,
+                  })),
+                ),
+            )
+
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(message.data)}\n\n`),
+              encoder.encode(
+                `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,
+              ),
             )
             controller.close()
           }

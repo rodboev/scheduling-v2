@@ -5,7 +5,7 @@ async function runScheduling() {
   try {
     const { services } = workerData
 
-    const { scheduledServices, unassignedServices } = await scheduleServices({
+    const result = await scheduleServices({
       services,
       onProgress: progress => {
         parentPort.postMessage({ type: 'progress', progress })
@@ -14,9 +14,12 @@ async function runScheduling() {
 
     parentPort.postMessage({
       type: 'result',
-      data: { scheduledServices, unassignedServices },
+      data: result,
     })
+
+    console.log(`Worker processed ${services.length} services`)
   } catch (error) {
+    console.error(`Error in worker:`, error)
     parentPort.postMessage({
       type: 'error',
       error: error.message,
