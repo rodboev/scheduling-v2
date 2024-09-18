@@ -1,14 +1,11 @@
-import { printSummary } from '@/app/scheduling/logging'
-import {
-  scheduleService,
-  scheduleEnforcedService,
-} from '@/app/scheduling/schedulingLogic'
+import { printSummary } from './logging.js'
+import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
 import {
   filterInvalidServices,
   prepareServicesToSchedule,
   sortServices,
-} from '@/app/scheduling/servicePreparation'
-import { flattenServices } from '@/app/scheduling/shiftManagement'
+} from './servicePreparation.js'
+import { flattenServices } from './shiftManagement.js'
 
 export const MAX_SHIFT_HOURS = 8
 export const MIN_REST_HOURS = 15

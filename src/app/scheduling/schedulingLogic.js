@@ -1,12 +1,12 @@
-import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from '@/app/scheduling'
+import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
+import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import {
   createNewShift,
   compactShift,
   fillGaps,
   findGaps,
   createNewShiftWithConsistentStartTime,
-} from '@/app/scheduling/shiftManagement'
-import { addMinutes, addHours, max, min } from '@/app/utils/dateHelpers'
+} from './shiftManagement.js'
 
 export function scheduleService({
   service,

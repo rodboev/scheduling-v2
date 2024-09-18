@@ -1,6 +1,7 @@
-import { scheduleServices } from '@/app/scheduling'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
+import path from 'path'
+import { Worker } from 'worker_threads'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -34,27 +35,44 @@ export async function GET(request) {
         )
 
         console.log('Scheduling services...')
-        const { scheduledServices, unassignedServices } =
-          await scheduleServices({
-            services,
-            onProgress: progress => {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ progress })}\n\n`),
-              )
-            },
-          })
-        console.log(
-          'Scheduled services:',
-          scheduledServices.length,
-          'Unassigned:',
-          unassignedServices.length,
+        const workerPath = path.resolve(
+          process.cwd(),
+          'src/app/scheduling/worker.js',
         )
+        const worker = new Worker(workerPath, {
+          workerData: { services },
+        })
 
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,
-          ),
-        )
+        worker.on('message', message => {
+          if (message.type === 'progress') {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ progress: message.progress })}\n\n`,
+              ),
+            )
+          } else if (message.type === 'result') {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(message.data)}\n\n`),
+            )
+            controller.close()
+          }
+        })
+
+        worker.on('error', error => {
+          console.error('Error in worker:', error)
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ error: error.message, stack: error.stack })}\n\n`,
+            ),
+          )
+          controller.close()
+        })
+
+        worker.on('exit', code => {
+          if (code !== 0) {
+            console.error(`Worker stopped with exit code ${code}`)
+          }
+        })
       } catch (error) {
         console.error('Error in schedule route:', error)
         controller.enqueue(
@@ -62,7 +80,6 @@ export async function GET(request) {
             `data: ${JSON.stringify({ error: error.message, stack: error.stack })}\n\n`,
           ),
         )
-      } finally {
         controller.close()
       }
     },

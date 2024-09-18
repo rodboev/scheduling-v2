@@ -2,7 +2,7 @@ import {
   formatDate,
   formatTime,
   calculateDuration,
-} from '@/app/utils/dateHelpers'
+} from '../utils/dateHelpers.js'
 
 export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')

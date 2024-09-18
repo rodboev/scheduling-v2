@@ -1,9 +1,5 @@
-import {
-  MIN_REST_HOURS,
-  MAX_SHIFT_GAP,
-  MAX_SHIFT_HOURS,
-} from '@/app/scheduling'
-import { addHours, addMinutes, max, min } from '@/app/utils/dateHelpers'
+import { addHours, addMinutes, max, min } from '../utils/dateHelpers.js'
+import { MIN_REST_HOURS, MAX_SHIFT_GAP, MAX_SHIFT_HOURS } from './index.js'
 
 export function compactShift(shift) {
   shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))

@@ -1,5 +1,3 @@
-import { ensureDayjs } from '@/app/utils/dayjs'
-
 export function filterInvalidServices(services) {
   return services
     .filter(
