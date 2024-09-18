@@ -1,4 +1,8 @@
-import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
+import {
+  formatDate,
+  formatTime,
+  calculateDuration,
+} from '@/app/utils/dateHelpers'
 
 export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
@@ -15,11 +19,11 @@ export function printSummary({ techSchedules, unassignedServices }) {
       let techTotalHours = 0
 
       schedule.shifts.forEach((shift, shiftIndex) => {
-        const shiftStart = ensureDayjs(shift.shiftStart)
-        const shiftEnd = ensureDayjs(shift.shiftEnd)
+        const shiftStart = new Date(shift.shiftStart)
+        const shiftEnd = new Date(shift.shiftEnd)
 
         const formatShiftTime = time => {
-          return `${time.format('M/D')} ${time.format('h:mma').toLowerCase()}`
+          return `${formatDate(time)} ${formatTime(time)}`
         }
 
         const shiftTimeRange = `${formatShiftTime(shiftStart)} - ${formatShiftTime(shiftEnd)}`
@@ -28,16 +32,16 @@ export function printSummary({ techSchedules, unassignedServices }) {
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
           shift.services.forEach(service => {
-            const startTime = ensureDayjs(service.start)
-            const endTime = ensureDayjs(service.end)
-            const date = startTime.format('M/D')
-            const start = startTime.format('h:mma')
-            const end = endTime.format('h:mma')
+            const startTime = new Date(service.start)
+            const endTime = new Date(service.end)
+            const date = formatDate(startTime)
+            const start = formatTime(startTime)
+            const end = formatTime(endTime)
             const timeRange =
               service.time.range[0] && service.time.range[1]
                 ? [
-                    ensureDayjs(service.time.range[0]).format('h:mma'),
-                    ensureDayjs(service.time.range[1]).format('h:mma'),
+                    formatTime(new Date(service.time.range[0])),
+                    formatTime(new Date(service.time.range[1])),
                   ].join(' - ')
                 : 'Invalid'
             console.log(
@@ -45,14 +49,13 @@ export function printSummary({ techSchedules, unassignedServices }) {
             )
           })
 
-          const firstServiceStart = ensureDayjs(shift.services[0].start)
-          const lastServiceEnd = ensureDayjs(
+          const firstServiceStart = new Date(shift.services[0].start)
+          const lastServiceEnd = new Date(
             shift.services[shift.services.length - 1].end,
           )
-          const shiftDuration = lastServiceEnd.diff(
+          const shiftDuration = calculateDuration(
             firstServiceStart,
-            'hours',
-            true,
+            lastServiceEnd,
           )
           techTotalHours += shiftDuration
           console.log(`Shift duration: ${formatHours(shiftDuration)} hours`)
@@ -67,7 +70,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
           gaps.forEach((gap, index) => {
             const gapStart = formatShiftTime(gap.start)
             const gapEnd = formatShiftTime(gap.end)
-            const gapDuration = gap.end.diff(gap.start, 'hours', true)
+            const gapDuration = calculateDuration(gap.start, gap.end)
             console.log(
               `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${formatHours(gapDuration)} hours)`,
             )
@@ -88,12 +91,12 @@ export function printSummary({ techSchedules, unassignedServices }) {
   if (unassignedServices.length > 0) {
     console.log('Unassigned services:')
     unassignedServices.forEach(service => {
-      const date = ensureDayjs(service.date).format('M/D')
+      const date = formatDate(new Date(service.date))
       const timeRange =
         service.time.range[0] && service.time.range[1]
           ? [
-              ensureDayjs(service.time.range[0]).format('h:mma'),
-              ensureDayjs(service.time.range[1]).format('h:mma'),
+              formatTime(new Date(service.time.range[0])),
+              formatTime(new Date(service.time.range[1])),
             ].join(' - ')
           : 'Invalid'
       console.log(
@@ -118,26 +121,26 @@ function formatHours(hours) {
 
 function findScheduleGaps(shift, from, to) {
   const gaps = []
-  let currentTime = ensureDayjs(from)
-  const endTime = ensureDayjs(to)
+  let currentTime = new Date(from)
+  const endTime = new Date(to)
 
-  shift.services.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
   for (const service of shift.services) {
-    const serviceStart = ensureDayjs(service.start)
-    const serviceEnd = ensureDayjs(service.end)
+    const serviceStart = new Date(service.start)
+    const serviceEnd = new Date(service.end)
 
-    if (serviceStart.isAfter(currentTime)) {
+    if (serviceStart > currentTime) {
       gaps.push({
         start: currentTime,
         end: serviceStart,
       })
     }
 
-    currentTime = serviceEnd.isAfter(currentTime) ? serviceEnd : currentTime
+    currentTime = serviceEnd > currentTime ? serviceEnd : currentTime
   }
 
-  if (endTime.isAfter(currentTime)) {
+  if (endTime > currentTime) {
     gaps.push({
       start: currentTime,
       end: endTime,

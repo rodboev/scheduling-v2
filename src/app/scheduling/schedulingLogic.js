@@ -6,7 +6,7 @@ import {
   findGaps,
   createNewShiftWithConsistentStartTime,
 } from '@/app/scheduling/shiftManagement'
-import { dayjsInstance as dayjs, ensureDayjs } from '@/app/utils/dayjs'
+import { addMinutes, addHours, max, min } from '@/app/utils/dateHelpers'
 
 export function scheduleService({
   service,
@@ -77,7 +77,7 @@ function scheduleForTech({
   remainingServices,
 }) {
   const techSchedule = techSchedules[techId]
-  const [rangeStart, rangeEnd] = service.time.range.map(ensureDayjs)
+  const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
 
   // Try to fit the service into an existing shift
   for (
@@ -107,7 +107,7 @@ function scheduleForTech({
     })
 
     // Safeguard: ensure the new shift starts within the service's time range
-    if (ensureDayjs(newShift.shiftStart).isAfter(rangeEnd)) {
+    if (new Date(newShift.shiftStart) > rangeEnd) {
       return {
         scheduled: false,
         reason: `New shift would start after service's time range for Tech ${techId}`,
@@ -141,22 +141,27 @@ function tryScheduleInShift({
   scheduledServiceIdsByDate,
   techId,
 }) {
-  const [rangeStart, rangeEnd] = service.time.range.map(ensureDayjs)
+  const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
-  const shiftStart = ensureDayjs(shift.shiftStart)
-  const shiftEnd = ensureDayjs(shift.shiftEnd)
+  const shiftStart = new Date(shift.shiftStart)
+  const shiftEnd = new Date(shift.shiftEnd)
 
   // Ensure the service starts no earlier than its range start and the shift start
-  let startTime = dayjs.max(shiftStart, rangeStart)
-  const latestPossibleStart = dayjs
-    .min(shiftEnd, rangeEnd, shiftStart.add(MAX_SHIFT_HOURS, 'hours'))
-    .subtract(serviceDuration, 'minute')
+  let startTime = max(shiftStart, rangeStart)
+  const latestPossibleStart = min(
+    shiftEnd,
+    rangeEnd,
+    addHours(shiftStart, MAX_SHIFT_HOURS),
+  )
+  latestPossibleStart.setMinutes(
+    latestPossibleStart.getMinutes() - serviceDuration,
+  )
 
-  while (startTime.isSameOrBefore(latestPossibleStart)) {
-    let endTime = startTime.add(serviceDuration, 'minute')
+  while (startTime <= latestPossibleStart) {
+    let endTime = addMinutes(startTime, serviceDuration)
 
     // Ensure the service doesn't extend beyond MAX_SHIFT_HOURS
-    if (endTime.isAfter(shiftStart.add(MAX_SHIFT_HOURS, 'hours'))) {
+    if (endTime > addHours(shiftStart, MAX_SHIFT_HOURS)) {
       return false
     }
 
@@ -164,15 +169,13 @@ function tryScheduleInShift({
 
     // Check if this time slot conflicts with any existing services
     for (const existingService of shift.services) {
-      const existingStart = ensureDayjs(existingService.start)
-      const existingEnd = ensureDayjs(existingService.end)
+      const existingStart = new Date(existingService.start)
+      const existingEnd = new Date(existingService.end)
 
       if (
-        (startTime.isSameOrAfter(existingStart) &&
-          startTime.isBefore(existingEnd)) ||
-        (endTime.isAfter(existingStart) &&
-          endTime.isSameOrBefore(existingEnd)) ||
-        (startTime.isBefore(existingStart) && endTime.isAfter(existingEnd))
+        (startTime >= existingStart && startTime < existingEnd) ||
+        (endTime > existingStart && endTime <= existingEnd) ||
+        (startTime < existingStart && endTime > existingEnd)
       ) {
         canSchedule = false
         break
@@ -183,29 +186,27 @@ function tryScheduleInShift({
       // We found a suitable time slot, schedule the service
       const scheduledService = {
         ...service,
-        start: startTime.toDate(),
-        end: endTime.toDate(),
+        start: startTime,
+        end: endTime,
       }
 
       shift.services.push(scheduledService)
-      shift.services.sort((a, b) =>
-        ensureDayjs(a.start).diff(ensureDayjs(b.start)),
-      )
+      shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-      const serviceDate = startTime.format('YYYY-MM-DD')
+      const serviceDate = startTime.toISOString().split('T')[0]
       const serviceKey = `${service.id}-${serviceDate}`
       scheduledServiceIdsByDate.set(serviceKey, techId)
 
       // Update shift end time if necessary
-      if (endTime.isAfter(shiftEnd)) {
-        shift.shiftEnd = endTime.toDate()
+      if (endTime > shiftEnd) {
+        shift.shiftEnd = endTime
       }
 
       return true
     }
 
     // If we can't schedule at this time, try 15 minutes later
-    startTime = startTime.add(15, 'minute')
+    startTime = addMinutes(startTime, 15)
   }
 
   // If we've tried all possible start times and couldn't schedule, return false
@@ -222,19 +223,16 @@ export function scheduleEnforcedService({
     techSchedules[techId] = { shifts: [] }
   }
 
-  const [rangeStart, rangeEnd] = service.time.range
+  const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
-  const preferredTime = service.time.preferred
+  const preferredTime = new Date(service.time.preferred)
 
   const startTime = preferredTime
-  const endTime = startTime.add(serviceDuration, 'minute')
+  const endTime = addMinutes(startTime, serviceDuration)
 
   let targetShift
   for (let shift of techSchedules[techId].shifts) {
-    if (
-      startTime.isSameOrAfter(shift.shiftStart) &&
-      endTime.isSameOrBefore(shift.shiftEnd)
-    ) {
+    if (startTime >= shift.shiftStart && endTime <= shift.shiftEnd) {
       targetShift = shift
       break
     }
@@ -243,7 +241,7 @@ export function scheduleEnforcedService({
   if (!targetShift) {
     targetShift = {
       shiftStart: startTime,
-      shiftEnd: startTime.add(MAX_SHIFT_HOURS, 'hours'),
+      shiftEnd: addHours(startTime, MAX_SHIFT_HOURS),
       services: [],
     }
     techSchedules[techId].shifts.push(targetShift)
@@ -251,13 +249,13 @@ export function scheduleEnforcedService({
 
   const scheduledService = {
     ...service,
-    start: startTime.toDate(),
-    end: endTime.toDate(),
+    start: startTime,
+    end: endTime,
   }
   targetShift.services.push(scheduledService)
-  targetShift.services.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)))
+  targetShift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-  const serviceDate = startTime.format('YYYY-MM-DD')
+  const serviceDate = startTime.toISOString().split('T')[0]
   const serviceKey = `${service.id}-${serviceDate}`
   scheduledServiceIdsByDate.set(serviceKey, techId)
 

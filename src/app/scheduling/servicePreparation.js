@@ -16,27 +16,27 @@ export function prepareServicesToSchedule(services) {
         service.time.range[0] !== null && service.time.range[1] !== null,
     )
     .map(service => ({
-      // Convert all date fields in services to dayjs objects
       ...service,
       time: {
         ...service.time,
-        range: service.time.range.map(ensureDayjs),
-        preferred: ensureDayjs(service.time.preferred),
+        range: service.time.range.map(date => new Date(date)),
+        preferred: new Date(service.time.preferred),
       },
-      date: ensureDayjs(service.date),
+      date: new Date(service.date),
     }))
 }
 
 export function sortServices(services) {
-  // Sort services by date, then by time window size (ascending) and duration (descending)
   services.sort((a, b) => {
-    const aDate = a.time.range[0].startOf('day')
-    const bDate = b.time.range[0].startOf('day')
-    if (!aDate.isSame(bDate)) {
-      return aDate.diff(bDate)
+    const aDate = new Date(a.time.range[0])
+    const bDate = new Date(b.time.range[0])
+    aDate.setHours(0, 0, 0, 0)
+    bDate.setHours(0, 0, 0, 0)
+    if (aDate.getTime() !== bDate.getTime()) {
+      return aDate.getTime() - bDate.getTime()
     }
-    const aWindowSize = a.time.range[1].diff(a.time.range[0], 'minute')
-    const bWindowSize = b.time.range[1].diff(b.time.range[0], 'minute')
+    const aWindowSize = new Date(a.time.range[1]) - new Date(a.time.range[0])
+    const bWindowSize = new Date(b.time.range[1]) - new Date(b.time.range[0])
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
 }
