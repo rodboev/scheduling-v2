@@ -27,7 +27,11 @@ function createServicesForDateRange(setup, startDate, endDate) {
           : null
       const rangeEnd =
         setup.time.range[1] !== null
-          ? round(date.add(setup.time.range[1], 'seconds'))
+          ? round(
+              date
+                .add(setup.time.range[1], 'seconds')
+                .add(setup.time.duration, 'minutes'),
+            )
           : null
       const preferred = round(
         date.add(parseTime(setup.time.preferred), 'seconds'),
@@ -70,7 +74,7 @@ async function fetchServiceSetups() {
     )
     const serviceSetups = response.data
     console.log('Fetched service setups:', serviceSetups.length)
-    return serviceSetups
+    return serviceSetups.slice(143, 145)
   } catch (error) {
     console.error('Error fetching service setups:', error)
     throw error // Rethrow the error to be handled by the caller
