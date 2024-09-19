@@ -1,8 +1,6 @@
+import { scheduleServices } from '@/app/scheduling'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
-import path from 'path'
-import { Worker } from 'worker_threads'
-import { printSummary } from '../../scheduling/logging.js'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -36,60 +34,28 @@ export async function GET(request) {
         )
 
         console.log('Scheduling services...')
-        const workerPath = path.resolve(
-          process.cwd(),
-          'src/app/scheduling/worker.js',
-        )
-        const worker = new Worker(workerPath, {
-          workerData: { services },
-        })
-
-        worker.on('message', message => {
-          if (message.type === 'progress') {
+        for await (const result of scheduleServices(services)) {
+          if (result.type === 'progress') {
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ progress: message.progress })}\n\n`,
+                `data: ${JSON.stringify({ progress: result.data })}\n\n`,
               ),
             )
-          } else if (message.type === 'result') {
-            const { techSchedules, unassignedServices } = message.data
-            console.log('Printing summary...')
-            printSummary({ techSchedules, unassignedServices })
-
-            const scheduledServices = Object.entries(techSchedules).flatMap(
-              ([techId, schedule]) =>
-                schedule.shifts.flatMap(shift =>
-                  shift.services.map(service => ({
-                    ...service,
-                    resourceId: techId,
-                  })),
-                ),
+          } else if (result.type === 'result') {
+            const { scheduledServices, unassignedServices } = result.data
+            console.log(
+              'Scheduled services:',
+              scheduledServices.length,
+              'Unassigned:',
+              unassignedServices.length,
             )
-
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,
               ),
             )
-            controller.close()
           }
-        })
-
-        worker.on('error', error => {
-          console.error('Error in worker:', error)
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ error: error.message, stack: error.stack })}\n\n`,
-            ),
-          )
-          controller.close()
-        })
-
-        worker.on('exit', code => {
-          if (code !== 0) {
-            console.error(`Worker stopped with exit code ${code}`)
-          }
-        })
+        }
       } catch (error) {
         console.error('Error in schedule route:', error)
         controller.enqueue(
@@ -97,6 +63,7 @@ export async function GET(request) {
             `data: ${JSON.stringify({ error: error.message, stack: error.stack })}\n\n`,
           ),
         )
+      } finally {
         controller.close()
       }
     },
