@@ -147,6 +147,18 @@ export function createNewShiftWithConsistentStartTime({
     }
   }
 
+  // Check if this new shift would exceed the weekly limit
+  const weekStart = new Date(newShiftStart)
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Set to the start of the week (Sunday)
+  weekStart.setHours(0, 0, 0, 0)
+  const shiftsThisWeek = countShiftsInWeek(techSchedule, weekStart)
+
+  if (shiftsThisWeek >= 5) {
+    // Move to the next week if the limit is reached
+    newShiftStart = new Date(weekStart)
+    newShiftStart.setDate(newShiftStart.getDate() + 7) // Move to next week
+  }
+
   return {
     shiftStart: newShiftStart,
     shiftEnd: addHours(newShiftStart, MAX_SHIFT_HOURS),
@@ -191,4 +203,13 @@ export function findGaps({ shift, from, to }) {
   }
 
   return gaps
+}
+
+export function countShiftsInWeek(techSchedule, weekStart) {
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 7)
+  return techSchedule.shifts.filter(shift => {
+    const shiftStart = new Date(shift.shiftStart)
+    return shiftStart >= weekStart && shiftStart < weekEnd
+  }).length
 }

@@ -1,6 +1,9 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
-import { createNewShiftWithConsistentStartTime } from './shiftManagement.js'
+import {
+  createNewShiftWithConsistentStartTime,
+  countShiftsInWeek,
+} from './shiftManagement.js'
 
 export function scheduleService({
   service,
@@ -76,25 +79,33 @@ function tryScheduleForTech({
     }
   }
 
-  // If not possible, try creating a new shift
-  const newShift = createNewShiftWithConsistentStartTime({
-    techSchedule,
-    rangeStart: new Date(service.time.range[0]),
-    remainingServices,
-  })
+  // Check if we can create a new shift (less than 5 shifts this week)
+  const weekStart = new Date(service.time.range[0])
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Set to the start of the week (Sunday)
+  weekStart.setHours(0, 0, 0, 0)
+  const shiftsThisWeek = countShiftsInWeek(techSchedule, weekStart)
 
-  if (
-    tryScheduleInShift({
-      service,
-      shift: newShift,
-      scheduledServiceIdsByDate,
-      techId,
+  if (shiftsThisWeek < 5) {
+    // If not possible, try creating a new shift
+    const newShift = createNewShiftWithConsistentStartTime({
+      techSchedule,
+      rangeStart: new Date(service.time.range[0]),
+      remainingServices,
     })
-  ) {
-    techSchedule.shifts.push(newShift)
-    return {
-      scheduled: true,
-      reason: `Scheduled in new shift for Tech ${techId}`,
+
+    if (
+      tryScheduleInShift({
+        service,
+        shift: newShift,
+        scheduledServiceIdsByDate,
+        techId,
+      })
+    ) {
+      techSchedule.shifts.push(newShift)
+      return {
+        scheduled: true,
+        reason: `Scheduled in new shift for Tech ${techId}`,
+      }
     }
   }
 
