@@ -74,7 +74,7 @@ async function fetchServiceSetups() {
     )
     const serviceSetups = response.data
     console.log('Fetched service setups:', serviceSetups.length)
-    return serviceSetups.slice(143, 145)
+    return serviceSetups
   } catch (error) {
     console.error('Error fetching service setups:', error)
     throw error // Rethrow the error to be handled by the caller
