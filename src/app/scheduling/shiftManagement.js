@@ -97,11 +97,7 @@ export function flattenServices(techSchedules) {
   )
 }
 
-export function createNewShift({
-  techSchedule,
-  rangeStart,
-  remainingServices,
-}) {
+export function createNewShift({ techSchedule, rangeStart }) {
   const lastShift = techSchedule.shifts[techSchedule.shifts.length - 1]
   let newShiftStart = new Date(rangeStart)
   if (lastShift) {

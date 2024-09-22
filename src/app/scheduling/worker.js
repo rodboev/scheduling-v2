@@ -19,7 +19,6 @@ async function runScheduling() {
   console.log(`Total services to schedule: ${totalServices}`)
 
   let processedCount = 0
-  const scheduledServiceIdsByDate = new Map()
   const techSchedules = {}
   const unassignedServices = []
 
@@ -29,13 +28,11 @@ async function runScheduling() {
       result = scheduleEnforcedService({
         service,
         techSchedules,
-        scheduledServiceIdsByDate,
       })
     } else {
       result = scheduleService({
         service,
         techSchedules,
-        scheduledServiceIdsByDate,
         remainingServices: servicesToSchedule.slice(processedCount + 1),
       })
     }

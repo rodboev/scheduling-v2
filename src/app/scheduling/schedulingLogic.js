@@ -5,12 +5,7 @@ import {
   countShiftsInWeek,
 } from './shiftManagement.js'
 
-export function scheduleService({
-  service,
-  techSchedules,
-  scheduledServiceIdsByDate,
-  remainingServices,
-}) {
+export function scheduleService({ service, techSchedules, remainingServices }) {
   // Sort techs by the number of shifts they have, in descending order
   const sortedTechs = Object.keys(techSchedules).sort(
     (a, b) => techSchedules[b].shifts.length - techSchedules[a].shifts.length,
@@ -21,7 +16,6 @@ export function scheduleService({
       service,
       techId,
       techSchedules,
-      scheduledServiceIdsByDate,
       remainingServices,
     })
 
@@ -35,7 +29,6 @@ export function scheduleService({
     service,
     techId: newTechId,
     techSchedules,
-    scheduledServiceIdsByDate,
     remainingServices,
   })
 
@@ -52,7 +45,6 @@ function tryScheduleForTech({
   service,
   techId,
   techSchedules,
-  scheduledServiceIdsByDate,
   remainingServices,
 }) {
   const techSchedule = techSchedules[techId]
@@ -68,7 +60,6 @@ function tryScheduleForTech({
       tryScheduleInShift({
         service,
         shift,
-        scheduledServiceIdsByDate,
         techId,
       })
     ) {
@@ -97,7 +88,6 @@ function tryScheduleForTech({
       tryScheduleInShift({
         service,
         shift: newShift,
-        scheduledServiceIdsByDate,
         techId,
       })
     ) {
@@ -112,12 +102,7 @@ function tryScheduleForTech({
   return { scheduled: false, reason: `No time in any shift for Tech ${techId}` }
 }
 
-function tryScheduleInShift({
-  service,
-  shift,
-  scheduledServiceIdsByDate,
-  techId,
-}) {
+function tryScheduleInShift({ service, shift, techId }) {
   const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
   const shiftStart = new Date(shift.shiftStart)
@@ -170,10 +155,6 @@ function tryScheduleInShift({
       shift.services.push(scheduledService)
       shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-      const serviceDate = startTime.toISOString().split('T')[0]
-      const serviceKey = `${service.id}-${serviceDate}`
-      scheduledServiceIdsByDate.set(serviceKey, techId)
-
       // Update shift end time if necessary
       if (endTime > shiftEnd) {
         shift.shiftEnd = endTime
@@ -190,11 +171,7 @@ function tryScheduleInShift({
   return false
 }
 
-export function scheduleEnforcedService({
-  service,
-  techSchedules,
-  scheduledServiceIdsByDate,
-}) {
+export function scheduleEnforcedService({ service, techSchedules }) {
   const techId = service.tech.code
   if (!techSchedules[techId]) {
     techSchedules[techId] = { shifts: [] }
@@ -231,10 +208,6 @@ export function scheduleEnforcedService({
   }
   targetShift.services.push(scheduledService)
   targetShift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  const serviceDate = startTime.toISOString().split('T')[0]
-  const serviceKey = `${service.id}-${serviceDate}`
-  scheduledServiceIdsByDate.set(serviceKey, techId)
 
   return { scheduled: true }
 }
