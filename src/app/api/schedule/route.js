@@ -1,6 +1,6 @@
-import { scheduleServices } from '@/app/scheduling'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
+import { scheduleServices } from '../../scheduling/index.js'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)

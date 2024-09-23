@@ -1,10 +1,11 @@
 import { parentPort, workerData } from 'worker_threads'
+import { printSummary } from './logging.js'
 import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
 import {
   filterInvalidServices,
   prepareServicesToSchedule,
   sortServices,
-  sortServicesByProximity,
+  sortServicesByTimeAndProximity,
 } from './servicePreparation.js'
 
 async function runScheduling() {
@@ -15,7 +16,6 @@ async function runScheduling() {
   const invalidServices = filterInvalidServices(services)
   let servicesToSchedule = prepareServicesToSchedule(services)
   servicesToSchedule = sortServices(servicesToSchedule)
-  servicesToSchedule = sortServicesByProximity(servicesToSchedule)
 
   const totalServices = servicesToSchedule.length
   console.log(`Total services to schedule: ${totalServices}`)
@@ -24,47 +24,86 @@ async function runScheduling() {
   const techSchedules = {}
   const unassignedServices = []
 
-  for (const service of servicesToSchedule) {
-    let result
-    if (service.tech.enforced && service.tech.code) {
-      result = scheduleEnforcedService({
+  // Group services by date
+  const servicesByDate = groupServicesByDate(servicesToSchedule)
+
+  // Schedule services for each date
+  for (const [date, dateServices] of Object.entries(servicesByDate)) {
+    let remainingServices = [...dateServices]
+
+    while (remainingServices.length > 0) {
+      const sortedServices = sortServicesByTimeAndProximity(
+        remainingServices,
+        0.5,
+      ) // You can adjust the weight here
+      const service = sortedServices[0]
+
+      const result = scheduleService({
         service,
         techSchedules,
+        remainingServices: sortedServices.slice(1),
       })
-    } else {
-      result = scheduleService({
-        service,
-        techSchedules,
-        remainingServices: servicesToSchedule.slice(processedCount + 1),
-      })
-    }
 
-    if (!result.scheduled) {
-      unassignedServices.push({ ...service, reason: result.reason })
-    }
+      if (result.scheduled && result.techId) {
+        processedCount++
+        // Remove all scheduled services from remainingServices
+        remainingServices = remainingServices.filter(
+          s =>
+            !techSchedules[result.techId].shifts.some(shift =>
+              shift.services.some(
+                scheduledService => scheduledService.id === s.id,
+              ),
+            ),
+        )
+      } else {
+        unassignedServices.push({
+          ...service,
+          reason: result.reason,
+        })
+        remainingServices = remainingServices.filter(s => s.id !== service.id)
+      }
 
-    processedCount++
-    const progress = Math.round((processedCount / totalServices) * 100)
-    parentPort.postMessage({ type: 'progress', progress })
+      if (processedCount % 10 === 0) {
+        parentPort.postMessage({
+          type: 'progress',
+          progress: {
+            processed: processedCount,
+            total: totalServices,
+          },
+        })
+      }
+    }
   }
 
   console.timeEnd('Total scheduling time')
 
-  console.log(`Scheduling completed`)
-  console.log(`Total services processed: ${processedCount}`)
-  console.log(
-    `Scheduled services: ${processedCount - unassignedServices.length}`,
-  )
+  console.log(`Scheduled ${processedCount} services`)
   console.log(`Unassigned services: ${unassignedServices.length}`)
-  console.log(`Invalid services: ${invalidServices.length}`)
 
+  // Make sure we're sending both techSchedules and unassignedServices
   parentPort.postMessage({
     type: 'result',
-    data: {
-      techSchedules,
-      unassignedServices: unassignedServices.concat(invalidServices),
-    },
+    techSchedules,
+    unassignedServices: unassignedServices.concat(invalidServices),
   })
+
+  // Call printSummary here
+  printSummary({
+    techSchedules,
+    unassignedServices: unassignedServices.concat(invalidServices),
+  })
+}
+
+function groupServicesByDate(services) {
+  const servicesByDate = {}
+  for (const service of services) {
+    const date = service.time.range[0].toISOString().split('T')[0]
+    if (!servicesByDate[date]) {
+      servicesByDate[date] = []
+    }
+    servicesByDate[date].push(service)
+  }
+  return servicesByDate
 }
 
 runScheduling().catch(error => {

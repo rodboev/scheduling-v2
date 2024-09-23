@@ -18,7 +18,7 @@ export async function* scheduleServices(services) {
       })
 
       if (message.type === 'result') {
-        const { techSchedules, unassignedServices } = message.data
+        const { techSchedules, unassignedServices } = message
         console.log('Printing summary...')
         printSummary({ techSchedules, unassignedServices })
 

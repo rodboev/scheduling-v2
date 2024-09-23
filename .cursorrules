@@ -43,7 +43,9 @@ General preferences
 - Make minimal, focused changes.
 - Fully implement all requested functionality.
 - Provide clear and concise comments for complex logic.
+- Don't apologize or tell me that I'm right.
 - Don't remove comments unless the changes made make the comment no longer relevant.
 - Leave NO todo's, placeholders or missing pieces in the code.
 - Be sure to reference file names.
 - If you think there might not be a correct answer, you say so. If you do not know the answer, say so instead of guessing.
+- Analyze the attached schedule summary log output, which shows the results of the changes you made

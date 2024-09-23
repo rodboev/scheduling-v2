@@ -3,6 +3,9 @@ import {
   formatTime,
   calculateDuration,
 } from '../utils/dateHelpers.js'
+import { calcDistance } from './index.js'
+
+// Add this import
 
 export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
@@ -31,7 +34,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
-          shift.services.forEach(service => {
+          shift.services.forEach((service, index) => {
             const startTime = new Date(service.start)
             const endTime = new Date(service.end)
             const date = formatDate(startTime)
@@ -44,8 +47,21 @@ export function printSummary({ techSchedules, unassignedServices }) {
                     formatTime(new Date(service.time.range[1])),
                   ].join(' - ')
                 : 'Invalid'
+
+            let distanceStr = ''
+            if (index > 0) {
+              let distance
+              if (service.distanceFromPrevious !== undefined) {
+                distance = service.distanceFromPrevious
+              } else {
+                const prevService = shift.services[index - 1]
+                distance = calcDistance(prevService.location, service.location)
+              }
+              distanceStr = `(distance: ${distance.toFixed(2)} mi)`
+            }
+
             console.log(
-              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]})`,
+              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) ${distanceStr}`,
             )
           })
 

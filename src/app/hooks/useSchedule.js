@@ -95,7 +95,7 @@ export function useSchedule(currentViewRange) {
       } else if (data.scheduledServices && data.unassignedServices) {
         eventSource.close()
         dataRef.current = data
-        setStatus('Processing data...')
+        setStatus('Rendering...')
         setResult({
           assignedServices: [],
           resources: [],

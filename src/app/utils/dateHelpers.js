@@ -31,3 +31,16 @@ export function max(...dates) {
 export function min(...dates) {
   return new Date(Math.min(...dates.map(d => d.getTime())))
 }
+
+export function differenceInHours(dateLeft, dateRight) {
+  const diffInMs = Math.abs(dateLeft - dateRight)
+  return diffInMs / (1000 * 60 * 60)
+}
+
+export function isAfter(date1, date2) {
+  return date1.getTime() > date2.getTime()
+}
+
+export function isBefore(date1, date2) {
+  return date1.getTime() < date2.getTime()
+}
