@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useEffect } from 'react'
+import React, { useMemo, useCallback } from 'react'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
 import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
@@ -9,7 +9,6 @@ import UnassignedServices from '@/app/components/UnassignedServices'
 import { Button } from '@/app/components/ui/button'
 import { Progress } from '@/app/components/ui/progress'
 import { useCalendar } from '@/app/hooks/useCalendar'
-import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { useSchedule } from '@/app/hooks/useSchedule'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
@@ -21,8 +20,14 @@ const localizer = dayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
   const defaultDate = new Date(2024, 8, 2)
-  const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
-    useCalendar(defaultDate)
+  const {
+    date,
+    view,
+    currentViewRange,
+    handleView,
+    handleNavigate,
+    handleRangeChange,
+  } = useCalendar(defaultDate)
 
   const {
     assignedServices,
@@ -30,22 +35,40 @@ export default function BigCalendar() {
     filteredUnassignedServices,
     isScheduling,
     schedulingProgress,
+    schedulingStatus,
+    updateServiceEnforcement,
+    updateAllServicesEnforcement,
+    allServicesEnforced,
     refetchSchedule,
   } = useSchedule(currentViewRange)
 
-  const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
-    useEnforcement(assignedServices, refetchSchedule)
-
-  const handleForceReschedule = () => {
+  const handleForceReschedule = useCallback(() => {
     refetchSchedule()
-  }
+  }, [refetchSchedule])
+
+  const eventComponent = useCallback(
+    props => (
+      <Service
+        service={props.event}
+        updateServiceEnforcement={updateServiceEnforcement}
+      />
+    ),
+    [updateServiceEnforcement],
+  )
+
+  const calendarComponents = useMemo(
+    () => ({
+      event: eventComponent,
+    }),
+    [eventComponent],
+  )
 
   return (
     <div className="flex h-screen">
       {isScheduling && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/50">
           <div className="w-80 space-y-5 rounded-lg border p-5 backdrop-blur-md">
-            <p className="text-center">Scheduling...</p>
+            <p className="text-center">{schedulingStatus}</p>
             <Progress
               value={schedulingProgress}
               className="w-full"
@@ -89,16 +112,7 @@ export default function BigCalendar() {
             formats={{
               eventTimeRangeFormat: () => null,
             }}
-            components={{
-              event: props => {
-                return (
-                  <Service
-                    service={props.event}
-                    updateServiceEnforcement={updateServiceEnforcement}
-                  />
-                )
-              },
-            }}
+            components={calendarComponents}
           />
         </div>
       </div>
