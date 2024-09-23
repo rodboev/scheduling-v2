@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
+const BATCH_SIZE = 100 // Adjust this value based on performance
+
 export function useSchedule(currentViewRange) {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
@@ -11,8 +13,7 @@ export function useSchedule(currentViewRange) {
     resources: [],
     filteredUnassignedServices: [],
   })
-  const renderStartTime = useRef(null)
-  const processingStartTime = useRef(null)
+  const dataRef = useRef(null)
 
   const dateRange = useMemo(
     () => ({
@@ -22,51 +23,59 @@ export function useSchedule(currentViewRange) {
     [currentViewRange],
   )
 
-  const processScheduleData = useCallback(data => {
-    const { scheduledServices, unassignedServices } = data
+  const processDataBatch = useCallback(startIndex => {
+    const { scheduledServices, unassignedServices } = dataRef.current
+    const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
 
-    console.log('Start processing schedule data')
-    processingStartTime.current = performance.now()
+    const newAssignedServices = scheduledServices
+      .slice(startIndex, endIndex)
+      .map(service => ({
+        ...service,
+        start: new Date(service.start),
+        end: new Date(service.end),
+      }))
 
-    const formattedScheduledServices = scheduledServices.map(service => ({
-      ...service,
-      start: new Date(service.start),
-      end: new Date(service.end),
+    setResult(prevResult => ({
+      ...prevResult,
+      assignedServices: [
+        ...prevResult.assignedServices,
+        ...newAssignedServices,
+      ],
     }))
 
-    const techSet = new Set(
-      formattedScheduledServices.map(service => service.resourceId),
-    )
-    const resources = Array.from(techSet)
-      .map(techId => ({ id: techId, title: techId }))
-      .sort((a, b) => {
-        const aIsGeneric = a.id.startsWith('Tech ')
-        const bIsGeneric = b.id.startsWith('Tech ')
-        if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
-        return aIsGeneric
-          ? parseInt(a.id.split(' ')[1]) - parseInt(b.id.split(' ')[1])
-          : a.id.localeCompare(b.id)
-      })
+    if (endIndex < scheduledServices.length) {
+      setTimeout(() => processDataBatch(endIndex), 0)
+    } else {
+      // Process unassigned services and resources
+      const filteredUnassignedServices = unassignedServices.map(service => ({
+        ...service,
+        start: new Date(service.start),
+        end: new Date(service.end),
+      }))
 
-    const filteredUnassignedServices = unassignedServices.map(service => ({
-      ...service,
-      start: new Date(service.start),
-      end: new Date(service.end),
-    }))
+      const techSet = new Set(
+        scheduledServices.map(service => service.resourceId),
+      )
+      const resources = Array.from(techSet)
+        .map(techId => ({ id: techId, title: techId }))
+        .sort((a, b) => {
+          const aIsGeneric = a.id.startsWith('Tech ')
+          const bIsGeneric = b.id.startsWith('Tech ')
+          if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
+          return aIsGeneric
+            ? parseInt(a.id.split(' ')[1]) - parseInt(b.id.split(' ')[1])
+            : a.id.localeCompare(b.id)
+        })
 
-    setResult({
-      assignedServices: formattedScheduledServices,
-      resources,
-      filteredUnassignedServices,
-    })
+      setResult(prevResult => ({
+        ...prevResult,
+        filteredUnassignedServices,
+        resources,
+      }))
 
-    const processingEndTime = performance.now()
-    console.log(
-      `Data processing took ${processingEndTime - processingStartTime.current} ms`,
-    )
-
-    renderStartTime.current = performance.now()
-    setLoading(false)
+      setLoading(false)
+      setStatus('')
+    }
   }, [])
 
   const fetchSchedule = useCallback(async () => {
@@ -84,12 +93,15 @@ export function useSchedule(currentViewRange) {
         setProgress(data.progress)
         setStatus('Scheduling...')
       } else if (data.scheduledServices && data.unassignedServices) {
-        setStatus('Rendering...')
-        // Introduce a slight delay before processing data
-        setTimeout(() => {
-          processScheduleData(data)
-        }, 10)
         eventSource.close()
+        dataRef.current = data
+        setStatus('Processing data...')
+        setResult({
+          assignedServices: [],
+          resources: [],
+          filteredUnassignedServices: [],
+        })
+        processDataBatch(0)
       }
     }
 
@@ -99,22 +111,11 @@ export function useSchedule(currentViewRange) {
       setLoading(false)
       setStatus('Error occurred')
     }
-  }, [dateRange, processScheduleData])
+  }, [dateRange, processDataBatch])
 
   useEffect(() => {
     fetchSchedule()
   }, [fetchSchedule])
-
-  useEffect(() => {
-    if (!loading && renderStartTime.current) {
-      const renderEndTime = performance.now()
-      console.log(
-        `Rendering took ${renderEndTime - renderStartTime.current} ms`,
-      )
-      renderStartTime.current = null
-      setStatus('')
-    }
-  }, [loading])
 
   const allServices = useMemo(() => {
     return [...result.assignedServices, ...result.filteredUnassignedServices]
@@ -123,7 +124,6 @@ export function useSchedule(currentViewRange) {
   const {
     updateServiceEnforcement,
     updateAllServicesEnforcement,
-    enforcedServicesList,
     allServicesEnforced,
   } = useEnforcement(allServices, fetchSchedule)
 
