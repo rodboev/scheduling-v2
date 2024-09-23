@@ -9,6 +9,7 @@ import {
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
+import { Car } from 'lucide-react'
 
 export default function Service({ service, updateServiceEnforcement }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -79,6 +80,19 @@ export default function Service({ service, updateServiceEnforcement }) {
             </div>
           </a>
         </h3>
+
+        {service?.distanceFromPrevious && (
+          <p className="mb-2">
+            <div className="flex items-center gap-x-1">
+              <span>
+                <Car />
+              </span>
+              <span className="font-bold">
+                {service.distanceFromPrevious.toFixed(2)} mi
+              </span>
+            </div>
+          </p>
+        )}
 
         <p className="mb-2">
           {service.location.address}

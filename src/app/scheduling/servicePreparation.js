@@ -66,7 +66,9 @@ export function sortServicesByProximity(services) {
       }
     }
 
-    sortedServices.push(remainingServices.splice(closestServiceIndex, 1)[0])
+    const closestService = remainingServices.splice(closestServiceIndex, 1)[0]
+    closestService.distanceFromPrevious = minDistance
+    sortedServices.push(closestService)
   }
 
   return sortedServices
