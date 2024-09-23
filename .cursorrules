@@ -8,6 +8,7 @@ Code Style and Structure
 - Use functional and declarative programming patterns; avoid classes.
 - Prefer iteration and modularization over code duplication.
 - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
+- Keep my comments and console.log statements.
 
 Naming and Formatting
 
@@ -39,6 +40,7 @@ Error Handling and Validation
 
 General preferences
 
+- Make minimal, focused changes.
 - Fully implement all requested functionality.
 - Provide clear and concise comments for complex logic.
 - Don't remove comments unless the changes made make the comment no longer relevant.

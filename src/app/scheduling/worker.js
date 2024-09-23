@@ -4,6 +4,7 @@ import {
   filterInvalidServices,
   prepareServicesToSchedule,
   sortServices,
+  sortServicesByProximity,
 } from './servicePreparation.js'
 
 async function runScheduling() {
@@ -12,8 +13,9 @@ async function runScheduling() {
   console.time('Total scheduling time')
 
   const invalidServices = filterInvalidServices(services)
-  const servicesToSchedule = prepareServicesToSchedule(services)
-  sortServices(servicesToSchedule)
+  let servicesToSchedule = prepareServicesToSchedule(services)
+  servicesToSchedule = sortServices(servicesToSchedule)
+  servicesToSchedule = sortServicesByProximity(servicesToSchedule)
 
   const totalServices = servicesToSchedule.length
   console.log(`Total services to schedule: ${totalServices}`)

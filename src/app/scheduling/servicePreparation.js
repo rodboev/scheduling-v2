@@ -1,3 +1,5 @@
+import { calcDistance } from './index.js'
+
 export function filterInvalidServices(services) {
   return services
     .filter(
@@ -25,7 +27,7 @@ export function prepareServicesToSchedule(services) {
 }
 
 export function sortServices(services) {
-  services.sort((a, b) => {
+  return services.sort((a, b) => {
     const aDate = new Date(a.time.range[0])
     const bDate = new Date(b.time.range[0])
     aDate.setHours(0, 0, 0, 0)
@@ -37,4 +39,35 @@ export function sortServices(services) {
     const bWindowSize = new Date(b.time.range[1]) - new Date(b.time.range[0])
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
+}
+
+export function sortServicesByProximity(services) {
+  if (services.length <= 1) return services
+
+  const sortedServices = [services[0]]
+  const remainingServices = services.slice(1)
+
+  while (remainingServices.length > 0) {
+    const lastService = sortedServices[sortedServices.length - 1]
+    let closestServiceIndex = 0
+    let minDistance = calcDistance(
+      lastService.location,
+      remainingServices[0].location,
+    )
+
+    for (let i = 1; i < remainingServices.length; i++) {
+      const distance = calcDistance(
+        lastService.location,
+        remainingServices[i].location,
+      )
+      if (distance < minDistance) {
+        minDistance = distance
+        closestServiceIndex = i
+      }
+    }
+
+    sortedServices.push(remainingServices.splice(closestServiceIndex, 1)[0])
+  }
+
+  return sortedServices
 }

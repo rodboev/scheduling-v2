@@ -43,10 +43,7 @@ export default function Service({ service, updateServiceEnforcement }) {
           <span className="inline-block text-sm leading-none">
             {formatTimeRange(service.start, service.end)} —
           </span>
-          <span className="text-sm leading-none">
-            {' '}
-            {capitalize(service.company)}{' '}
-          </span>
+          <span className="text-sm leading-none"> {service.company}</span>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -82,6 +79,12 @@ export default function Service({ service, updateServiceEnforcement }) {
             </div>
           </a>
         </h3>
+
+        <p className="mb-2">
+          {service.location.address}
+          <br />
+          {service.location.address2}
+        </p>
 
         <p className="whitespace-nowrap">
           {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}

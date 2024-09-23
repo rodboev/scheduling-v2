@@ -1,4 +1,5 @@
 // src/app/api/services/route.js
+import { capitalize } from '@/app/utils/capitalize'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
@@ -65,6 +66,12 @@ const BASE_QUERY = `
       ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
       Locations.LocationCode,
+			Locations.Latitude,
+			Locations.Longitude,
+			Locations.Address,
+			Locations.City,
+			Locations.State,
+			Locations.Zip,
       Schedules.ScheduleID AS ScheduleID,
       Schedules.Code AS ScheduleCode,
       Schedules.Description AS ScheduleDescription,
@@ -113,8 +120,12 @@ function transformServiceSetup(setup) {
     location: {
       code: setup.LocationCode,
       id: setup.LocationID,
+      latitude: setup.Latitude,
+      longitude: setup.Longitude,
+      address: capitalize(setup.Address),
+      address2: `${capitalize(setup.City)}, ${setup.State} ${setup.Zip}`,
     },
-    company: setup.Company,
+    company: capitalize(setup.Company),
     schedule: {
       code: setup.ScheduleCode,
       string: setup.ScheduleString,
