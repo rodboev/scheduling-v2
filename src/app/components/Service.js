@@ -87,10 +87,15 @@ export default function Service({ service, updateServiceEnforcement }) {
               <span>
                 <Car />
               </span>
-              <span className="font-bold">
+              <span className="whitespace-nowrap font-bold">
                 {service.distanceFromPrevious.toFixed(2)} mi
               </span>
             </div>
+            {service.previousCompany && (
+              <div className="text-xs text-gray-600">
+                from {service.previousCompany}
+              </div>
+            )}
           </p>
         )}
 
