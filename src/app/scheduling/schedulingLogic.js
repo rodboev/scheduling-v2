@@ -1,5 +1,6 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
+import { calcDistance } from './index.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
@@ -19,7 +20,23 @@ export function scheduleService({ service, techSchedules, remainingServices }) {
       remainingServices,
     })
 
-    if (result.scheduled) return result
+    if (result.scheduled) {
+      // Find the previous service for this tech
+      const techSchedule = techSchedules[techId]
+      const allServices = techSchedule.shifts.flatMap(shift => shift.services)
+      const scheduledServiceIndex = allServices.findIndex(
+        s => s.id === service.id,
+      )
+      if (scheduledServiceIndex > 0) {
+        const previousService = allServices[scheduledServiceIndex - 1]
+        service.previousCompany = previousService.company
+        service.distanceFromPrevious = calcDistance(
+          previousService.location,
+          service.location,
+        )
+      }
+      return result
+    }
   }
 
   // If we couldn't schedule on existing techs, create a new tech and try to schedule
@@ -56,13 +73,14 @@ function tryScheduleForTech({
     shiftIndex++
   ) {
     const shift = techSchedule.shifts[shiftIndex]
-    if (
-      tryScheduleInShift({
-        service,
-        shift,
-        techId,
-      })
-    ) {
+    const result = tryScheduleInShift({
+      service,
+      shift,
+      techId,
+    })
+
+    if (result.scheduled) {
+      updateDistanceInfo(shift, result.index)
       return {
         scheduled: true,
         reason: `Scheduled in existing shift for Tech ${techId}`,
@@ -70,7 +88,7 @@ function tryScheduleForTech({
     }
   }
 
-  // Check if we can create a new shift (less than 5 shifts this week)
+  // If we couldn't schedule in existing shifts, try creating a new shift
   const weekStart = new Date(service.time.range[0])
   weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Set to the start of the week (Sunday)
   weekStart.setHours(0, 0, 0, 0)
@@ -84,14 +102,9 @@ function tryScheduleForTech({
       remainingServices,
     })
 
-    if (
-      tryScheduleInShift({
-        service,
-        shift: newShift,
-        techId,
-      })
-    ) {
+    if (tryScheduleInShift({ service, shift: newShift, techId })) {
       techSchedule.shifts.push(newShift)
+      updateDistanceInfo(newShift, newShift.services.length - 1)
       return {
         scheduled: true,
         reason: `Scheduled in new shift for Tech ${techId}`,
@@ -152,15 +165,20 @@ function tryScheduleInShift({ service, shift, techId }) {
         end: endTime,
       }
 
-      shift.services.push(scheduledService)
-      shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
+      // Find the best position to insert the service based on geographical proximity
+      const insertIndex = findBestInsertionPoint(
+        shift.services,
+        scheduledService,
+      )
+      shift.services.splice(insertIndex, 0, scheduledService)
 
       // Update shift end time if necessary
       if (endTime > shiftEnd) {
         shift.shiftEnd = endTime
       }
 
-      return true
+      updateDistanceInfo(shift)
+      return { scheduled: true }
     }
 
     // If we can't schedule at this time, try 15 minutes later
@@ -169,6 +187,64 @@ function tryScheduleInShift({ service, shift, techId }) {
 
   // If we've tried all possible start times and couldn't schedule, return false
   return false
+}
+
+function findBestInsertionPoint(services, newService) {
+  if (services.length === 0) return 0
+
+  let bestIndex = 0
+  let minDistanceIncrease = Infinity
+
+  for (let i = 0; i <= services.length; i++) {
+    let distanceIncrease = 0
+
+    if (i > 0) {
+      distanceIncrease += calcDistance(
+        services[i - 1].location,
+        newService.location,
+      )
+    }
+    if (i < services.length) {
+      distanceIncrease += calcDistance(
+        newService.location,
+        services[i].location,
+      )
+    }
+    if (i > 0 && i < services.length) {
+      distanceIncrease -= calcDistance(
+        services[i - 1].location,
+        services[i].location,
+      )
+    }
+
+    if (distanceIncrease < minDistanceIncrease) {
+      minDistanceIncrease = distanceIncrease
+      bestIndex = i
+    }
+  }
+
+  return bestIndex
+}
+
+function updateDistanceInfo(shift) {
+  const services = shift.services
+  services.sort((a, b) => new Date(a.start) - new Date(b.start))
+
+  for (let i = 1; i < services.length; i++) {
+    const currentService = services[i]
+    const previousService = services[i - 1]
+    currentService.previousCompany = previousService.company
+    currentService.distanceFromPrevious = calcDistance(
+      previousService.location,
+      currentService.location,
+    )
+  }
+
+  // Clear distance info for the first service in the shift
+  if (services.length > 0) {
+    delete services[0].previousCompany
+    delete services[0].distanceFromPrevious
+  }
 }
 
 export function scheduleEnforcedService({ service, techSchedules }) {
@@ -208,6 +284,8 @@ export function scheduleEnforcedService({ service, techSchedules }) {
   }
   targetShift.services.push(scheduledService)
   targetShift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
+
+  updateDistanceInfo(targetShift)
 
   return { scheduled: true }
 }
