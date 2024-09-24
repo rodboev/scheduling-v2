@@ -4,10 +4,10 @@ import React, { useMemo, useCallback } from 'react'
 import EnforceSwitch from '@/app/components/EnforceSwitch'
 import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
+import ProgressBar from '@/app/components/ProgressBar'
 import Service from '@/app/components/Service'
 import UnassignedServices from '@/app/components/UnassignedServices'
 import { Button } from '@/app/components/ui/button'
-import { Progress } from '@/app/components/ui/progress'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useSchedule } from '@/app/hooks/useSchedule'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
@@ -66,15 +66,10 @@ export default function BigCalendar() {
   return (
     <div className="flex h-screen">
       {isScheduling && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/50">
-          <div className="w-80 space-y-5 rounded-lg border p-5 backdrop-blur-md">
-            <p className="text-center">{schedulingStatus}</p>
-            <Progress
-              value={schedulingProgress}
-              className="w-full"
-            />
-          </div>
-        </div>
+        <ProgressBar
+          schedulingStatus={schedulingStatus}
+          schedulingProgress={schedulingProgress}
+        />
       )}
       <div className="w-64 border-r">
         <UnassignedServices services={filteredUnassignedServices} />

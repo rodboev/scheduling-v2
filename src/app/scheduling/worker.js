@@ -1,5 +1,4 @@
 import { parentPort, workerData } from 'worker_threads'
-import { printSummary } from './logging.js'
 import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
 import {
   filterInvalidServices,
@@ -11,23 +10,46 @@ import {
 async function runScheduling() {
   const { services } = workerData
 
+  const startTime = performance.now()
   console.time('Total scheduling time')
 
   const invalidServices = filterInvalidServices(services)
   let servicesToSchedule = prepareServicesToSchedule(services)
   servicesToSchedule = sortServices(servicesToSchedule)
 
-  const totalServices = servicesToSchedule.length
-  console.log(`Total services to schedule: ${totalServices}`)
+  const totalServices = services.length
+  console.log(`Total services:`, totalServices)
 
   let processedCount = 0
   const techSchedules = {}
   const unassignedServices = []
 
-  // Group services by date
+  function updateProgress() {
+    parentPort.postMessage({
+      type: 'progress',
+      progress: processedCount / totalServices,
+    })
+  }
+
+  // Schedule enforced services first
+  const enforcedServices = servicesToSchedule.filter(
+    s => s.tech && s.tech.enforced,
+  )
+  for (const service of enforcedServices) {
+    scheduleEnforcedService({ service, techSchedules })
+    processedCount++
+    updateProgress()
+  }
+
+  // Remove enforced services from servicesToSchedule
+  servicesToSchedule = servicesToSchedule.filter(
+    s => !s.tech || !s.tech.enforced,
+  )
+
+  // Group remaining services by date
   const servicesByDate = groupServicesByDate(servicesToSchedule)
 
-  // Schedule services for each date
+  // Schedule remaining services for each date
   for (const [date, dateServices] of Object.entries(servicesByDate)) {
     let remainingServices = [...dateServices]
 
@@ -35,7 +57,7 @@ async function runScheduling() {
       const sortedServices = sortServicesByTimeAndProximity(
         remainingServices,
         0.5,
-      ) // You can adjust the weight here
+      )
       const service = sortedServices[0]
 
       const result = scheduleService({
@@ -44,9 +66,10 @@ async function runScheduling() {
         remainingServices: sortedServices.slice(1),
       })
 
+      processedCount++
+      updateProgress()
+
       if (result.scheduled && result.techId) {
-        processedCount++
-        // Remove all scheduled services from remainingServices
         remainingServices = remainingServices.filter(
           s =>
             !techSchedules[result.techId].shifts.some(shift =>
@@ -62,35 +85,45 @@ async function runScheduling() {
         })
         remainingServices = remainingServices.filter(s => s.id !== service.id)
       }
-
-      if (processedCount % 10 === 0) {
-        parentPort.postMessage({
-          type: 'progress',
-          progress: {
-            processed: processedCount,
-            total: totalServices,
-          },
-        })
-      }
     }
   }
 
+  const endTime = performance.now()
   console.timeEnd('Total scheduling time')
 
-  console.log(`Scheduled ${processedCount} services`)
-  console.log(`Unassigned services: ${unassignedServices.length}`)
+  const scheduledCount = Object.values(techSchedules).reduce(
+    (total, tech) =>
+      total +
+      tech.shifts.reduce(
+        (shiftTotal, shift) => shiftTotal + shift.services.length,
+        0,
+      ),
+    0,
+  )
 
-  // Make sure we're sending both techSchedules and unassignedServices
+  const schedulingStats = {
+    totalServices,
+    processedCount,
+    scheduledCount,
+    unassignedCount: unassignedServices.length,
+    invalidCount: invalidServices.length,
+    totalTime: endTime - startTime,
+    enforcedServices: enforcedServices.length,
+  }
+
+  console.log(`Scheduling completed`)
+  console.log(`Total services:`, schedulingStats.totalServices)
+  console.log(`Processed services:`, schedulingStats.processedCount)
+  console.log(`Scheduled services:`, schedulingStats.scheduledCount)
+  console.log(`Unassigned services:`, schedulingStats.unassignedCount)
+  console.log(`Invalid services:`, schedulingStats.invalidCount)
+  console.log(`Enforced services:`, schedulingStats.enforcedServices)
+
   parentPort.postMessage({
     type: 'result',
     techSchedules,
     unassignedServices: unassignedServices.concat(invalidServices),
-  })
-
-  // Call printSummary here
-  printSummary({
-    techSchedules,
-    unassignedServices: unassignedServices.concat(invalidServices),
+    schedulingStats,
   })
 }
 

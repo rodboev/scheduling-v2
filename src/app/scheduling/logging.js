@@ -7,7 +7,11 @@ import { calcDistance } from './index.js'
 
 // Add this import
 
-export function printSummary({ techSchedules, unassignedServices }) {
+export function printSummary({
+  techSchedules,
+  unassignedServices,
+  schedulingStats,
+}) {
   console.log('Schedule Summary:\n')
 
   let techSummaries = []
@@ -128,6 +132,23 @@ export function printSummary({ techSchedules, unassignedServices }) {
   console.log(
     `Total hours (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
   )
+
+  // Add the following logging from the schedule route
+  if (schedulingStats) {
+    const {
+      totalTime,
+      totalServices,
+      enforcedServices,
+      scheduledCount,
+      unassignedCount,
+    } = schedulingStats
+    console.log(`Services fetched: ${totalServices}`)
+    console.log(`Enforced services: ${enforcedServices}`)
+    console.log(`Scheduling completed in ${totalTime.toFixed(2)} ms`)
+    console.log(
+      `Scheduled services: ${scheduledCount}, Unassigned: ${unassignedCount}`,
+    )
+  }
 }
 
 // Helper function to format hours

@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { scheduleServices } from '../../scheduling/index.js'
 
 export async function GET(request) {
+  console.log('Schedule API route called')
+
   const { searchParams } = new URL(request.url)
   const start = searchParams.get('start')
   const end = searchParams.get('end')
@@ -20,7 +22,6 @@ export async function GET(request) {
     async start(controller) {
       try {
         console.log('Fetching services...')
-        const fetchStartTime = performance.now()
         const servicesResponse = await axios.get(
           `http://localhost:${process.env.PORT}/api/services`,
           {
@@ -28,18 +29,8 @@ export async function GET(request) {
           },
         )
         const services = servicesResponse.data
-        const fetchEndTime = performance.now()
-        console.log(
-          `Services fetched in ${fetchEndTime - fetchStartTime} ms:`,
-          services.length,
-        )
-        console.log(
-          'Enforced services:',
-          services.filter(s => s.tech.enforced).length,
-        )
 
         console.log('Scheduling services...')
-        const scheduleStartTime = performance.now()
         for await (const result of scheduleServices(services)) {
           if (result.type === 'progress') {
             controller.enqueue(
@@ -49,16 +40,6 @@ export async function GET(request) {
             )
           } else if (result.type === 'result') {
             const { scheduledServices, unassignedServices } = result.data
-            const scheduleEndTime = performance.now()
-            console.log(
-              `Scheduling completed in ${parseInt(scheduleEndTime - scheduleStartTime)} ms`,
-            )
-            console.log(
-              'Scheduled services:',
-              scheduledServices.length,
-              'Unassigned:',
-              unassignedServices.length,
-            )
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,

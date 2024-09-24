@@ -18,9 +18,9 @@ export async function* scheduleServices(services) {
       })
 
       if (message.type === 'result') {
-        const { techSchedules, unassignedServices } = message
+        const { techSchedules, unassignedServices, schedulingStats } = message
         console.log('Printing summary...')
-        printSummary({ techSchedules, unassignedServices })
+        printSummary({ techSchedules, unassignedServices, schedulingStats })
 
         const scheduledServices = Object.entries(techSchedules).flatMap(
           ([techId, schedule]) =>
