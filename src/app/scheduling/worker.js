@@ -46,38 +46,45 @@ async function runScheduling() {
     s => !s.tech || !s.tech.enforced,
   )
 
-  // Schedule remaining services
-  while (servicesToSchedule.length > 0) {
-    const sortedServices = sortServicesByTimeAndProximity(
-      servicesToSchedule,
-      0.5,
-    )
-    const service = sortedServices[0]
+  // Group remaining services by date
+  const servicesByDate = groupServicesByDate(servicesToSchedule)
 
-    const result = scheduleService({
-      service,
-      techSchedules,
-      remainingServices: sortedServices.slice(1),
-    })
+  // Schedule remaining services for each date
+  for (const [date, dateServices] of Object.entries(servicesByDate)) {
+    let remainingServices = [...dateServices]
 
-    processedCount++
-    updateProgress()
-
-    if (result.scheduled && result.techId) {
-      servicesToSchedule = servicesToSchedule.filter(
-        s =>
-          !techSchedules[result.techId].shifts.some(shift =>
-            shift.services.some(
-              scheduledService => scheduledService.id === s.id,
-            ),
-          ),
+    while (remainingServices.length > 0) {
+      const sortedServices = sortServicesByTimeAndProximity(
+        remainingServices,
+        0.5,
       )
-    } else {
-      unassignedServices.push({
-        ...service,
-        reason: result.reason,
+      const service = sortedServices[0]
+
+      const result = scheduleService({
+        service,
+        techSchedules,
+        remainingServices: sortedServices.slice(1),
       })
-      servicesToSchedule = servicesToSchedule.filter(s => s.id !== service.id)
+
+      processedCount++
+      updateProgress()
+
+      if (result.scheduled && result.techId) {
+        remainingServices = remainingServices.filter(
+          s =>
+            !techSchedules[result.techId].shifts.some(shift =>
+              shift.services.some(
+                scheduledService => scheduledService.id === s.id,
+              ),
+            ),
+        )
+      } else {
+        unassignedServices.push({
+          ...service,
+          reason: result.reason,
+        })
+        remainingServices = remainingServices.filter(s => s.id !== service.id)
+      }
     }
   }
 
@@ -118,6 +125,18 @@ async function runScheduling() {
     unassignedServices: unassignedServices.concat(invalidServices),
     schedulingStats,
   })
+}
+
+function groupServicesByDate(services) {
+  const servicesByDate = {}
+  for (const service of services) {
+    const date = service.time.range[0].toISOString().split('T')[0]
+    if (!servicesByDate[date]) {
+      servicesByDate[date] = []
+    }
+    servicesByDate[date].push(service)
+  }
+  return servicesByDate
 }
 
 runScheduling().catch(error => {
