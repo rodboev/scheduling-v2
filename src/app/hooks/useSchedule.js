@@ -89,10 +89,10 @@ export function useSchedule(currentViewRange) {
 
     eventSource.onmessage = event => {
       const data = JSON.parse(event.data)
-      if (data.progress !== undefined) {
-        setProgress(data.progress) // This value is now between 0 and 1
+      if (data.type === 'progress') {
+        setProgress(data.progress)
         setStatus('Scheduling...')
-      } else if (data.scheduledServices && data.unassignedServices) {
+      } else if (data.type === 'result') {
         eventSource.close()
         dataRef.current = data
         setStatus('Rendering...')

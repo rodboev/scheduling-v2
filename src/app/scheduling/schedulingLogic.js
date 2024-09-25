@@ -1,10 +1,7 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import { calcDistance } from './index.js'
-import {
-  sortServicesByTimeAndProximity,
-  findClosestService,
-} from './servicePreparation.js'
+import { sortServicesByTime, findClosestService } from './servicePreparation.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
@@ -112,10 +109,7 @@ function tryScheduleForTech({
     }
 
     // Then, fill any remaining gaps with other services
-    const sortedRemainingServices = sortServicesByTimeAndProximity(
-      remainingServices,
-      0.3,
-    ) // Prioritize time more than location
+    const sortedRemainingServices = sortServicesByTime(remainingServices, 0.3) // Prioritize time more than location
     for (const service of sortedRemainingServices) {
       const result = tryScheduleInShift({
         service,
@@ -232,7 +226,7 @@ function tryScheduleInShift({ service, shift, techId, remainingServices }) {
       }
 
       // Try to schedule nearby services in the same shift
-      scheduleNearbyServices(shift, remainingServices, techId)
+      // scheduleNearbyServices(shift, remainingServices, techId)
 
       return { scheduled: true }
     }
@@ -278,10 +272,7 @@ function scheduleNearbyServices(shift, remainingServices, techId) {
   }
 
   // Then, fill any remaining gaps with other services
-  const sortedRemainingServices = sortServicesByTimeAndProximity(
-    remainingServices,
-    0.3,
-  ) // Prioritize time more than location
+  const sortedRemainingServices = sortServicesByTime(remainingServices, 0.3) // Prioritize time more than location
   for (const service of sortedRemainingServices) {
     if (getShiftDuration(shift) >= MAX_SHIFT_HOURS) {
       break

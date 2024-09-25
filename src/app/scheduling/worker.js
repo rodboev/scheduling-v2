@@ -3,8 +3,7 @@ import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
 import {
   filterInvalidServices,
   prepareServicesToSchedule,
-  sortServices,
-  sortServicesByTimeAndProximity,
+  sortServicesByTime,
 } from './servicePreparation.js'
 
 async function runScheduling() {
@@ -15,7 +14,7 @@ async function runScheduling() {
 
   const invalidServices = filterInvalidServices(services)
   let servicesToSchedule = prepareServicesToSchedule(services)
-  servicesToSchedule = sortServices(servicesToSchedule)
+  servicesToSchedule = sortServicesByTime(servicesToSchedule)
 
   const totalServices = services.length
   console.log(`Total services:`, totalServices)
@@ -24,69 +23,80 @@ async function runScheduling() {
   const techSchedules = {}
   const unassignedServices = []
 
-  function updateProgress() {
-    parentPort.postMessage({
-      type: 'progress',
-      progress: processedCount / totalServices,
-    })
-  }
-
-  // Schedule enforced services first
-  const enforcedServices = servicesToSchedule.filter(
-    s => s.tech && s.tech.enforced,
-  )
-  for (const service of enforcedServices) {
-    scheduleEnforcedService({ service, techSchedules })
-    processedCount++
-    updateProgress()
-  }
-
-  // Remove enforced services from servicesToSchedule
-  servicesToSchedule = servicesToSchedule.filter(
-    s => !s.tech || !s.tech.enforced,
-  )
-
-  // Group remaining services by date
-  const servicesByDate = groupServicesByDate(servicesToSchedule)
-
-  // Schedule remaining services for each date
-  for (const [date, dateServices] of Object.entries(servicesByDate)) {
-    let remainingServices = [...dateServices]
-
-    while (remainingServices.length > 0) {
-      const sortedServices = sortServicesByTimeAndProximity(
-        remainingServices,
-        0.5,
-      )
-      const service = sortedServices[0]
-
-      const result = scheduleService({
+  for (const service of servicesToSchedule) {
+    let result
+    if (service.tech.enforced && service.tech.code) {
+      result = scheduleEnforcedService({
         service,
         techSchedules,
-        remainingServices: sortedServices.slice(1),
       })
+    } else {
+      result = scheduleService({
+        service,
+        techSchedules,
+        remainingServices: servicesToSchedule.slice(processedCount + 1),
+      })
+    }
 
-      processedCount++
-      updateProgress()
+    if (!result.scheduled) {
+      unassignedServices.push({ ...service, reason: result.reason })
+    }
 
-      if (result.scheduled && result.techId) {
-        remainingServices = remainingServices.filter(
-          s =>
-            !techSchedules[result.techId].shifts.some(shift =>
-              shift.services.some(
-                scheduledService => scheduledService.id === s.id,
-              ),
-            ),
-        )
-      } else {
-        unassignedServices.push({
-          ...service,
-          reason: result.reason,
-        })
-        remainingServices = remainingServices.filter(s => s.id !== service.id)
-      }
+    processedCount++
+    if (processedCount % 10 === 0) {
+      const progress = processedCount / totalServices
+      parentPort.postMessage({ type: 'progress', progress })
     }
   }
+
+  // // Schedule enforced services first
+  // const enforcedServices = servicesToSchedule.filter(
+  //   s => s.tech && s.tech.enforced,
+  // )
+  // for (const service of enforcedServices) {
+  //   scheduleEnforcedService({ service, techSchedules })
+  //   processedCount++
+  //   updateProgress()
+  // }
+
+  // // Remove enforced services from servicesToSchedule
+  // servicesToSchedule = servicesToSchedule.filter(
+  //   s => !s.tech || !s.tech.enforced,
+  // )
+
+  // // Schedule remaining services
+  // while (servicesToSchedule.length > 0) {
+  //   const sortedServices = sortServicesByTime(servicesToSchedule, 0.5)
+  //   const service = sortedServices[0]
+
+  //   const result = scheduleService({
+  //     service,
+  //     techSchedules,
+  //     remainingServices: sortedServices.slice(1),
+  //   })
+
+  //   processedCount++
+  //   if (processedCount % 10 === 0) {
+  //     updateProgress()
+  //   }
+
+  //   if (result.scheduled && result.techId) {
+  //     servicesToSchedule = servicesToSchedule.filter(
+  //       s =>
+  //         !techSchedules[result.techId].shifts.some(shift =>
+  //           shift.services.some(
+  //             scheduledService => scheduledService.id === s.id,
+  //           ),
+  //         ),
+  //     )
+  //   } else {
+  //     unassignedServices.push({
+  //       ...service,
+  //       reason: result.reason,
+  //     })
+  //     servicesToSchedule = servicesToSchedule.filter(s => s.id !== service.id)
+  //   }
+  // }
 
   const endTime = performance.now()
   console.timeEnd('Total scheduling time')
@@ -108,7 +118,6 @@ async function runScheduling() {
     unassignedCount: unassignedServices.length,
     invalidCount: invalidServices.length,
     totalTime: endTime - startTime,
-    enforcedServices: enforcedServices.length,
   }
 
   console.log(`Scheduling completed`)
@@ -117,7 +126,6 @@ async function runScheduling() {
   console.log(`Scheduled services:`, schedulingStats.scheduledCount)
   console.log(`Unassigned services:`, schedulingStats.unassignedCount)
   console.log(`Invalid services:`, schedulingStats.invalidCount)
-  console.log(`Enforced services:`, schedulingStats.enforcedServices)
 
   parentPort.postMessage({
     type: 'result',
@@ -125,18 +133,6 @@ async function runScheduling() {
     unassignedServices: unassignedServices.concat(invalidServices),
     schedulingStats,
   })
-}
-
-function groupServicesByDate(services) {
-  const servicesByDate = {}
-  for (const service of services) {
-    const date = service.time.range[0].toISOString().split('T')[0]
-    if (!servicesByDate[date]) {
-      servicesByDate[date] = []
-    }
-    servicesByDate[date].push(service)
-  }
-  return servicesByDate
 }
 
 runScheduling().catch(error => {

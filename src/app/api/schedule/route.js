@@ -35,14 +35,14 @@ export async function GET(request) {
           if (result.type === 'progress') {
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ progress: result.data })}\n\n`,
+                `data: ${JSON.stringify({ type: 'progress', progress: result.data })}\n\n`,
               ),
             )
           } else if (result.type === 'result') {
             const { scheduledServices, unassignedServices } = result.data
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ scheduledServices, unassignedServices })}\n\n`,
+                `data: ${JSON.stringify({ type: 'result', scheduledServices, unassignedServices })}\n\n`,
               ),
             )
           }
@@ -51,7 +51,7 @@ export async function GET(request) {
         console.error('Error in schedule route:', error)
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ error: error.message, stack: error.stack })}\n\n`,
+            `data: ${JSON.stringify({ type: 'error', error: error.message, stack: error.stack })}\n\n`,
           ),
         )
       } finally {

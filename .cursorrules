@@ -8,6 +8,7 @@ Code Style and Structure
 - Use functional and declarative programming patterns; avoid classes.
 - Prefer iteration and modularization over code duplication.
 - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
+- Add one-liner comments where helpful. Don't explain obvious code.
 - Keep my comments and console.log statements.
 
 Naming and Formatting
@@ -43,9 +44,7 @@ General preferences
 - Make minimal, focused changes.
 - Fully implement all requested functionality.
 - Provide clear and concise comments for complex logic.
-- Don't apologize or tell me that I'm right.
 - Don't remove comments unless the changes made make the comment no longer relevant.
 - Leave NO todo's, placeholders or missing pieces in the code.
 - Be sure to reference file names.
 - If you think there might not be a correct answer, you say so. If you do not know the answer, say so instead of guessing.
-- Analyze the attached schedule summary log output, which shows the results of the changes you made

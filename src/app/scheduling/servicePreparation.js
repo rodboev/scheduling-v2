@@ -6,7 +6,10 @@ export function filterInvalidServices(services) {
       service =>
         service.time.range[0] === null || service.time.range[1] === null,
     )
-    .map(service => ({ ...service, reason: 'Invalid time range' }))
+    .map(service => ({
+      ...service,
+      reason: 'Invalid time range',
+    }))
 }
 
 export function prepareServicesToSchedule(services) {
@@ -31,7 +34,7 @@ export function prepareServicesToSchedule(services) {
     }))
 }
 
-export function sortServices(services) {
+export function sortServicesByTime(services) {
   return services.sort((a, b) => {
     const aDate = new Date(a.time.range[0])
     const bDate = new Date(b.time.range[0])
@@ -46,40 +49,6 @@ export function sortServices(services) {
   })
 }
 
-export function sortServicesByProximity(services) {
-  if (services.length <= 1) return { sortedServices: services, distances: [] }
-
-  const sortedServices = [services[0]]
-  const distances = []
-  const remainingServices = services.slice(1)
-
-  while (remainingServices.length > 0) {
-    const lastService = sortedServices[sortedServices.length - 1]
-    let closestServiceIndex = 0
-    let minDistance = calcDistance(
-      lastService.location,
-      remainingServices[0].location,
-    )
-
-    for (let i = 1; i < remainingServices.length; i++) {
-      const distance = calcDistance(
-        lastService.location,
-        remainingServices[i].location,
-      )
-      if (distance < minDistance) {
-        minDistance = distance
-        closestServiceIndex = i
-      }
-    }
-
-    const closestService = remainingServices.splice(closestServiceIndex, 1)[0]
-    distances.push(minDistance)
-    sortedServices.push(closestService)
-  }
-
-  return { sortedServices, distances }
-}
-
 export function sortServicesByTimeAndProximity(
   services,
   proximityWeight = 0.9,
@@ -87,7 +56,7 @@ export function sortServicesByTimeAndProximity(
   if (services.length <= 1) return services
 
   // First, sort by time
-  const timeSortedServices = sortServices([...services])
+  const timeSortedServices = sortServicesByTime([...services])
 
   // Then, apply proximity sorting with weighting
   const result = [timeSortedServices[0]]
