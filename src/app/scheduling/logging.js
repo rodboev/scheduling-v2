@@ -3,15 +3,8 @@ import {
   formatTime,
   calculateDuration,
 } from '../utils/dateHelpers.js'
-import { calcDistance } from './index.js'
 
-// Add this import
-
-export function printSummary({
-  techSchedules,
-  unassignedServices,
-  schedulingStats,
-}) {
+export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
 
   let techSummaries = []
@@ -38,7 +31,7 @@ export function printSummary({
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
-          shift.services.forEach((service, index) => {
+          shift.services.forEach((service, serviceIndex) => {
             const startTime = new Date(service.start)
             const endTime = new Date(service.end)
             const date = formatDate(startTime)
@@ -52,20 +45,20 @@ export function printSummary({
                   ].join(' - ')
                 : 'Invalid'
 
-            let distanceStr = ''
-            if (index > 0) {
-              let distance
-              if (service.distanceFromPrevious !== undefined) {
-                distance = service.distanceFromPrevious
-              } else {
-                const prevService = shift.services[index - 1]
-                distance = calcDistance(prevService.location, service.location)
-              }
-              distanceStr = `(distance: ${distance.toFixed(2)} mi)`
-            }
+            // let distanceStr = ''
+            // if (serviceIndex > 0) {
+            //   let distance
+            //   if (service.distanceFromPrevious !== undefined) {
+            //     distance = service.distanceFromPrevious
+            //   } else {
+            //     const prevService = shift.services[serviceIndex - 1]
+            //     distance = calcDistance(prevService.location, service.location)
+            //   }
+            // distanceStr = `(distance: ${distance.toFixed(2)} mi)`
+            // }
 
             console.log(
-              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) ${distanceStr}`,
+              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]})`, // ${distanceStr}
             )
           })
 
@@ -132,23 +125,6 @@ export function printSummary({
   console.log(
     `Total hours (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
   )
-
-  // Add the following logging from the schedule route
-  if (schedulingStats) {
-    const {
-      totalTime,
-      totalServices,
-      enforcedServices,
-      scheduledCount,
-      unassignedCount,
-    } = schedulingStats
-    console.log(`Services fetched: ${totalServices}`)
-    console.log(`Enforced services: ${enforcedServices}`)
-    console.log(`Scheduling completed in ${totalTime.toFixed(2)} ms`)
-    console.log(
-      `Scheduled services: ${scheduledCount}, Unassigned: ${unassignedCount}`,
-    )
-  }
 }
 
 // Helper function to format hours

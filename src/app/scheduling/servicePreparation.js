@@ -1,41 +1,31 @@
-import { calcDistance } from './index.js'
-
 export function filterInvalidServices(services) {
   return services
     .filter(
       service =>
         service.time.range[0] === null || service.time.range[1] === null,
     )
-    .map(service => ({
-      ...service,
-      reason: 'Invalid time range',
-    }))
+    .map(service => ({ ...service, reason: 'Invalid time range' }))
 }
 
 export function prepareServicesToSchedule(services) {
   return services
     .filter(
       service =>
-        service.time.range[0] !== null &&
-        service.time.range[1] !== null &&
-        !isNaN(new Date(service.time.range[0]).getTime()) &&
-        !isNaN(new Date(service.time.range[1]).getTime()),
+        service.time.range[0] !== null && service.time.range[1] !== null,
     )
     .map(service => ({
       ...service,
       time: {
         ...service.time,
         range: service.time.range.map(date => new Date(date)),
-        preferred: service.time.preferred
-          ? new Date(service.time.preferred)
-          : null,
+        preferred: new Date(service.time.preferred),
       },
       date: new Date(service.date),
     }))
 }
 
-export function sortServicesByTime(services) {
-  return services.sort((a, b) => {
+export function sortServices(services) {
+  services.sort((a, b) => {
     const aDate = new Date(a.time.range[0])
     const bDate = new Date(b.time.range[0])
     aDate.setHours(0, 0, 0, 0)
@@ -47,66 +37,4 @@ export function sortServicesByTime(services) {
     const bWindowSize = new Date(b.time.range[1]) - new Date(b.time.range[0])
     return aWindowSize - bWindowSize || b.time.duration - a.time.duration
   })
-}
-
-export function sortServicesByTimeAndProximity(
-  services,
-  proximityWeight = 0.9,
-) {
-  if (services.length <= 1) return services
-
-  // First, sort by time
-  const timeSortedServices = sortServicesByTime([...services])
-
-  // Then, apply proximity sorting with weighting
-  const result = [timeSortedServices[0]]
-  const remaining = timeSortedServices.slice(1)
-
-  while (remaining.length > 0) {
-    const lastService = result[result.length - 1]
-    let bestIndex = 0
-    let bestScore = Infinity
-
-    for (let i = 0; i < remaining.length; i++) {
-      const currentService = remaining[i]
-      const timeScore =
-        Math.abs(
-          new Date(currentService.time.range[0]) -
-            new Date(lastService.time.range[1]),
-        ) /
-        (1000 * 60 * 60) // Time difference in hours
-      const distanceScore = calcDistance(
-        lastService.location,
-        currentService.location,
-      )
-
-      const score =
-        timeScore * (1 - proximityWeight) + distanceScore * proximityWeight
-
-      if (score < bestScore) {
-        bestScore = score
-        bestIndex = i
-      }
-    }
-
-    const nextService = remaining.splice(bestIndex, 1)[0]
-    result.push(nextService)
-  }
-
-  return result
-}
-
-export function findClosestService(baseService, services, maxDistance = 10) {
-  let closestService = null
-  let minDistance = Infinity
-
-  for (const service of services) {
-    const distance = calcDistance(baseService.location, service.location)
-    if (distance < minDistance && distance <= maxDistance) {
-      minDistance = distance
-      closestService = service
-    }
-  }
-
-  return closestService
 }

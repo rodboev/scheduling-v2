@@ -90,7 +90,7 @@ export function useSchedule(currentViewRange) {
     eventSource.onmessage = event => {
       const data = JSON.parse(event.data)
       if (data.type === 'progress') {
-        setProgress(data.progress)
+        setProgress(data.data)
         setStatus('Scheduling...')
       } else if (data.type === 'result') {
         eventSource.close()
@@ -130,7 +130,7 @@ export function useSchedule(currentViewRange) {
   return {
     ...result,
     isScheduling: loading,
-    schedulingProgress: progress, // This is now a value between 0 and 1
+    schedulingProgress: progress,
     schedulingStatus: status,
     updateServiceEnforcement,
     updateAllServicesEnforcement,

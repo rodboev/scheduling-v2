@@ -18,9 +18,9 @@ export async function* scheduleServices(services) {
       })
 
       if (message.type === 'result') {
-        const { techSchedules, unassignedServices, schedulingStats } = message
+        const { techSchedules, unassignedServices } = message.data
         console.log('Printing summary...')
-        printSummary({ techSchedules, unassignedServices, schedulingStats })
+        printSummary({ techSchedules, unassignedServices })
 
         const scheduledServices = Object.entries(techSchedules).flatMap(
           ([techId, schedule]) =>
@@ -38,7 +38,7 @@ export async function* scheduleServices(services) {
         }
         break
       } else if (message.type === 'progress') {
-        yield { type: 'progress', data: message.progress }
+        yield { type: 'progress', data: message.data }
       }
     }
   } finally {

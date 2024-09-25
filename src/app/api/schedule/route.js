@@ -35,7 +35,7 @@ export async function GET(request) {
           if (result.type === 'progress') {
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ type: 'progress', progress: result.data })}\n\n`,
+                `data: ${JSON.stringify({ type: 'progress', data: result.data })}\n\n`,
               ),
             )
           } else if (result.type === 'result') {
