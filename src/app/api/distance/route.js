@@ -32,24 +32,27 @@ async function generateAndStoreDistances(serviceSetups) {
 
   let validCount = 0
   let invalidCount = 0
+  const processedLocations = new Set()
 
   for (const setup of serviceSetups) {
-    const { id, location, company } = setup
+    const { location, company } = setup
     if (
       location &&
       typeof location.latitude === 'number' &&
-      typeof location.longitude === 'number'
+      typeof location.longitude === 'number' &&
+      !processedLocations.has(location.id)
     ) {
       pipeline.geoadd(
         'locations',
         location.longitude,
         location.latitude,
-        id.toString(),
+        location.id.toString(),
       )
-      pipeline.hset('company_names', id.toString(), company)
+      pipeline.hset('company_names', location.id.toString(), company)
       validCount++
-    } else {
-      console.warn(`Invalid location data for id ${id}. Skipping.`)
+      processedLocations.add(location.id)
+    } else if (!processedLocations.has(location.id)) {
+      console.warn(`Invalid location data for id ${location.id}. Skipping.`)
       invalidCount++
     }
   }
@@ -59,6 +62,16 @@ async function generateAndStoreDistances(serviceSetups) {
   console.log(
     `Locations and company names stored in Redis. Valid: ${validCount}, Invalid: ${invalidCount}`,
   )
+
+  // Add this logging to check what's actually being stored
+  const allLocations = await redis.zrange('locations', 0, -1)
+  const companyNames = await redis.hgetall('company_names')
+  console.log('Sample of stored data:')
+  for (let i = 0; i < Math.min(5, allLocations.length); i++) {
+    const id = allLocations[i]
+    const company = companyNames[id]
+    console.log(`ID: ${id}, Company: ${company}`)
+  }
 }
 
 async function getOrGenerateDistances() {
