@@ -3,7 +3,7 @@ import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
-} from './shift.js'
+} from './shifts.js'
 
 export function scheduleService({ service, techSchedules, remainingServices }) {
   const sortedTechs = Object.keys(techSchedules).sort(
