@@ -62,16 +62,6 @@ async function generateAndStoreDistances(serviceSetups) {
   console.log(
     `Locations and company names stored in Redis. Valid: ${validCount}, Invalid: ${invalidCount}`,
   )
-
-  // Add this logging to check what's actually being stored
-  const allLocations = await redis.zrange('locations', 0, -1)
-  const companyNames = await redis.hgetall('company_names')
-  console.log('Sample of stored data:')
-  for (let i = 0; i < Math.min(5, allLocations.length); i++) {
-    const id = allLocations[i]
-    const company = companyNames[id]
-    console.log(`ID: ${id}, Company: ${company}`)
-  }
 }
 
 async function getOrGenerateDistances() {
@@ -96,7 +86,7 @@ export async function GET(request) {
   const refresh = searchParams.has('refresh')
   const ids = searchParams.get('id')?.split(',') || []
   const radius = parseFloat(searchParams.get('radius')) || 25
-  const limit = parseInt(searchParams.get('limit')) || 10
+  const limit = parseInt(searchParams.get('limit')) || 20
 
   try {
     let locationCount = await redis.zcard('locations')

@@ -1,10 +1,10 @@
 import { parentPort, workerData } from 'worker_threads'
-import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
+import { scheduleService, scheduleEnforcedService } from './scheduler.js'
 import {
   filterInvalidServices,
   prepareServicesToSchedule,
   sortServices,
-} from './servicePreparation.js'
+} from './servicePrep.js'
 
 async function runScheduling() {
   const { services } = workerData

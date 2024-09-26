@@ -4,7 +4,6 @@ import { MIN_REST_HOURS, MAX_SHIFT_GAP, MAX_SHIFT_HOURS } from './index.js'
 export function compactShift(shift) {
   shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-  // First pass: Move services forward
   for (let i = 0; i < shift.services.length - 1; i++) {
     const currentService = shift.services[i]
     const nextService = shift.services[i + 1]
@@ -31,7 +30,6 @@ export function compactShift(shift) {
     }
   }
 
-  // Second pass: Move services backward
   for (let i = shift.services.length - 1; i > 0; i--) {
     const currentService = shift.services[i]
     const previousService = shift.services[i - 1]
@@ -84,7 +82,6 @@ export function fillGaps(shift) {
 }
 
 export function flattenServices(techSchedules) {
-  // Convert techSchedules to flat scheduledServices array with start and end dates
   return Object.entries(techSchedules).flatMap(([techId, schedule]) =>
     schedule.shifts.flatMap(shift =>
       shift.services.map(service => ({
@@ -124,13 +121,10 @@ export function createNewShiftWithConsistentStartTime({
     const lastShiftEnd = new Date(lastShift.shiftEnd)
     const minStartTime = addHours(lastShiftEnd, MIN_REST_HOURS)
 
-    // If the range start is before the minimum start time, use the minimum start time
     if (newShiftStart < minStartTime) {
       newShiftStart = minStartTime
     }
 
-    // If the new shift would start more than MAX_SHIFT_GAP hours after the last shift,
-    // try to find a service that starts earlier
     if ((newShiftStart - lastShiftEnd) / (1000 * 60 * 60) > MAX_SHIFT_GAP) {
       const earlierService = remainingServices.find(
         s =>
@@ -143,16 +137,14 @@ export function createNewShiftWithConsistentStartTime({
     }
   }
 
-  // Check if this new shift would exceed the weekly limit
   const weekStart = new Date(newShiftStart)
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Set to the start of the week (Sunday)
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
   const shiftsThisWeek = countShiftsInWeek(techSchedule, weekStart)
 
   if (shiftsThisWeek >= 5) {
-    // Move to the next week if the limit is reached
     newShiftStart = new Date(weekStart)
-    newShiftStart.setDate(newShiftStart.getDate() + 7) // Move to next week
+    newShiftStart.setDate(newShiftStart.getDate() + 7)
   }
 
   return {
