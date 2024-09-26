@@ -81,19 +81,19 @@ export default function Service({ service, updateServiceEnforcement }) {
           </a>
         </h3>
 
-        {service?.distanceFromPrevious && (
+        {service.distanceFromPrevious !== undefined && (
           <p className="mb-2">
             <div className="flex items-center gap-x-1">
               <span>
                 <Car />
               </span>
               <span className="whitespace-nowrap font-bold">
-                {service.distanceFromPrevious.toFixed(2)} mi
+                {service?.distanceFromPrevious?.toFixed(2)} mi
               </span>
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                from {service.previousCompany}
+                from {service?.previousCompany}
               </div>
             )}
           </p>

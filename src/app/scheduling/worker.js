@@ -15,35 +15,37 @@ async function runScheduling() {
   const servicesToSchedule = prepareServicesToSchedule(services)
   sortServices(servicesToSchedule)
 
-  const totalServices = servicesToSchedule.length
-  console.log(`Total services to schedule: ${totalServices}`)
-
   let processedCount = 0
   const techSchedules = {}
   const unassignedServices = []
 
   for (const service of servicesToSchedule) {
-    let result
-    if (service.tech.enforced && service.tech.code) {
-      result = scheduleEnforcedService({
-        service,
-        techSchedules,
-      })
-    } else {
-      result = scheduleService({
-        service,
-        techSchedules,
-        remainingServices: servicesToSchedule.slice(processedCount + 1),
-      })
-    }
+    try {
+      let result
+      if (service.tech.enforced && service.tech.code) {
+        result = await scheduleEnforcedService({
+          service,
+          techSchedules,
+        })
+      } else {
+        result = await scheduleService({
+          service,
+          techSchedules,
+          remainingServices: servicesToSchedule.slice(processedCount + 1),
+        })
+      }
 
-    if (!result.scheduled) {
-      unassignedServices.push({ ...service, reason: result.reason })
-    }
+      if (!result.scheduled) {
+        unassignedServices.push({ ...service, reason: result.reason })
+      }
 
-    processedCount++
-    const progress = processedCount / totalServices
-    parentPort.postMessage({ type: 'progress', data: progress })
+      processedCount++
+      const progress = processedCount / servicesToSchedule.length
+      parentPort.postMessage({ type: 'progress', data: progress })
+    } catch (error) {
+      console.error(`Error scheduling service ${service.id}:`, error)
+      unassignedServices.push({ ...service, reason: 'Scheduling error' })
+    }
   }
 
   console.timeEnd('Total scheduling time')

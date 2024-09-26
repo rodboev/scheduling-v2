@@ -45,20 +45,13 @@ export function printSummary({ techSchedules, unassignedServices }) {
                   ].join(' - ')
                 : 'Invalid'
 
-            // let distanceStr = ''
-            // if (serviceIndex > 0) {
-            //   let distance
-            //   if (service.distanceFromPrevious !== undefined) {
-            //     distance = service.distanceFromPrevious
-            //   } else {
-            //     const prevService = shift.services[serviceIndex - 1]
-            //     distance = calcDistance(prevService.location, service.location)
-            //   }
-            // distanceStr = `(distance: ${distance.toFixed(2)} mi)`
-            // }
+            const distance = service?.distanceFromPrevious?.toFixed(2)
+            const distanceStr = distance
+              ? `(distance: ${distance} mi)`
+              : `(distance missing)`
 
             console.log(
-              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]})`, // ${distanceStr}
+              `- ${date}, ${start}-${end}, ${service.company} (time range: ${timeRange}) (id: ${service.id.split('-')[0]}) ${distanceStr}`,
             )
           })
 

@@ -82,7 +82,6 @@ async function getOrGenerateDistances() {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  console.log(`Called with ${searchParams}`)
   const refresh = searchParams.has('refresh')
   const ids = searchParams.get('id')?.split(',') || []
   const radius = parseFloat(searchParams.get('radius')) || 25

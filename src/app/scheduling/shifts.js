@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { addHours, addMinutes, max, min } from '../utils/dateHelpers.js'
 import { MIN_REST_HOURS, MAX_SHIFT_GAP, MAX_SHIFT_HOURS } from './index.js'
 
@@ -89,6 +90,8 @@ export function flattenServices(techSchedules) {
         start: new Date(service.start),
         end: new Date(service.end),
         resourceId: techId,
+        distanceFromPrevious: service.distanceFromPrevious,
+        previousCompany: service.previousCompany,
       })),
     ),
   )
@@ -200,4 +203,36 @@ export function countShiftsInWeek(techSchedule, weekStart) {
     const shiftStart = new Date(shift.shiftStart)
     return shiftStart >= weekStart && shiftStart < weekEnd
   }).length
+}
+
+export async function calculateDistances(services) {
+  const distanceMap = new Map()
+
+  for (let i = 0; i < services.length; i++) {
+    const service = services[i]
+    const nearbyServices = await fetchNearbyServices(service.location.id)
+    distanceMap.set(service.location.id.toString(), nearbyServices)
+
+    // Log progress
+    if (i % 100 === 0) {
+      console.log(
+        `Calculated distances for ${i} out of ${services.length} services`,
+      )
+    }
+  }
+
+  console.log('Distance calculation completed')
+  return distanceMap
+}
+
+async function fetchNearbyServices(locationId) {
+  try {
+    const response = await axios.get(
+      `http://localhost:${process.env.PORT}/api/distance?id=${locationId}&limit=500`,
+    )
+    return response.data.distance || []
+  } catch (error) {
+    console.error('Error fetching nearby services:', error)
+    return []
+  }
 }
