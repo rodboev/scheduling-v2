@@ -132,7 +132,7 @@ export async function GET(request) {
       },
     )
 
-    return NextResponse.json(processedServices) // .slice(0, 200))
+    return NextResponse.json(processedServices)
   } catch (error) {
     console.error('Error processing services:', error)
     return NextResponse.json(

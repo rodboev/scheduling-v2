@@ -6,9 +6,9 @@ import {
   countShiftsInWeek,
 } from './shifts.js'
 
-// Add this at the top of the file
 const distanceCache = new Map()
-const SKIP_TRAVEL_TIME = true // Toggle this to true to skip travel time calculations
+const SKIP_TRAVEL_TIME = true // Set to true to skip travel time calculations
+const LOOK_AHEAD_COUNT = 5 // Number of services to consider at once
 
 export async function scheduleService({
   service,
@@ -109,7 +109,7 @@ async function tryScheduleForTech({
   return { scheduled: false, reason: `No time in any shift for Tech ${techId}` }
 }
 
-async function tryScheduleInShift({ service, shift, techId, distanceMap }) {
+async function tryScheduleInShift({ service, shift, techId }) {
   const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
   const shiftStart = new Date(shift.shiftStart)
@@ -126,13 +126,11 @@ async function tryScheduleInShift({ service, shift, techId, distanceMap }) {
   )
 
   while (startTime <= latestPossibleStart) {
-    let endTime = addMinutes(startTime, serviceDuration)
-
-    if (endTime > addHours(shiftStart, MAX_SHIFT_HOURS))
-      return { scheduled: false }
+    const endTime = addMinutes(startTime, serviceDuration)
 
     if (
-      await canScheduleAtTime(shift, startTime, endTime, service, distanceMap)
+      endTime <= rangeEnd &&
+      (await canScheduleAtTime(shift, startTime, endTime, service))
     ) {
       const scheduledService = {
         ...service,
@@ -141,19 +139,15 @@ async function tryScheduleInShift({ service, shift, techId, distanceMap }) {
       }
 
       // Find the best position to insert the new service
-      const bestPosition = await findBestPosition(
-        shift,
-        scheduledService,
-        distanceMap,
-      )
+      const bestPosition = await findBestPosition(shift, scheduledService)
 
       // Insert the service at the best position
       shift.services.splice(bestPosition, 0, scheduledService)
 
-      // Update distances and previous companies for all services in the shift
-      await updateShiftDistances(shift, distanceMap)
+      // Update distances for the shift
+      await updateShiftDistances(shift)
 
-      if (endTime > shiftEnd) shift.shiftEnd = endTime
+      if (endTime > shift.shiftEnd) shift.shiftEnd = endTime
 
       return { scheduled: true }
     }
@@ -164,32 +158,24 @@ async function tryScheduleInShift({ service, shift, techId, distanceMap }) {
   return { scheduled: false }
 }
 
-async function findBestPosition(shift, newService, distanceMap) {
+async function findBestPosition(shift, newService) {
   if (shift.services.length === 0) return 0
 
   let bestPosition = 0
   let minTotalDistance = Infinity
 
   for (let i = 0; i <= shift.services.length; i++) {
-    let totalDistance = 0
-
-    if (i > 0) {
-      totalDistance += await calculateTravelDistance(
-        shift.services[i - 1],
+    const tempShift = {
+      ...shift,
+      services: [
+        ...shift.services.slice(0, i),
         newService,
-        distanceMap,
-      )
+        ...shift.services.slice(i),
+      ],
     }
+    const totalDistance = await calculateTotalShiftDistance(tempShift)
 
-    if (i < shift.services.length) {
-      totalDistance += await calculateTravelDistance(
-        newService,
-        shift.services[i],
-        distanceMap,
-      )
-    }
-
-    if (totalDistance < minTotalDistance) {
+    if (totalDistance < minTotalDistance && (await isValidShift(tempShift))) {
       minTotalDistance = totalDistance
       bestPosition = i
     }
@@ -198,29 +184,116 @@ async function findBestPosition(shift, newService, distanceMap) {
   return bestPosition
 }
 
-async function updateShiftDistances(shift) {
-  // Sort services by start time
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
+async function optimizeShift(shift) {
+  let improved = true
+  while (improved) {
+    improved = false
+    for (let i = 0; i < shift.services.length - 1; i++) {
+      for (
+        let j = i + 1;
+        j < Math.min(shift.services.length, i + LOOK_AHEAD_COUNT);
+        j++
+      ) {
+        const newShift = {
+          ...shift,
+          services: [...shift.services],
+        }
+        // Swap services
+        ;[newShift.services[i], newShift.services[j]] = [
+          newShift.services[j],
+          newShift.services[i],
+        ]
 
+        if (await isValidShift(newShift)) {
+          const oldDistance = await calculateTotalShiftDistance(shift)
+          const newDistance = await calculateTotalShiftDistance(newShift)
+
+          if (newDistance < oldDistance) {
+            shift.services = newShift.services
+            improved = true
+            break
+          }
+        }
+      }
+      if (improved) break
+    }
+  }
+
+  // Update start and end times based on the new order
+  let currentTime = new Date(shift.shiftStart)
+  for (const service of shift.services) {
+    service.start = max(currentTime, new Date(service.time.range[0]))
+    service.end = addMinutes(service.start, service.time.duration)
+    currentTime = service.end
+  }
+}
+
+async function isValidShift(shift) {
+  let currentTime = new Date(shift.shiftStart)
+  let previousService = null
+
+  for (const service of shift.services) {
+    const serviceStart = max(currentTime, new Date(service.time.range[0]))
+    const serviceEnd = addMinutes(serviceStart, service.time.duration)
+
+    if (
+      serviceEnd > new Date(service.time.range[1]) ||
+      serviceEnd > addHours(shift.shiftStart, MAX_SHIFT_HOURS)
+    ) {
+      return false
+    }
+
+    if (!SKIP_TRAVEL_TIME && previousService) {
+      const travelTime = await calculateTravelTime(previousService, service)
+      if (travelTime === null) {
+        // If we can't calculate travel time, assume it's valid
+        console.warn(
+          `Couldn't calculate travel time for service ${service.id}, assuming it's valid`,
+        )
+      } else if (serviceStart < addMinutes(currentTime, travelTime)) {
+        return false
+      }
+    }
+
+    currentTime = serviceEnd
+    previousService = service
+  }
+  return true
+}
+
+async function calculateTotalShiftDistance(shift) {
+  let totalDistance = 0
+  for (let i = 1; i < shift.services.length; i++) {
+    const distance = await calculateTravelDistance(
+      shift.services[i - 1],
+      shift.services[i],
+    )
+    totalDistance += distance || 0
+  }
+  return totalDistance
+}
+
+async function updateShiftDistances(shift) {
   for (let i = 1; i < shift.services.length; i++) {
     const previousService = shift.services[i - 1]
     const currentService = shift.services[i]
-
     currentService.distanceFromPrevious = await calculateTravelDistance(
       previousService,
       currentService,
     )
     currentService.previousCompany = previousService.company
   }
-
-  // Clear distance and previous company for the first service in the shift
-  if (shift.services.length > 0) {
-    shift.services[0].distanceFromPrevious = undefined
-    shift.services[0].previousCompany = undefined
-  }
 }
 
 async function calculateTravelDistance(fromService, toService) {
+  if (!fromService?.location?.id || !toService?.location?.id) {
+    console.warn(
+      'Missing location id for service:',
+      !fromService?.location?.id ? fromService?.id : toService?.id,
+    )
+    return null
+  }
+
   const fromId = fromService.location.id.toString()
   const toId = toService.location.id.toString()
 
@@ -288,7 +361,12 @@ async function canScheduleAtTime(shift, startTime, endTime, service) {
 
 async function calculateTravelTime(fromService, toService) {
   if (SKIP_TRAVEL_TIME) {
-    return 0 // Return 0 travel time when SKIP_TRAVEL_TIME is true
+    return 0
+  }
+
+  if (!fromService || !toService) {
+    console.warn('Missing service for travel time calculation')
+    return 0 // or return a default travel time
   }
 
   const distance = await calculateTravelDistance(fromService, toService)
