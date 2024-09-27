@@ -1,86 +1,5 @@
-import axios from 'axios'
-import { addHours, addMinutes, max, min } from '../utils/dateHelpers.js'
+import { addHours, max, min } from '../utils/dateHelpers.js'
 import { MIN_REST_HOURS, MAX_SHIFT_GAP, MAX_SHIFT_HOURS } from './index.js'
-
-export function compactShift(shift) {
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  for (let i = 0; i < shift.services.length - 1; i++) {
-    const currentService = shift.services[i]
-    const nextService = shift.services[i + 1]
-
-    const currentEnd = new Date(currentService.end)
-    const nextStart = new Date(nextService.start)
-    const earliestPossibleStart = new Date(currentService.time.range[0])
-
-    if (nextStart > currentEnd) {
-      const latestPossibleStart = min(
-        addMinutes(nextStart, -currentService.time.duration),
-        addMinutes(
-          new Date(currentService.time.range[1]),
-          -currentService.time.duration,
-        ),
-      )
-
-      if (latestPossibleStart > earliestPossibleStart) {
-        const newStart = max(earliestPossibleStart, latestPossibleStart)
-        const newEnd = addMinutes(newStart, currentService.time.duration)
-        currentService.start = newStart
-        currentService.end = newEnd
-      }
-    }
-  }
-
-  for (let i = shift.services.length - 1; i > 0; i--) {
-    const currentService = shift.services[i]
-    const previousService = shift.services[i - 1]
-
-    const currentStart = new Date(currentService.start)
-    const previousEnd = new Date(previousService.end)
-    const latestPossibleEnd = new Date(currentService.time.range[1])
-
-    if (currentStart > previousEnd) {
-      const earliestPossibleStart = max(
-        previousEnd,
-        new Date(currentService.time.range[0]),
-      )
-
-      if (earliestPossibleStart < currentStart) {
-        const newStart = earliestPossibleStart
-        const newEnd = min(
-          addMinutes(newStart, currentService.time.duration),
-          latestPossibleEnd,
-        )
-        currentService.start = newStart
-        currentService.end = newEnd
-      }
-    }
-  }
-}
-
-export function fillGaps(shift) {
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  for (let i = 1; i < shift.services.length; i++) {
-    const currentService = shift.services[i]
-    const previousService = shift.services[i - 1]
-    const currentStart = new Date(currentService.start)
-    const previousEnd = new Date(previousService.end)
-
-    if (currentStart > previousEnd) {
-      const earliestPossibleStart = max(
-        previousEnd,
-        new Date(currentService.time.range[0]),
-      )
-      if (earliestPossibleStart < currentStart) {
-        const newStart = earliestPossibleStart
-        const newEnd = addMinutes(newStart, currentService.time.duration)
-        currentService.start = newStart
-        currentService.end = newEnd
-      }
-    }
-  }
-}
 
 export function flattenServices(techSchedules) {
   return Object.entries(techSchedules).flatMap(([techId, schedule]) =>
@@ -157,14 +76,6 @@ export function createNewShiftWithConsistentStartTime({
   }
 }
 
-function getNextPreferredStartTime(fromTime, lastShiftStart) {
-  const preferredTime = new Date(lastShiftStart)
-  preferredTime.setHours(lastShiftStart.getHours())
-  preferredTime.setMinutes(lastShiftStart.getMinutes())
-  preferredTime.setSeconds(0)
-  return fromTime > preferredTime ? addHours(preferredTime, 24) : preferredTime
-}
-
 export function findGaps({ shift, from, to }) {
   const gaps = []
   let currentTime = new Date(from)
@@ -203,36 +114,4 @@ export function countShiftsInWeek(techSchedule, weekStart) {
     const shiftStart = new Date(shift.shiftStart)
     return shiftStart >= weekStart && shiftStart < weekEnd
   }).length
-}
-
-export async function calculateDistances(services) {
-  const distanceMap = new Map()
-
-  for (let i = 0; i < services.length; i++) {
-    const service = services[i]
-    const nearbyServices = await fetchNearbyServices(service.location.id)
-    distanceMap.set(service.location.id.toString(), nearbyServices)
-
-    // Log progress
-    if (i % 100 === 0) {
-      console.log(
-        `Calculated distances for ${i} out of ${services.length} services`,
-      )
-    }
-  }
-
-  console.log('Distance calculation completed')
-  return distanceMap
-}
-
-async function fetchNearbyServices(locationId) {
-  try {
-    const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/distance?id=${locationId}&limit=500`,
-    )
-    return response.data.distance || []
-  } catch (error) {
-    console.error('Error fetching nearby services:', error)
-    return []
-  }
 }

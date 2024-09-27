@@ -82,15 +82,12 @@ async function getOrGenerateDistances() {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const refresh = searchParams.has('refresh')
-  const ids = searchParams.get('id')?.split(',') || []
-  const radius = parseFloat(searchParams.get('radius')) || 25
-  const limit = parseInt(searchParams.get('limit')) || 20
+  const idPairs = searchParams.getAll('id')
 
   try {
     let locationCount = await redis.zcard('locations')
 
-    if (locationCount === 0 || refresh) {
+    if (locationCount === 0) {
       console.log('Regenerating distance data...')
       const serviceSetups = await readFromDiskCache({
         file: 'serviceSetups.json',
@@ -105,112 +102,58 @@ export async function GET(request) {
       )
     }
 
-    if (refresh || ids.length === 0) {
-      const allLocations = await redis.zrange('locations', 0, -1)
-      const companyNames = await redis.hgetall('company_names')
-      const geoposResults = await redis.geopos('locations', ...allLocations)
+    if (idPairs.length > 0) {
+      const results = await Promise.all(
+        idPairs.map(async pair => {
+          const [id1, id2] = pair.split(',')
+          const [geopos1, company1] = await Promise.all([
+            redis.geopos('locations', id1),
+            redis.hget('company_names', id1),
+          ])
 
-      const locationData = allLocations.map((id, index) => {
-        const [longitude, latitude] = geoposResults[index] || [null, null]
-        return {
-          id,
-          company: companyNames[id],
-          location: {
-            longitude: longitude ? parseFloat(longitude) : null,
-            latitude: latitude ? parseFloat(latitude) : null,
-          },
-        }
-      })
+          if (!geopos1[0]) {
+            return { error: `ID ${id1} not found` }
+          }
 
-      return NextResponse.json({ locations: locationData })
-    }
+          const [lon1, lat1] = geopos1[0]
 
-    if (ids.length === 1 || ids.length === 2) {
-      const id1 = ids[0]
-      const [geopos1, company1] = await Promise.all([
-        redis.geopos('locations', id1),
-        redis.hget('company_names', id1),
-      ])
+          const [geopos2, company2, distance] = await Promise.all([
+            redis.geopos('locations', id2),
+            redis.hget('company_names', id2),
+            redis.geodist('locations', id1, id2, 'mi'),
+          ])
 
-      if (!geopos1[0]) {
-        return NextResponse.json(
-          { error: 'Specified ID not found' },
-          { status: 404 },
-        )
-      }
+          if (!geopos2[0]) {
+            return { error: `ID ${id2} not found` }
+          }
 
-      const [lon1, lat1] = geopos1[0]
+          const [lon2, lat2] = geopos2[0]
 
-      let results
-      if (ids.length === 2) {
-        const id2 = ids[1]
-        const [geopos2, company2, distance] = await Promise.all([
-          redis.geopos('locations', id2),
-          redis.hget('company_names', id2),
-          redis.geodist('locations', id1, id2, 'mi'),
-        ])
-
-        if (!geopos2[0]) {
-          return NextResponse.json(
-            { error: 'Second ID not found' },
-            { status: 404 },
-          )
-        }
-
-        const [lon2, lat2] = geopos2[0]
-        results = [
-          {
-            id: id2,
-            distance: parseFloat(distance),
-            company: company2,
-            location: {
-              longitude: parseFloat(lon2),
-              latitude: parseFloat(lat2),
-            },
-          },
-        ]
-      } else {
-        results = await redis.georadius(
-          'locations',
-          lon1,
-          lat1,
-          radius,
-          'mi',
-          'WITHDIST',
-          'WITHCOORD',
-          'ASC',
-          'COUNT',
-          limit + 1,
-        )
-        results = results.slice(1) // Remove the origin point
-
-        results = await Promise.all(
-          results.map(async ([otherId, distance, [lon2, lat2]]) => {
-            const company = await redis.hget('company_names', otherId)
-            return {
-              id: otherId,
-              distance: parseFloat(distance),
-              company,
+          return {
+            from: {
+              id: id1,
+              company: company1,
               location: {
-                longitude: parseFloat(lon2),
-                latitude: parseFloat(lat2),
+                longitude: parseFloat(lon1),
+                latitude: parseFloat(lat1),
               },
-            }
-          }),
-        )
-      }
+            },
+            distance: [
+              {
+                id: id2,
+                distance: parseFloat(distance),
+                company: company2,
+                location: {
+                  longitude: parseFloat(lon2),
+                  latitude: parseFloat(lat2),
+                },
+              },
+            ],
+          }
+        }),
+      )
 
-      return NextResponse.json({
-        from: {
-          id: id1,
-          company: company1,
-          location: {
-            longitude: parseFloat(lon1),
-            latitude: parseFloat(lat1),
-          },
-        },
-        distance: results,
-      })
+      return NextResponse.json(results)
     }
 
     return NextResponse.json(

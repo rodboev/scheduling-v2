@@ -47,7 +47,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
 
             const distance = service?.distanceFromPrevious?.toFixed(2)
             const distanceStr = distance
-              ? `(distance: ${distance} mi)`
+              ? `(${distance} mi from ${service.previousCompany})`
               : `(distance missing)`
 
             console.log(
