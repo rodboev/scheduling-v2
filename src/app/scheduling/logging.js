@@ -116,7 +116,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
   const averageHours = totalHours / techCount
   const formattedTechHours = techSummaries.map(formatHours).join(', ')
   console.log(
-    `Total hours (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
+    `Total hours: ${formatHours(totalHours)} (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
   )
 }
 

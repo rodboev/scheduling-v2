@@ -29,9 +29,6 @@ export async function optimizeShift(shift) {
 
     if (service.end <= service.start || service.start >= shiftEnd) {
       // If the service can't be scheduled within its time range or shift end, remove it
-      console.warn(
-        `Service ${service.id} couldn't be scheduled within its time range or shift end`,
-      )
       shift.services = shift.services.filter(s => s.id !== service.id)
     } else {
       currentTime = service.end

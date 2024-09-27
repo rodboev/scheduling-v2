@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { getDistances, getLocationInfo } from './redisClient.js'
 
 const distanceCache = new Map()
 const BATCH_SIZE = 50
@@ -14,13 +14,17 @@ export async function calculateDistancesForShift(shift) {
       const cacheKey = [fromId, toId].sort().join(',')
 
       if (!distanceCache.has(cacheKey)) {
-        pairs.push(cacheKey)
+        pairs.push([fromId, toId])
       }
     }
   }
 
   if (pairs.length > 0) {
-    await fetchDistances(pairs)
+    const distances = await getDistances(pairs)
+    pairs.forEach((pair, index) => {
+      const cacheKey = pair.sort().join(',')
+      distanceCache.set(cacheKey, distances[index])
+    })
   }
 
   const distanceMatrix = []
@@ -41,37 +45,6 @@ export async function calculateDistancesForShift(shift) {
   return distanceMatrix
 }
 
-async function fetchDistances(pairs) {
-  for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
-    const batch = pairs.slice(i, i + BATCH_SIZE)
-    try {
-      console.log('Fetching distances for', batch)
-      const response = await axios.get(
-        `http://localhost:${process.env.PORT}/api/distance?${batch
-          .map(key => `id=${key}`)
-          .join('&')}`,
-      )
-
-      for (const result of response.data) {
-        if (result.error) {
-          console.warn(
-            `Error for pair ${result.from.id},${result.distance[0].id}: ${result.error}`,
-          )
-          distanceCache.set(`${result.from.id},${result.distance[0].id}`, null)
-        } else {
-          const cacheKey = `${result.from.id},${result.distance[0].id}`
-          distanceCache.set(cacheKey, result.distance[0].distance)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching distances:', error)
-      for (const key of batch) {
-        distanceCache.set(key, null)
-      }
-    }
-  }
-}
-
 export async function calculateTravelDistance(fromService, toService) {
   if (!fromService?.location?.id || !toService?.location?.id) {
     console.warn(
@@ -84,16 +57,14 @@ export async function calculateTravelDistance(fromService, toService) {
   const fromId = fromService.location.id.toString()
   const toId = toService.location.id.toString()
 
-  // Create a unique key for the pair of locations
   const cacheKey = [fromId, toId].sort().join(',')
 
-  // Check if the distance is already in the cache
   if (distanceCache.has(cacheKey)) {
     return distanceCache.get(cacheKey)
   }
 
-  // If not in cache, fetch it
-  await fetchDistances([cacheKey])
+  const [distance] = await getDistances([[fromId, toId]])
+  distanceCache.set(cacheKey, distance)
 
-  return distanceCache.get(cacheKey)
+  return distance
 }
