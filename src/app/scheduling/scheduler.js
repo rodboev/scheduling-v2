@@ -1,15 +1,10 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
-import { optimizeShift, updateShiftDistances } from './optimize.js'
+import { findBestPosition, updateShiftDistances } from './optimize.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
 } from './shifts.js'
-
-const distanceCache = new Map()
-const pendingRequests = new Map()
-const BATCH_SIZE = 50 // Adjust this based on your needs
-const SKIP_TRAVEL_TIME = true // Set this to true to skip travel time calculations
 
 export async function scheduleService({
   service,
@@ -108,36 +103,46 @@ async function tryScheduleInShift({ service, shift, techId }) {
   const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
   const shiftStart = new Date(shift.shiftStart)
-  const shiftEnd = new Date(shift.shiftStart)
-  shiftEnd.setHours(shiftEnd.getHours() + MAX_SHIFT_HOURS)
+  const shiftEnd = new Date(shift.shiftEnd)
 
   let startTime = max(shiftStart, rangeStart)
   const latestPossibleStart = min(
     shiftEnd,
     rangeEnd,
-    addMinutes(shiftEnd, -serviceDuration),
+    addHours(shiftStart, MAX_SHIFT_HOURS),
+  )
+  latestPossibleStart.setMinutes(
+    latestPossibleStart.getMinutes() - serviceDuration,
   )
 
-  if (startTime <= latestPossibleStart) {
+  while (startTime <= latestPossibleStart) {
     const endTime = addMinutes(startTime, serviceDuration)
-    if (endTime <= shiftEnd && endTime <= rangeEnd) {
+
+    if (
+      endTime <= rangeEnd &&
+      (await canScheduleAtTime(shift, startTime, endTime, service))
+    ) {
       const scheduledService = {
         ...service,
         start: startTime,
         end: endTime,
       }
 
-      // Add the service to the shift
-      shift.services.push(scheduledService)
+      // Find the best position to insert the new service
+      const bestPosition = await findBestPosition(shift, scheduledService)
 
-      // Optimize the entire shift
-      await optimizeShift(shift)
+      // Insert the service at the best position
+      shift.services.splice(bestPosition, 0, scheduledService)
 
-      // Check if the service was actually scheduled (it might have been removed during optimization)
-      if (shift.services.some(s => s.id === service.id)) {
-        return { scheduled: true }
-      }
+      // Update distances for the shift
+      await updateShiftDistances(shift)
+
+      if (endTime > shift.shiftEnd) shift.shiftEnd = endTime
+
+      return { scheduled: true }
     }
+
+    startTime = addMinutes(startTime, 15)
   }
 
   return { scheduled: false }

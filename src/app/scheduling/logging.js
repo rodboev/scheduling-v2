@@ -31,7 +31,12 @@ export function printSummary({ techSchedules, unassignedServices }) {
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
-          shift.services.forEach((service, serviceIndex) => {
+          // Sort services chronologically
+          const sortedServices = [...shift.services].sort(
+            (a, b) => new Date(a.start) - new Date(b.start),
+          )
+
+          sortedServices.forEach((service, serviceIndex) => {
             const startTime = new Date(service.start)
             const endTime = new Date(service.end)
             const date = formatDate(startTime)
@@ -55,13 +60,11 @@ export function printSummary({ techSchedules, unassignedServices }) {
             )
           })
 
-          const firstServiceStart = new Date(shift.services[0].start)
-          const lastServiceEnd = new Date(
-            shift.services[shift.services.length - 1].end,
-          )
+          const firstService = sortedServices[0]
+          const lastService = sortedServices[sortedServices.length - 1]
           const shiftDuration = calculateDuration(
-            firstServiceStart,
-            lastServiceEnd,
+            new Date(firstService.start),
+            new Date(lastService.end),
           )
           techTotalHours += shiftDuration
           console.log(`Shift duration: ${formatHours(shiftDuration)} hours`)
@@ -93,7 +96,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
     }
   })
 
-  // Unassigned services
+  // Print unassigned services
   if (unassignedServices.length > 0) {
     console.log('Unassigned services:')
     unassignedServices.forEach(service => {
@@ -104,9 +107,9 @@ export function printSummary({ techSchedules, unassignedServices }) {
               formatTime(new Date(service.time.range[0])),
               formatTime(new Date(service.time.range[1])),
             ].join(' - ')
-          : 'Invalid'
+          : 'Invalid time range'
       console.log(
-        `- ${date}, ${timeRange} time range, ${service.company} (id: ${service.id})`,
+        `- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`,
       )
     })
     console.log('')
@@ -130,9 +133,11 @@ function findScheduleGaps(shift, from, to) {
   let currentTime = new Date(from)
   const endTime = new Date(to)
 
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
+  const sortedServices = [...shift.services].sort(
+    (a, b) => new Date(a.start) - new Date(b.start),
+  )
 
-  for (const service of shift.services) {
+  for (const service of sortedServices) {
     const serviceStart = new Date(service.start)
     const serviceEnd = new Date(service.end)
 

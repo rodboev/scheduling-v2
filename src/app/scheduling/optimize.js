@@ -2,111 +2,45 @@ import { addMinutes, max, min } from '../utils/dateHelpers.js'
 import { calculateDistancesForShift } from './distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
-export async function optimizeShift(shift) {
-  const distanceMatrix = await calculateDistancesForShift(shift)
-  const n = shift.services.length
+export async function findBestPosition(shift, newService) {
+  const extendedShift = {
+    ...shift,
+    services: [...shift.services, newService],
+  }
+  const distanceMatrix = await calculateDistancesForShift(extendedShift)
 
-  let bestOrder = findBestOrder(shift, distanceMatrix)
+  let bestPosition = 0
+  let minTotalDistance = Infinity
 
-  // Reorder the services based on the best order
-  shift.services = bestOrder.map(i => shift.services[i])
-
-  // Update start and end times
-  let currentTime = new Date(shift.shiftStart)
-  const shiftEnd = new Date(shift.shiftStart)
-  shiftEnd.setHours(shiftEnd.getHours() + MAX_SHIFT_HOURS)
-
-  for (let service of shift.services) {
-    const [rangeStart, rangeEnd] = service.time.range.map(
-      date => new Date(date),
-    )
-    service.start = max(currentTime, rangeStart)
-    service.end = min(
-      addMinutes(service.start, service.time.duration),
-      rangeEnd,
-      shiftEnd,
+  for (let i = 0; i <= shift.services.length; i++) {
+    const totalDistance = calculateTotalDistanceForInsertion(
+      distanceMatrix,
+      i,
+      shift.services.length,
     )
 
-    if (service.end <= service.start || service.start >= shiftEnd) {
-      // If the service can't be scheduled within its time range or shift end, remove it
-      shift.services = shift.services.filter(s => s.id !== service.id)
-    } else {
-      currentTime = service.end
+    if (totalDistance < minTotalDistance) {
+      minTotalDistance = totalDistance
+      bestPosition = i
     }
   }
 
-  // Update distances
-  await updateShiftDistances(shift)
-
-  // Update shift end time
-  shift.shiftEnd =
-    shift.services.length > 0
-      ? shift.services[shift.services.length - 1].end
-      : shift.shiftStart
+  return bestPosition
 }
 
-function findBestOrder(shift, distanceMatrix) {
-  const n = shift.services.length
-  let bestOrder = [...Array(n).keys()]
-  let bestDistance = calculateTotalDistance(bestOrder, distanceMatrix)
-
-  // Simple 2-opt algorithm for TSP
-  let improved = true
-  while (improved) {
-    improved = false
-    for (let i = 0; i < n - 1; i++) {
-      for (let j = i + 1; j < n; j++) {
-        let newOrder = twoOptSwap(bestOrder, i, j)
-        if (isValidOrder(newOrder, shift)) {
-          let newDistance = calculateTotalDistance(newOrder, distanceMatrix)
-          if (newDistance < bestDistance) {
-            bestOrder = newOrder
-            bestDistance = newDistance
-            improved = true
-          }
-        }
-      }
-    }
-  }
-
-  return bestOrder
-}
-
-function twoOptSwap(route, i, j) {
-  const newRoute = route.slice(0, i)
-  newRoute.push(...route.slice(i, j + 1).reverse())
-  newRoute.push(...route.slice(j + 1))
-  return newRoute
-}
-
-function isValidOrder(order, shift) {
-  let currentTime = new Date(shift.shiftStart)
-  const shiftEnd = new Date(shift.shiftStart)
-  shiftEnd.setHours(shiftEnd.getHours() + MAX_SHIFT_HOURS)
-
-  for (let i of order) {
-    const service = shift.services[i]
-    const [rangeStart, rangeEnd] = service.time.range.map(
-      date => new Date(date),
-    )
-    const potentialStart = max(currentTime, rangeStart)
-    const potentialEnd = min(
-      addMinutes(potentialStart, service.time.duration),
-      rangeEnd,
-      shiftEnd,
-    )
-
-    if (potentialEnd <= potentialStart || potentialStart >= shiftEnd)
-      return false
-    currentTime = potentialEnd
-  }
-  return true
-}
-
-function calculateTotalDistance(order, distanceMatrix) {
+function calculateTotalDistanceForInsertion(
+  distanceMatrix,
+  insertPosition,
+  originalLength,
+) {
   let totalDistance = 0
-  for (let i = 0; i < order.length - 1; i++) {
-    totalDistance += distanceMatrix[order[i]][order[i + 1]] || 0
+  for (let i = 0; i < originalLength + 1; i++) {
+    if (i > 0) {
+      const fromIndex = i <= insertPosition ? i - 1 : i
+      const toIndex =
+        i < insertPosition ? i : i === insertPosition ? originalLength : i - 1
+      totalDistance += distanceMatrix[fromIndex][toIndex] || 0
+    }
   }
   return totalDistance
 }
