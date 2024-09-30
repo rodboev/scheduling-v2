@@ -148,13 +148,55 @@ export function fillGaps(shift) {
 
 // In optimize.js, add this function:
 export async function recalculateOptimalIndices(shift) {
-  const optimalOrder = await findOptimalRoute(shift.services)
-  optimalOrder.forEach((service, index) => {
-    service.index = index
-  })
+  const services = shift.services
+  const distanceMatrix = await calculateDistancesForShift({ services })
+
+  // Sort services by start time
+  services.sort((a, b) => new Date(a.start) - new Date(b.start))
+
+  // Initialize the first service
+  services[0].index = 0
+  let lastIndex = 0
+
+  // Iterate through the remaining services
+  for (let i = 1; i < services.length; i++) {
+    const currentService = services[i]
+    const currentStart = new Date(currentService.start)
+
+    // Find the closest unassigned service that starts after the previous service
+    let closestIndex = -1
+    let minDistance = Infinity
+
+    for (let j = i; j < services.length; j++) {
+      const candidateService = services[j]
+      if (candidateService.index === undefined) {
+        const candidateStart = new Date(candidateService.start)
+        if (candidateStart >= currentStart) {
+          const distance = distanceMatrix[lastIndex][j]
+          if (distance < minDistance) {
+            minDistance = distance
+            closestIndex = j
+          }
+        }
+      }
+    }
+
+    // Assign the index to the closest service
+    if (closestIndex !== -1) {
+      services[closestIndex].index = i
+      lastIndex = closestIndex
+    } else {
+      // If no suitable service found, assign the current index
+      currentService.index = i
+      lastIndex = i
+    }
+  }
+
+  // Sort the services array based on the new indices
+  services.sort((a, b) => a.index - b.index)
 }
 
-async function findOptimalRoute(services) {
+export async function findOptimalRoute(services) {
   const distanceMatrix = await calculateDistancesForShift({ services })
 
   // Implement a TSP solver here. For simplicity, we'll use a greedy algorithm.
