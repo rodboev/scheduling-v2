@@ -130,6 +130,7 @@ async function tryScheduleInShift({ service, shift, techId }) {
 
       // Find the best position to insert the new service
       const bestPosition = await findBestPosition(shift, scheduledService)
+      scheduledService.index = bestPosition
 
       // Insert the service at the best position
       shift.services.splice(bestPosition, 0, scheduledService)

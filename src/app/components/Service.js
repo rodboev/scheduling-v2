@@ -69,6 +69,8 @@ export default function Service({ service, updateServiceEnforcement }) {
           <div className="text-center">Tech: {service.tech.code}</div>
         </div>
 
+        <div>[{service.index}]</div>
+
         <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
           <a
             href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}

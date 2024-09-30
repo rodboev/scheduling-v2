@@ -9,8 +9,6 @@ export function flattenServices(techSchedules) {
         start: new Date(service.start),
         end: new Date(service.end),
         resourceId: techId,
-        distanceFromPrevious: service.distanceFromPrevious,
-        previousCompany: service.previousCompany,
       })),
     ),
   )
