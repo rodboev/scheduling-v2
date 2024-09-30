@@ -1,5 +1,8 @@
 import { addMinutes, max, min } from '../utils/dateHelpers.js'
-import { calculateDistancesForShift } from './distance.js'
+import {
+  calculateDistancesForShift,
+  calculateTravelDistance,
+} from './distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
 export async function findBestPosition(shift, newService) {
@@ -13,16 +16,23 @@ export async function findBestPosition(shift, newService) {
   let minTotalDistance = Infinity
 
   for (let i = 0; i <= shift.services.length; i++) {
-    const totalDistance = calculateTotalDistanceForInsertion(
-      distanceMatrix,
-      i,
-      shift.services.length,
-    )
+    if (isPositionFeasible(shift, newService, i)) {
+      const totalDistance = calculateTotalDistanceForInsertion(
+        distanceMatrix,
+        i,
+        shift.services.length,
+      )
 
-    if (totalDistance < minTotalDistance) {
-      minTotalDistance = totalDistance
-      bestPosition = i
+      if (totalDistance < minTotalDistance) {
+        minTotalDistance = totalDistance
+        bestPosition = i
+      }
     }
+  }
+
+  // Update indices of existing services
+  for (let i = bestPosition; i < shift.services.length; i++) {
+    shift.services[i].index++
   }
 
   return bestPosition
@@ -134,4 +144,62 @@ export function fillGaps(shift) {
       }
     }
   }
+}
+
+// In optimize.js, add this function:
+export async function recalculateOptimalIndices(shift) {
+  const optimalOrder = await findOptimalRoute(shift.services)
+  optimalOrder.forEach((service, index) => {
+    service.index = index
+  })
+}
+
+async function findOptimalRoute(services) {
+  const distanceMatrix = await calculateDistancesForShift({ services })
+
+  // Implement a TSP solver here. For simplicity, we'll use a greedy algorithm.
+  // You might want to replace this with a more sophisticated TSP algorithm for better results.
+  const route = [0] // Start with the first service
+  const unvisited = new Set(services.map((_, i) => i).slice(1))
+
+  while (unvisited.size > 0) {
+    const current = route[route.length - 1]
+    let nearest = null
+    let minDistance = Infinity
+
+    for (const next of unvisited) {
+      const distance = distanceMatrix[current][next]
+      if (distance !== null && distance < minDistance) {
+        minDistance = distance
+        nearest = next
+      }
+    }
+
+    if (nearest === null) break // No reachable unvisited nodes
+
+    route.push(nearest)
+    unvisited.delete(nearest)
+  }
+
+  return route.map(index => services[index])
+}
+
+function isPositionFeasible(shift, newService, position) {
+  const newStart = new Date(newService.start)
+  const newEnd = new Date(newService.end)
+
+  if (position === 0) {
+    return (
+      shift.services.length === 0 || newEnd <= new Date(shift.services[0].start)
+    )
+  }
+
+  if (position === shift.services.length) {
+    return newStart >= new Date(shift.services[shift.services.length - 1].end)
+  }
+
+  const prevEnd = new Date(shift.services[position - 1].end)
+  const nextStart = new Date(shift.services[position].start)
+
+  return newStart >= prevEnd && newEnd <= nextStart
 }

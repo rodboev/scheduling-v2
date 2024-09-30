@@ -1,4 +1,5 @@
 import { parentPort, workerData } from 'worker_threads'
+import { recalculateOptimalIndices } from './optimize.js'
 import { scheduleService, scheduleEnforcedService } from './scheduler.js'
 import {
   filterInvalidServices,
@@ -45,6 +46,13 @@ async function runScheduling() {
     } catch (error) {
       console.error(`Error scheduling service ${service.id}:`, error)
       unassignedServices.push({ ...service, reason: 'Scheduling error' })
+    }
+  }
+
+  // After all services have been scheduled, recalculate optimal indices for each shift
+  for (const techSchedule of Object.values(techSchedules)) {
+    for (const shift of techSchedule.shifts) {
+      await recalculateOptimalIndices(shift)
     }
   }
 

@@ -56,7 +56,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
               : `(distance missing)`
 
             console.log(
-              `- ${date}, ${start}-${end}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (time range: ${timeRange}) ${distanceStr}`,
+              `- [${service.index}] ${date}, ${start}-${end}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${timeRange}) ${distanceStr}`,
             )
           })
 
