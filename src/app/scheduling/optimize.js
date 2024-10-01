@@ -1,3 +1,4 @@
+// /src/app/scheduling/optimize.js
 import { addMinutes, max, min } from '../utils/dateHelpers.js'
 import {
   calculateDistancesForShift,
@@ -5,6 +6,12 @@ import {
 } from './distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
+/**
+ * Finds the best position to insert a new service into a shift to minimize total travel distance.
+ * @param {Object} shift - The current shift containing scheduled services.
+ * @param {Object} newService - The service to be inserted.
+ * @returns {Number} - The best position index to insert the new service.
+ */
 export async function findBestPosition(shift, newService) {
   const extendedShift = {
     ...shift,
@@ -30,14 +37,16 @@ export async function findBestPosition(shift, newService) {
     }
   }
 
-  // Update indices of existing services
-  for (let i = bestPosition; i < shift.services.length; i++) {
-    shift.services[i].index++
-  }
-
   return bestPosition
 }
 
+/**
+ * Calculates the total travel distance for a given insertion position.
+ * @param {Array} distanceMatrix - Matrix containing distances between services.
+ * @param {Number} insertPosition - The index where the new service is to be inserted.
+ * @param {Number} originalLength - The original number of services before insertion.
+ * @returns {Number} - The total travel distance after insertion.
+ */
 function calculateTotalDistanceForInsertion(
   distanceMatrix,
   insertPosition,
@@ -55,6 +64,10 @@ function calculateTotalDistanceForInsertion(
   return totalDistance
 }
 
+/**
+ * Updates the distance information for each service within a shift.
+ * @param {Object} shift - The shift containing scheduled services.
+ */
 export async function updateShiftDistances(shift) {
   const distanceMatrix = await calculateDistancesForShift(shift)
 
@@ -66,6 +79,10 @@ export async function updateShiftDistances(shift) {
   }
 }
 
+/**
+ * Compacts the shift by adjusting service start and end times to eliminate gaps.
+ * @param {Object} shift - The shift containing scheduled services.
+ */
 export function compactShift(shift) {
   shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
@@ -122,110 +139,78 @@ export function compactShift(shift) {
   }
 }
 
-export function fillGaps(shift) {
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  for (let i = 1; i < shift.services.length; i++) {
-    const currentService = shift.services[i]
-    const previousService = shift.services[i - 1]
-    const currentStart = new Date(currentService.start)
-    const previousEnd = new Date(previousService.end)
-
-    if (currentStart > previousEnd) {
-      const earliestPossibleStart = max(
-        previousEnd,
-        new Date(currentService.time.range[0]),
-      )
-      if (earliestPossibleStart < currentStart) {
-        const newStart = earliestPossibleStart
-        const newEnd = addMinutes(newStart, currentService.time.duration)
-        currentService.start = newStart
-        currentService.end = newEnd
-      }
-    }
-  }
-}
-
-// In optimize.js, add this function:
+/**
+ * Recalculates the optimal indices for services within a shift based on proximity.
+ * This function reorders services to minimize total travel distance and assigns indices.
+ * @param {Object} shift - The shift containing scheduled services.
+ */
 export async function recalculateOptimalIndices(shift) {
   const services = shift.services
-  const distanceMatrix = await calculateDistancesForShift({ services })
+  const distanceMatrix = await calculateDistancesForShift(shift)
 
-  // Sort services by start time
-  services.sort((a, b) => new Date(a.start) - new Date(b.start))
+  // Use the greedy nearest neighbor algorithm for route optimization
+  const route = await findOptimalRoute(services, distanceMatrix)
 
-  // Initialize the first service
-  services[0].index = 0
-  let lastIndex = 0
+  // Reorder services based on the optimized route
+  shift.services = route
 
-  // Iterate through the remaining services
-  for (let i = 1; i < services.length; i++) {
-    const currentService = services[i]
-    const currentStart = new Date(currentService.start)
+  // Assign indices after reordering
+  shift.services.forEach((service, idx) => {
+    service.index = idx
+  })
 
-    // Find the closest unassigned service that starts after the previous service
-    let closestIndex = -1
+  // Update distances
+  await updateShiftDistances(shift)
+}
+
+/**
+ * Finds the optimal route for a set of services using the nearest neighbor heuristic.
+ * @param {Array} services - Array of services to be scheduled.
+ * @param {Array} distanceMatrix - Matrix containing distances between services.
+ * @returns {Array} - Ordered array of services representing the optimized route.
+ */
+export async function findOptimalRoute(services, distanceMatrix) {
+  if (services.length === 0) return []
+
+  const route = []
+  const visited = new Set()
+
+  // Start with the first service
+  let currentIndex = 0
+  route.push(services[currentIndex])
+  visited.add(currentIndex)
+
+  while (route.length < services.length) {
+    let nearestIndex = -1
     let minDistance = Infinity
 
-    for (let j = i; j < services.length; j++) {
-      const candidateService = services[j]
-      if (candidateService.index === undefined) {
-        const candidateStart = new Date(candidateService.start)
-        if (candidateStart >= currentStart) {
-          const distance = distanceMatrix[lastIndex][j]
-          if (distance < minDistance) {
-            minDistance = distance
-            closestIndex = j
-          }
+    for (let i = 0; i < services.length; i++) {
+      if (!visited.has(i)) {
+        const distance = distanceMatrix[currentIndex][i]
+        if (distance !== null && distance < minDistance) {
+          minDistance = distance
+          nearestIndex = i
         }
       }
     }
 
-    // Assign the index to the closest service
-    if (closestIndex !== -1) {
-      services[closestIndex].index = i
-      lastIndex = closestIndex
-    } else {
-      // If no suitable service found, assign the current index
-      currentService.index = i
-      lastIndex = i
-    }
+    if (nearestIndex === -1) break // No reachable unvisited nodes
+
+    route.push(services[nearestIndex])
+    visited.add(nearestIndex)
+    currentIndex = nearestIndex
   }
 
-  // Sort the services array based on the new indices
-  services.sort((a, b) => a.index - b.index)
+  return route
 }
 
-export async function findOptimalRoute(services) {
-  const distanceMatrix = await calculateDistancesForShift({ services })
-
-  // Implement a TSP solver here. For simplicity, we'll use a greedy algorithm.
-  // You might want to replace this with a more sophisticated TSP algorithm for better results.
-  const route = [0] // Start with the first service
-  const unvisited = new Set(services.map((_, i) => i).slice(1))
-
-  while (unvisited.size > 0) {
-    const current = route[route.length - 1]
-    let nearest = null
-    let minDistance = Infinity
-
-    for (const next of unvisited) {
-      const distance = distanceMatrix[current][next]
-      if (distance !== null && distance < minDistance) {
-        minDistance = distance
-        nearest = next
-      }
-    }
-
-    if (nearest === null) break // No reachable unvisited nodes
-
-    route.push(nearest)
-    unvisited.delete(nearest)
-  }
-
-  return route.map(index => services[index])
-}
-
+/**
+ * Determines if inserting a service at a specific position within a shift is feasible.
+ * @param {Object} shift - The current shift containing scheduled services.
+ * @param {Object} newService - The service to be inserted.
+ * @param {Number} position - The index at which to insert the new service.
+ * @returns {Boolean} - True if the position is feasible, false otherwise.
+ */
 function isPositionFeasible(shift, newService, position) {
   const newStart = new Date(newService.start)
   const newEnd = new Date(newService.end)

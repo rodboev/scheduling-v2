@@ -1,3 +1,4 @@
+// /src/app/scheduling/worker.js
 import { parentPort, workerData } from 'worker_threads'
 import { recalculateOptimalIndices } from './optimize.js'
 import { scheduleService, scheduleEnforcedService } from './scheduler.js'
@@ -19,6 +20,12 @@ async function runScheduling() {
   let processedCount = 0
   const techSchedules = {}
   const unassignedServices = []
+
+  // Reorder services to prioritize earliest start times
+  // This ensures that services are scheduled in chronological order
+  servicesToSchedule.sort(
+    (a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0]),
+  )
 
   for (const service of servicesToSchedule) {
     try {
@@ -49,8 +56,8 @@ async function runScheduling() {
     }
   }
 
-  // After all services have been scheduled, recalculate optimal indices for each shift
-  for (const techSchedule of Object.values(techSchedules)) {
+  // After all services have been scheduled, optimize each shift's route and assign indices
+  for (const [techId, techSchedule] of Object.entries(techSchedules)) {
     for (const shift of techSchedule.shifts) {
       await recalculateOptimalIndices(shift)
     }

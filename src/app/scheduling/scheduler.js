@@ -1,4 +1,6 @@
+// /src/app/scheduling/scheduler.js
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
+import { calculateTravelDistance } from './distance.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import { findBestPosition, updateShiftDistances } from './optimize.js'
 import {
@@ -22,10 +24,10 @@ export async function scheduleService({
       techSchedules,
       remainingServices,
     })
-
     if (result.scheduled) return result
   }
 
+  // If no existing tech can accommodate, create a new tech
   const newTechId = `Tech ${Object.keys(techSchedules).length + 1}`
   techSchedules[newTechId] = { shifts: [] }
   const result = await tryScheduleForTech({
@@ -51,16 +53,17 @@ async function tryScheduleForTech({
 }) {
   const techSchedule = techSchedules[techId]
 
-  for (
-    let shiftIndex = 0;
-    shiftIndex < techSchedule.shifts.length;
-    shiftIndex++
-  ) {
-    const shift = techSchedule.shifts[shiftIndex]
+  // Sort shifts by end time to find the earliest available shift
+  const sortedShifts = techSchedule.shifts.sort(
+    (a, b) => new Date(a.shiftEnd) - new Date(b.shiftEnd),
+  )
+
+  for (const shift of sortedShifts) {
     const result = await tryScheduleInShift({
       service,
       shift,
       techId,
+      techSchedules,
     })
     if (result.scheduled) {
       return {
@@ -70,6 +73,7 @@ async function tryScheduleForTech({
     }
   }
 
+  // Check if a new shift can be created
   const weekStart = new Date(service.time.range[0])
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
@@ -86,6 +90,7 @@ async function tryScheduleForTech({
       service,
       shift: newShift,
       techId,
+      techSchedules,
     })
     if (result.scheduled) {
       techSchedule.shifts.push(newShift)
@@ -99,7 +104,7 @@ async function tryScheduleForTech({
   return { scheduled: false, reason: `No time in any shift for Tech ${techId}` }
 }
 
-async function tryScheduleInShift({ service, shift, techId }) {
+async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
   const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
   const shiftStart = new Date(shift.shiftStart)
@@ -128,7 +133,7 @@ async function tryScheduleInShift({ service, shift, techId }) {
         end: endTime,
       }
 
-      // Find the best position to insert the new service
+      // Find the best position based on proximity
       const bestPosition = await findBestPosition(shift, scheduledService)
 
       // Insert the service at the best position
@@ -160,6 +165,14 @@ async function canScheduleAtTime(shift, startTime, endTime, service) {
     ) {
       return false
     }
+  }
+
+  // Additional Check: Ensure total shift hours do not exceed MAX_SHIFT_HOURS
+  const totalShiftMinutes =
+    shift.services.reduce((acc, srv) => acc + srv.time.duration, 0) +
+    service.time.duration
+  if (totalShiftMinutes > MAX_SHIFT_HOURS * 60) {
+    return false
   }
 
   return true
