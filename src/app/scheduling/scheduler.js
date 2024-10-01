@@ -133,11 +133,8 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
         end: endTime,
       }
 
-      // Find the best position based on proximity
-      const bestPosition = await findBestPosition(shift, scheduledService)
-
-      // Insert the service at the best position
-      shift.services.splice(bestPosition, 0, scheduledService)
+      // Insert the service into the shift's services
+      shift.services.push(scheduledService)
 
       // Update distances for the shift
       await updateShiftDistances(shift)

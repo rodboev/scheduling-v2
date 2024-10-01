@@ -21,8 +21,7 @@ async function runScheduling() {
   const techSchedules = {}
   const unassignedServices = []
 
-  // Reorder services to prioritize earliest start times
-  // This ensures that services are scheduled in chronological order
+  // Sort services by earliest start time
   servicesToSchedule.sort(
     (a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0]),
   )
