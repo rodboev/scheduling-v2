@@ -1,11 +1,16 @@
 // /src/app/scheduling/optimize.js
-import { addMinutes, max, min } from '../utils/dateHelpers.js'
+import {
+  addMinutes,
+  max as getMax,
+  min as getMin,
+} from '../utils/dateHelpers.js'
 import { calculateDistancesForShift } from './distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
 /**
  * Recalculates the optimal indices for services within a shift based on chronological order and proximity.
  * This function schedules services in chronological order, selecting the closest feasible service next.
+ * It also identifies gaps and attempts to insert far-away services into those gaps.
  * @param {Object} shift - The shift containing scheduled services.
  */
 export async function recalculateOptimalIndices(shift) {
@@ -14,19 +19,173 @@ export async function recalculateOptimalIndices(shift) {
 
   if (services.length === 0) return
 
-  // Sort services by start time
+  // Sort services by earliest start time using direct date comparisons
   services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-  // Assign indices based on the sorted order
-  services.forEach((service, idx) => {
+  const scheduled = []
+  const unscheduled = new Set(services.map(service => service.id)) // Assuming each service has a unique 'id'
+
+  // Initial scheduling: schedule services chronologically
+  while (unscheduled.size > 0) {
+    // Find the next service to schedule: the earliest starting unscheduled service
+    let nextService = null
+    let earliestStart = null
+
+    for (const service of services) {
+      if (!unscheduled.has(service.id)) continue
+
+      const serviceStart = new Date(service.start)
+
+      if (earliestStart === null || serviceStart < earliestStart) {
+        earliestStart = serviceStart
+        nextService = service
+      }
+    }
+
+    if (!nextService) break // No feasible service found
+
+    // Schedule the nextService
+    scheduled.push(nextService)
+    unscheduled.delete(nextService.id)
+
+    // Update the end time based on the service's end time
+    let lastScheduledEnd = new Date(nextService.end)
+
+    // Find the closest feasible service that starts after the current one ends
+    let closestService = null
+    let minDistance = Infinity
+
+    for (const service of services) {
+      if (!unscheduled.has(service.id)) continue
+
+      const serviceStart = new Date(service.start)
+
+      // Check if the service can start after the last scheduled service ends
+      if (serviceStart >= lastScheduledEnd) {
+        // Find distance from the last scheduled service to this service
+        const fromIndex = services.findIndex(s => s.id === nextService.id)
+        const toIndex = services.findIndex(s => s.id === service.id)
+        const distance = distanceMatrix[fromIndex][toIndex]
+
+        if (distance !== null && distance < minDistance) {
+          minDistance = distance
+          closestService = service
+        }
+      }
+    }
+
+    if (closestService) {
+      // Schedule the closestService
+      scheduled.push(closestService)
+      unscheduled.delete(closestService.id)
+      lastScheduledEnd = new Date(closestService.end)
+    }
+  }
+
+  // Assign indices based on the scheduled order
+  scheduled.forEach((service, idx) => {
     service.index = idx
   })
 
-  // Update the shift's services with the new order and assigned indices
-  shift.services = services
+  // Assign remaining unscheduled services at the end, sorted by their earliest start time
+  const remainingServices = services
+    .filter(service => unscheduled.has(service.id))
+    .sort((a, b) => new Date(a.start) - new Date(b.start))
 
-  // Update distances between consecutive services
+  remainingServices.forEach((service, idx) => {
+    service.index = scheduled.length + idx
+    scheduled.push(service)
+  })
+
+  // Update the shift's services with the new order and assigned indices
+  shift.services = scheduled
+
+  // Identify gaps in the schedule
+  const gaps = identifyGaps(
+    shift.services,
+    new Date(shift.shiftStart),
+    new Date(shift.shiftEnd),
+  )
+
+  // Attempt to insert unscheduled services into gaps based on proximity
+  for (const gap of gaps) {
+    for (const service of remainingServices) {
+      if (canFitInGap(service, gap)) {
+        // Insert the service into the gap
+        shift.services.splice(gap.position, 0, service)
+        service.index = gap.position
+        // Update indices of subsequent services
+        for (let i = gap.position + 1; i < shift.services.length; i++) {
+          shift.services[i].index = i
+        }
+        // Update distances
+        await updateShiftDistances(shift)
+        // Remove the service from remainingServices
+        remainingServices.splice(remainingServices.indexOf(service), 1)
+        break // Move to the next gap after inserting a service
+      }
+    }
+  }
+
+  // Reassign indices after inserting into gaps
+  shift.services.forEach((service, idx) => {
+    service.index = idx
+  })
+
+  // Update distances after inserting into gaps
   await updateShiftDistances(shift)
+}
+
+/**
+ * Identifies gaps within the scheduled services.
+ * @param {Array} services - Array of scheduled services.
+ * @param {Date} shiftStart - Start time of the shift.
+ * @param {Date} shiftEnd - End time of the shift.
+ * @returns {Array} - Array of gap objects with start, end, and position.
+ */
+function identifyGaps(services, shiftStart, shiftEnd) {
+  const gaps = []
+  let previousEnd = shiftStart
+
+  services.forEach((service, index) => {
+    const serviceStart = new Date(service.start)
+    if (serviceStart > previousEnd) {
+      gaps.push({
+        start: previousEnd,
+        end: new Date(service.start),
+        position: index,
+      })
+    }
+    const serviceEnd = new Date(service.end)
+    if (serviceEnd > previousEnd) {
+      previousEnd = serviceEnd
+    }
+  })
+
+  if (previousEnd < shiftEnd) {
+    gaps.push({
+      start: previousEnd,
+      end: shiftEnd,
+      position: services.length,
+    })
+  }
+
+  return gaps
+}
+
+/**
+ * Determines if a service can fit within a given gap based on its time range.
+ * @param {Object} service - The service to be scheduled.
+ * @param {Object} gap - The gap object containing start, end, and position.
+ * @returns {Boolean} - True if the service can fit in the gap, false otherwise.
+ */
+function canFitInGap(service, gap) {
+  const serviceStart = new Date(service.start)
+  const serviceEnd = new Date(service.end)
+  const gapStart = gap.start
+  const gapEnd = gap.end
+
+  return serviceStart >= gapStart && serviceEnd <= gapEnd
 }
 
 /**
@@ -42,74 +201,6 @@ export async function updateShiftDistances(shift) {
     currentService.distanceFromPrevious = distanceMatrix[i - 1][i]
     currentService.previousCompany = previousService.company
   }
-}
-
-/**
- * Finds the optimal route for a set of services using the nearest neighbor heuristic.
- * @param {Array} services - Array of services to be scheduled.
- * @param {Array} distanceMatrix - Matrix containing distances between services.
- * @returns {Array} - Ordered array of services representing the optimized route.
- */
-export async function findOptimalRoute(services, distanceMatrix) {
-  if (services.length === 0) return []
-
-  const route = []
-  const visited = new Set()
-
-  // Start with the first service
-  let currentIndex = 0
-  route.push(services[currentIndex])
-  visited.add(currentIndex)
-
-  while (route.length < services.length) {
-    let nearestIndex = -1
-    let minDistance = Infinity
-
-    for (let i = 0; i < services.length; i++) {
-      if (!visited.has(i)) {
-        const distance = distanceMatrix[currentIndex][i]
-        if (distance !== null && distance < minDistance) {
-          minDistance = distance
-          nearestIndex = i
-        }
-      }
-    }
-
-    if (nearestIndex === -1) break // No reachable unvisited nodes
-
-    route.push(services[nearestIndex])
-    visited.add(nearestIndex)
-    currentIndex = nearestIndex
-  }
-
-  return route
-}
-
-/**
- * Determines if inserting a service at a specific position within a shift is feasible.
- * @param {Object} shift - The current shift containing scheduled services.
- * @param {Object} newService - The service to be inserted.
- * @param {Number} position - The index at which to insert the new service.
- * @returns {Boolean} - True if the position is feasible, false otherwise.
- */
-function isPositionFeasible(shift, newService, position) {
-  const newStart = new Date(newService.start)
-  const newEnd = new Date(newService.end)
-
-  if (position === 0) {
-    return (
-      shift.services.length === 0 || newEnd <= new Date(shift.services[0].start)
-    )
-  }
-
-  if (position === shift.services.length) {
-    return newStart >= new Date(shift.services[shift.services.length - 1].end)
-  }
-
-  const prevEnd = new Date(shift.services[position - 1].end)
-  const nextStart = new Date(shift.services[position].start)
-
-  return newStart >= prevEnd && newEnd <= nextStart
 }
 
 export async function findBestPosition(shift, newService) {
