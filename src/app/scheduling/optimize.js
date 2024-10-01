@@ -14,92 +14,16 @@ export async function recalculateOptimalIndices(shift) {
 
   if (services.length === 0) return
 
-  // Sort services by earliest start time
-  services.sort((a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0]))
+  // Sort services by start time
+  services.sort((a, b) => new Date(a.start) - new Date(b.start))
 
-  const scheduled = []
-  const unscheduled = new Set(services.map(service => service.id)) // Assuming each service has a unique 'id'
-
-  while (unscheduled.size > 0) {
-    // Find the next service to schedule
-    let nextService = null
-    let earliestStart = null
-
-    // Iterate over all unscheduled services to find the one with the earliest start time
-    for (const service of services) {
-      if (!unscheduled.has(service.id)) continue
-
-      const serviceStart = new Date(service.time.range[0])
-      const serviceEnd = addMinutes(serviceStart, service.time.duration)
-
-      if (earliestStart === null || serviceStart < earliestStart) {
-        earliestStart = serviceStart
-        nextService = service
-      }
-    }
-
-    if (!nextService) break // No feasible service found
-
-    // Schedule the nextService
-    scheduled.push(nextService)
-    unscheduled.delete(nextService.id)
-
-    // Now, find the closest feasible service that starts after the current one ends
-    let lastScheduledEnd = addMinutes(
-      new Date(nextService.start),
-      nextService.time.duration,
-    )
-
-    let closestService = null
-    let minDistance = Infinity
-
-    for (const service of services) {
-      if (!unscheduled.has(service.id)) continue
-
-      const serviceStart = new Date(service.start)
-      const serviceEnd = new Date(service.end)
-
-      // Check if the service can start after the last scheduled service ends
-      if (serviceStart >= lastScheduledEnd) {
-        // Find distance from the last scheduled service to this service
-        const fromIndex = services.findIndex(s => s.id === nextService.id)
-        const toIndex = services.findIndex(s => s.id === service.id)
-        const distance = distanceMatrix[fromIndex][toIndex]
-
-        if (distance !== null && distance < minDistance) {
-          minDistance = distance
-          closestService = service
-        }
-      }
-    }
-
-    if (closestService) {
-      // Schedule the closestService
-      scheduled.push(closestService)
-      unscheduled.delete(closestService.id)
-      lastScheduledEnd = addMinutes(
-        new Date(closestService.start),
-        closestService.time.duration,
-      )
-    }
-  }
-
-  // Assign indices based on the scheduled order
-  scheduled.forEach((service, idx) => {
+  // Assign indices based on the sorted order
+  services.forEach((service, idx) => {
     service.index = idx
   })
 
-  // Assign remaining unscheduled services at the end, sorted by their earliest start time
-  const remainingServices = services
-    .filter(service => unscheduled.has(service.id))
-    .sort((a, b) => new Date(a.start) - new Date(b.start))
-  remainingServices.forEach((service, idx) => {
-    service.index = scheduled.length + idx
-    scheduled.push(service)
-  })
-
   // Update the shift's services with the new order and assigned indices
-  shift.services = scheduled
+  shift.services = services
 
   // Update distances between consecutive services
   await updateShiftDistances(shift)
