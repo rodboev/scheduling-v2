@@ -1,7 +1,10 @@
 import { calculateDistancesForShift } from '@/app/scheduling/distance'
-import { clusterServices } from '@/app/utils/clustering'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
+import path from 'path'
+import { Worker } from 'worker_threads'
+
+const MILES_TO_METERS = 1609.34
 
 export async function GET(request) {
   try {
@@ -23,7 +26,11 @@ export async function GET(request) {
       },
     )
 
-    const services = servicesResponse.data
+    // Filter services to include only those in New York, NY
+    const services = servicesResponse.data.filter(service =>
+      service.location.address2.includes('New York, NY'),
+    )
+
     const distanceMatrix = await calculateDistancesForShift({ services })
 
     if (!distanceMatrix) {
@@ -34,7 +41,72 @@ export async function GET(request) {
       )
     }
 
-    const clusteredServices = clusterServices(services, distanceMatrix)
+    // Log some statistics about the distance matrix
+    const flatDistances = distanceMatrix
+      .flat()
+      .filter(d => d !== null && d !== 0)
+    console.log('Distance Statistics:')
+    console.log('  Min distance:', Math.min(...flatDistances))
+    console.log('  Max distance:', Math.max(...flatDistances))
+    console.log(
+      '  Average distance:',
+      flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length,
+    )
+
+    // Set epsilon to 0.5 miles (converted to meters)
+    const epsilonMiles = 0.5
+    const epsilon = epsilonMiles * MILES_TO_METERS
+    const minPoints = 2
+
+    console.log(`Clustering parameters:`)
+    console.log(`  Epsilon: ${epsilonMiles} miles (${epsilon} meters)`)
+    console.log(`  Min Points: ${minPoints}`)
+    console.log(`  Number of services: ${services.length}`)
+
+    // Log a sample of services
+    console.log('Sample of services:')
+    services.slice(0, 5).forEach(service => {
+      console.log(
+        `  ${service.id}: ${service.location.latitude}, ${service.location.longitude}`,
+      )
+    })
+
+    // Use worker thread for clustering
+    const worker = new Worker(
+      path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
+    )
+
+    const clusteredServices = await new Promise((resolve, reject) => {
+      worker.on('message', resolve)
+      worker.on('error', reject)
+      worker.postMessage({
+        services,
+        distanceMatrix: distanceMatrix.map(row => [...row]), // Create a copy of the distance matrix
+        epsilon,
+        minPoints,
+      })
+    })
+
+    worker.terminate()
+
+    // Log the clustering results
+    console.log('Clustering Results:')
+    const clusterCounts = clusteredServices.reduce((acc, service) => {
+      acc[service.cluster] = (acc[service.cluster] || 0) + 1
+      return acc
+    }, {})
+    console.log('  Cluster distribution:', clusterCounts)
+
+    // Check if only one cluster was created
+    if (
+      Object.keys(clusterCounts).length === 1 &&
+      clusterCounts[-1] === undefined
+    ) {
+      console.warn(
+        'Warning: Only one cluster was created. Consider adjusting the epsilon value.',
+      )
+    }
+
     return NextResponse.json(clusteredServices)
   } catch (error) {
     console.error('Error in cluster API:', error)
