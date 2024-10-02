@@ -117,6 +117,53 @@ export async function GET(request) {
 
           const [lon1, lat1] = geopos1[0]
 
+          // If only one ID is provided, return information for that location and the nearest 5 locations
+          if (!id2) {
+            const nearestLocations = await redis.georadius(
+              'locations',
+              lon1,
+              lat1,
+              100, // Search radius in miles
+              'mi',
+              'WITHDIST',
+              'COUNT',
+              6, // Get 6 to include the location itself
+              'ASC',
+            )
+
+            const nearestLocationDetails = await Promise.all(
+              nearestLocations.slice(1).map(async ([id, distance]) => {
+                const [geopos, company] = await Promise.all([
+                  redis.geopos('locations', id),
+                  redis.hget('company_names', id),
+                ])
+                const [lon, lat] = geopos[0]
+                return {
+                  id,
+                  distance: parseFloat(distance),
+                  company,
+                  location: {
+                    longitude: parseFloat(lon),
+                    latitude: parseFloat(lat),
+                  },
+                }
+              }),
+            )
+
+            return {
+              from: {
+                id: id1,
+                company: company1,
+                location: {
+                  longitude: parseFloat(lon1),
+                  latitude: parseFloat(lat1),
+                },
+              },
+              distances: nearestLocationDetails,
+            }
+          }
+
+          // Existing code for handling pair of IDs
           const [geopos2, company2, distance] = await Promise.all([
             redis.geopos('locations', id2),
             redis.hget('company_names', id2),
