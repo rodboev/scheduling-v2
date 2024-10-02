@@ -5,17 +5,28 @@ import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet-defaulticon-compatibility'
 import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css'
+import 'leaflet.awesome-markers'
+import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 
 const COLORS = [
   'red',
-  'blue',
-  'green',
-  'purple',
+  'darkred',
   'orange',
-  'yellow',
+  'green',
+  'darkgreen',
+  'blue',
+  'purple',
+  'darkpurple',
+  'cadetblue',
+  'lightred',
+  'beige',
+  'lightgreen',
+  'lightblue',
   'pink',
+  'white',
+  'lightgray',
   'gray',
   'black',
 ]
@@ -62,11 +73,11 @@ const Map = () => {
 
   const getMarkerIcon = cluster => {
     const color = cluster === -1 ? 'gray' : COLORS[cluster % COLORS.length]
-    return L.divIcon({
-      html: `<div style="background-color: ${color}; width: 10px; height: 10px; border-radius: 50%;"></div>`,
-      className: 'custom-div-icon',
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
+    return L.AwesomeMarkers.icon({
+      icon: 'info-sign',
+      markerColor: color,
+      prefix: 'fa',
+      iconColor: 'white',
     })
   }
 

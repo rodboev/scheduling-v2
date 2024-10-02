@@ -3804,13 +3804,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"density-clustering@npm:^1.3.0":
-  version: 1.3.0
-  resolution: "density-clustering@npm:1.3.0"
-  checksum: 10c0/de574f82cfb677f0a8968a7a191a8105c846cada78654dff450e712fed96b338c3bb056f06320834d362347c03037b0512d0f46004e3fcdaf3e54986fc0b5ba1
-  languageName: node
-  linkType: hard
-
 "dequal@npm:^2.0.3":
   version: 2.0.3
   resolution: "dequal@npm:2.0.3"
@@ -5951,6 +5944,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"leaflet.awesome-markers@npm:^2.0.5":
+  version: 2.0.5
+  resolution: "leaflet.awesome-markers@npm:2.0.5"
+  checksum: 10c0/d9a35ae86615ff0de587bc0ba8b1edfa9381744f5b5218e92d973e6fc35ff80384d091d6da115067dfe26de9dcb938a5d1337edc0eb4f9b5bb543dd0125406a7
+  languageName: node
+  linkType: hard
+
 "leaflet@npm:^1.9.4":
   version: 1.9.4
   resolution: "leaflet@npm:1.9.4"
@@ -8002,7 +8002,6 @@ __metadata:
     date-fns: "npm:^3.6.0"
     date-fns-tz: "npm:^3.1.3"
     dayjs: "npm:^1.11.13"
-    density-clustering: "npm:^1.3.0"
     dotenv: "npm:^16.4.5"
     eslint: "npm:^8"
     eslint-config-next: "npm:14.2.6"
@@ -8014,6 +8013,7 @@ __metadata:
     ioredis: "npm:^5.4.1"
     leaflet: "npm:^1.9.4"
     leaflet-defaulticon-compatibility: "npm:^0.1.2"
+    leaflet.awesome-markers: "npm:^2.0.5"
     lucide-react: "npm:^0.445.0"
     msnodesqlv8: "npm:^4.2.1"
     mssql: "npm:^11.0.1"

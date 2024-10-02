@@ -56,8 +56,8 @@ export async function GET(request) {
       `  Average distance: ${(flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length / MILES_TO_METERS).toFixed(3)} miles`,
     )
 
-    const maxPointsPerCluster = 10
-    const minPoints = 2
+    const maxPointsPerCluster = 12
+    const minPoints = 6
 
     console.log(`Clustering parameters:`)
     console.log(`  Max points per cluster: ${maxPointsPerCluster}`)

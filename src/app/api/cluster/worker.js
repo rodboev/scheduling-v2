@@ -35,7 +35,7 @@ function customDBSCAN(points, distanceMatrix, maxPointsPerCluster, minPoints) {
       }
     }
 
-    return cluster
+    return cluster.length >= minPoints ? cluster : []
   }
 
   for (let i = 0; i < points.length; i++) {
@@ -43,11 +43,13 @@ function customDBSCAN(points, distanceMatrix, maxPointsPerCluster, minPoints) {
     visited.add(i)
 
     const neighbors = getNeighbors(i)
-    if (neighbors.length < minPoints - 1) {
-      noise.add(i)
-    } else {
+    if (neighbors.length >= minPoints - 1) {
       const cluster = expandCluster(i, neighbors)
-      clusters.push(cluster)
+      if (cluster.length > 0) {
+        clusters.push(cluster)
+      }
+    } else {
+      noise.add(i)
     }
   }
 
