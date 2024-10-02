@@ -46,20 +46,21 @@ export async function GET(request) {
       .flat()
       .filter(d => d !== null && d !== 0)
     console.log('Distance Statistics:')
-    console.log('  Min distance:', Math.min(...flatDistances))
-    console.log('  Max distance:', Math.max(...flatDistances))
     console.log(
-      '  Average distance:',
-      flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length,
+      `  Min distance: ${(Math.min(...flatDistances) / MILES_TO_METERS).toFixed(3)} miles`,
+    )
+    console.log(
+      `  Max distance: ${(Math.max(...flatDistances) / MILES_TO_METERS).toFixed(3)} miles`,
+    )
+    console.log(
+      `  Average distance: ${(flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length / MILES_TO_METERS).toFixed(3)} miles`,
     )
 
-    // Set epsilon to 0.5 miles (converted to meters)
-    const epsilonMiles = 0.5
-    const epsilon = epsilonMiles * MILES_TO_METERS
+    const maxPointsPerCluster = 10
     const minPoints = 2
 
     console.log(`Clustering parameters:`)
-    console.log(`  Epsilon: ${epsilonMiles} miles (${epsilon} meters)`)
+    console.log(`  Max points per cluster: ${maxPointsPerCluster}`)
     console.log(`  Min Points: ${minPoints}`)
     console.log(`  Number of services: ${services.length}`)
 
@@ -82,7 +83,7 @@ export async function GET(request) {
       worker.postMessage({
         services,
         distanceMatrix: distanceMatrix.map(row => [...row]), // Create a copy of the distance matrix
-        epsilon,
+        maxPointsPerCluster,
         minPoints,
       })
     })
@@ -103,7 +104,7 @@ export async function GET(request) {
       clusterCounts[-1] === undefined
     ) {
       console.warn(
-        'Warning: Only one cluster was created. Consider adjusting the epsilon value.',
+        'Warning: Only one cluster was created. Consider adjusting the clustering parameters.',
       )
     }
 
