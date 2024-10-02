@@ -8,26 +8,8 @@ import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility
 import 'leaflet.awesome-markers'
 import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  useMapEvents,
-} from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import NumberInput from './NumberInput'
-
-function MapEventHandler() {
-  const map = useMapEvents({
-    dragend: () => {
-      const center = map.getCenter()
-      console.log(
-        `Map center: ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`,
-      )
-    },
-  })
-  return null
-}
 
 const COLORS = [
   'red',
@@ -55,8 +37,8 @@ const Map = () => {
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
   const [minPoints, setMinPoints] = useState(6)
   const [maxPoints, setMaxPoints] = useState(12)
+  const [activePopup, setActivePopup] = useState(null)
   const center = [40.7676, -73.956] // New York City coordinates as default center
-  const [activeMarker, setActiveMarker] = useState(null)
   const markerRefs = useRef({})
 
   useEffect(() => {
@@ -84,16 +66,31 @@ const Map = () => {
     () => ({
       mouseover(event) {
         const markerId = event.target.options.id
-        setActiveMarker(markerId)
-        markerRefs.current[markerId].openPopup()
+        if (!activePopup) {
+          markerRefs.current[markerId].openPopup()
+        }
       },
       mouseout(event) {
         const markerId = event.target.options.id
-        setActiveMarker(null)
-        markerRefs.current[markerId].closePopup()
+        if (!activePopup) {
+          markerRefs.current[markerId].closePopup()
+        }
+      },
+      click(event) {
+        const markerId = event.target.options.id
+        if (activePopup === markerId) {
+          markerRefs.current[markerId].closePopup()
+          setActivePopup(null)
+        } else {
+          if (activePopup) {
+            markerRefs.current[activePopup].closePopup()
+          }
+          markerRefs.current[markerId].openPopup()
+          setActivePopup(markerId)
+        }
       },
     }),
-    [],
+    [activePopup],
   )
 
   const getMarkerIcon = (cluster, wasNoise) => {
@@ -104,6 +101,13 @@ const Map = () => {
       prefix: 'fa',
       iconColor: 'white',
     })
+  }
+
+  const handleMapClick = () => {
+    if (activePopup) {
+      markerRefs.current[activePopup].closePopup()
+      setActivePopup(null)
+    }
   }
 
   return (
@@ -139,8 +143,9 @@ const Map = () => {
         center={center}
         zoom={13}
         className="h-full w-full"
+        onClick={handleMapClick}
+        tap={false}
       >
-        <MapEventHandler />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
