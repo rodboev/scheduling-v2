@@ -84,16 +84,19 @@ const Map = () => {
   }
 
   return (
-    <div>
-      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
-        <button onClick={() => setClusterUnclustered(!clusterUnclustered)}>
+    <div className="relative h-screen w-screen">
+      <div className="absolute right-4 top-4 z-[1000]">
+        <button
+          onClick={() => setClusterUnclustered(!clusterUnclustered)}
+          className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+        >
           {clusterUnclustered ? 'Uncluster Noise' : 'Cluster Noise'}
         </button>
       </div>
       <MapContainer
         center={center}
         zoom={10}
-        style={{ height: '100vh', width: '100vw' }}
+        className="h-full w-full"
       >
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
@@ -113,15 +116,17 @@ const Map = () => {
             icon={getMarkerIcon(service.cluster, service.wasNoise)}
           >
             <Popup>
-              <h3>{service.company}</h3>
-              <p>{service.location.address}</p>
-              <p>{new Date(service.date).toLocaleDateString()}</p>
-              <p>
-                Cluster:{' '}
-                {service.cluster === -1
-                  ? 'Unclustered'
-                  : `${service.cluster}${service.wasNoise ? ' (was noise)' : ''}`}
-              </p>
+              <div className="text-sm">
+                <h3 className="font-bold">{service.company}</h3>
+                <div>{service.location.address}</div>
+                <div>{new Date(service.date).toLocaleDateString()}</div>
+                <div>
+                  Cluster:{' '}
+                  {service.cluster === -1
+                    ? 'Unclustered'
+                    : `${service.cluster}${service.wasNoise ? ' (was noise)' : ''}`}
+                </div>
+              </div>
             </Popup>
           </Marker>
         ))}
