@@ -1,5 +1,6 @@
+import axios from 'axios'
 import Redis from 'ioredis'
-import { readFromDiskCache } from './diskCache'
+import { readFromDiskCache } from './diskCache.js'
 
 let redis
 
@@ -66,7 +67,6 @@ export async function generateAndStoreDistances(serviceSetups) {
       invalidCount++
     }
   }
-
   await pipeline.exec()
 
   console.log(
@@ -80,14 +80,26 @@ export async function ensureDistanceData() {
 
   if (locationCount === 0) {
     console.log('Regenerating distance data...')
-    const serviceSetups = await readFromDiskCache({
-      file: 'serviceSetups.json',
-    })
-    if (!serviceSetups || !Array.isArray(serviceSetups)) {
-      throw new Error('Unable to read service setups or invalid data format')
+    let serviceSetups
+
+    // Fetch from API directly
+    try {
+      const response = await axios.get(
+        `http://localhost:${process.env.PORT}/api/serviceSetups`,
+      )
+      serviceSetups = response.data
+      console.log('Fetched service setups:', serviceSetups.length)
+    } catch (error) {
+      console.error('Error fetching service setups:', error)
+      throw new Error('Unable to fetch service setups')
     }
+
+    if (!serviceSetups || !Array.isArray(serviceSetups)) {
+      throw new Error('Invalid service setups data format')
+    }
+
     await generateAndStoreDistances(serviceSetups)
-    console.log('Distance data regenerated and saved')
+    console.log('Distance data regenerated and saved to Redis')
   }
 
   return locationCount
