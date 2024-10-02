@@ -8,7 +8,16 @@ import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility
 import 'leaflet.awesome-markers'
 import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import NumberInput from './NumberInput'
+
+function SetViewOnChange({ center, zoom }) {
+  const map = useMap()
+  useEffect(() => {
+    map.setView(center, zoom)
+  }, [center, zoom, map])
+  return null
+}
 
 const COLORS = [
   'red',
@@ -34,6 +43,8 @@ const COLORS = [
 const Map = () => {
   const [clusteredServices, setClusteredServices] = useState([])
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
+  const [minPoints, setMinPoints] = useState(6)
+  const [maxPoints, setMaxPoints] = useState(12)
   const center = [40.7128, -74.006] // New York City coordinates as default center
   const [activeMarker, setActiveMarker] = useState(null)
   const markerRefs = useRef({})
@@ -45,7 +56,9 @@ const Map = () => {
           params: {
             start: '2024-09-01T04:00:00.000Z',
             end: '2024-09-08T03:59:59.999Z',
-            clusterUnclustered: clusterUnclustered,
+            clusterUnclustered,
+            minPoints,
+            maxPoints,
           },
         })
         setClusteredServices(response.data)
@@ -55,7 +68,7 @@ const Map = () => {
       }
     }
     fetchClusteredServices()
-  }, [clusterUnclustered])
+  }, [clusterUnclustered, minPoints, maxPoints])
 
   const eventHandlers = useMemo(
     () => ({
@@ -85,19 +98,42 @@ const Map = () => {
 
   return (
     <div className="relative h-screen w-screen">
-      <div className="absolute right-4 top-4 z-[1000]">
+      <div className="absolute right-4 top-4 z-[1000] rounded bg-white p-4 shadow">
         <button
           onClick={() => setClusterUnclustered(!clusterUnclustered)}
-          className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+          className="mb-4 w-full rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
         >
           {clusterUnclustered ? 'Uncluster Noise' : 'Cluster Noise'}
         </button>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-1 block text-sm font-bold">Min Points:</label>
+            <NumberInput
+              value={minPoints}
+              onChange={setMinPoints}
+              min={2}
+              max={maxPoints - 1}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-bold">Max Points:</label>
+            <NumberInput
+              value={maxPoints}
+              onChange={setMaxPoints}
+              min={minPoints + 1}
+            />
+          </div>
+        </div>
       </div>
       <MapContainer
         center={center}
-        zoom={10}
+        zoom={13}
         className="h-full w-full"
       >
+        <SetViewOnChange
+          center={center}
+          zoom={13}
+        />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'

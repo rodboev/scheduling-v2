@@ -12,6 +12,8 @@ export async function GET(request) {
     const start = searchParams.get('start')
     const end = searchParams.get('end')
     const clusterUnclustered = searchParams.get('clusterUnclustered') === 'true'
+    const minPoints = parseInt(searchParams.get('minPoints'), 10) || 6
+    const maxPoints = parseInt(searchParams.get('maxPoints'), 10) || 12
 
     if (!start || !end) {
       return NextResponse.json(
@@ -57,21 +59,10 @@ export async function GET(request) {
       `  Average distance: ${(flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length / MILES_TO_METERS).toFixed(3)} miles`,
     )
 
-    const maxPointsPerCluster = 12
-    const minPoints = 6
-
     console.log(`Clustering parameters:`)
-    console.log(`  Max points per cluster: ${maxPointsPerCluster}`)
+    console.log(`  Max points per cluster: ${maxPoints}`)
     console.log(`  Min Points: ${minPoints}`)
     console.log(`  Number of services: ${services.length}`)
-
-    // Log a sample of services
-    console.log('Sample of services:')
-    services.slice(0, 5).forEach(service => {
-      console.log(
-        `  ${service.id}: ${service.location.latitude}, ${service.location.longitude}`,
-      )
-    })
 
     // Use worker thread for clustering
     const worker = new Worker(
@@ -84,7 +75,7 @@ export async function GET(request) {
       worker.postMessage({
         services,
         distanceMatrix: distanceMatrix.map(row => [...row]), // Create a copy of the distance matrix
-        maxPointsPerCluster,
+        maxPointsPerCluster: maxPoints,
         minPoints,
         clusterUnclustered,
       })

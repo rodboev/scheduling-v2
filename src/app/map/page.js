@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic'
 
 // Dynamically import the Map component with ssr disabled
-const Map = dynamic(() => import('./Map'), {
+const Map = dynamic(() => import('./components/Map'), {
   ssr: false,
   loading: () => <p className="mt-8 text-center text-xl">Loading map...</p>,
 })
