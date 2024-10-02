@@ -12,34 +12,26 @@ const NumberInput = ({ value, onChange, min, max }) => {
     }
   }
   return (
-    <div className="flex items-center space-x-2">
-      <button
-        className="h-8 w-8 rounded-full hover:bg-muted"
-        onClick={handleDecrement}
-      >
-        <MinusIcon className="h-4 w-4" />
-      </button>
-      <input
-        type="text"
-        value={value}
-        onChange={e => {
-          const newValue = Number(e.target.value)
-          if (
-            !isNaN(newValue) &&
-            newValue >= min &&
-            (max === undefined || newValue <= max)
-          ) {
-            onChange(newValue)
-          }
-        }}
-        className="w-20 text-center"
-      />
-      <button
-        className="h-8 w-8 rounded-full hover:bg-muted"
-        onClick={handleIncrement}
-      >
-        <PlusIcon className="h-4 w-4" />
-      </button>
+    <div className="relative -left-2 flex">
+      <div className="flex">
+        <button
+          className="flex items-center justify-center rounded-full p-2 hover:bg-muted"
+          onClick={handleDecrement}
+        >
+          <MinusIcon className="h-4 w-4" />
+        </button>
+        <div className="flex cursor-default items-center justify-center px-2 text-center">
+          {value}
+        </div>
+      </div>
+      <div className="flex">
+        <button
+          className="flex items-center justify-center rounded-full p-2 hover:bg-muted"
+          onClick={handleIncrement}
+        >
+          <PlusIcon className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }

@@ -8,14 +8,24 @@ import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility
 import 'leaflet.awesome-markers'
 import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMapEvents,
+} from 'react-leaflet'
 import NumberInput from './NumberInput'
 
-function SetViewOnChange({ center, zoom }) {
-  const map = useMap()
-  useEffect(() => {
-    map.setView(center, zoom)
-  }, [center, zoom, map])
+function MapEventHandler() {
+  const map = useMapEvents({
+    dragend: () => {
+      const center = map.getCenter()
+      console.log(
+        `Map center: ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`,
+      )
+    },
+  })
   return null
 }
 
@@ -45,7 +55,7 @@ const Map = () => {
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
   const [minPoints, setMinPoints] = useState(6)
   const [maxPoints, setMaxPoints] = useState(12)
-  const center = [40.7128, -74.006] // New York City coordinates as default center
+  const center = [40.7676, -73.956] // New York City coordinates as default center
   const [activeMarker, setActiveMarker] = useState(null)
   const markerRefs = useRef({})
 
@@ -105,7 +115,7 @@ const Map = () => {
         >
           {clusterUnclustered ? 'Uncluster Noise' : 'Cluster Noise'}
         </button>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-6">
           <div>
             <label className="mb-1 block text-sm font-bold">Min Points:</label>
             <NumberInput
@@ -130,10 +140,7 @@ const Map = () => {
         zoom={13}
         className="h-full w-full"
       >
-        <SetViewOnChange
-          center={center}
-          zoom={13}
-        />
+        <MapEventHandler />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
