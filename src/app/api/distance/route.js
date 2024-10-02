@@ -1,8 +1,12 @@
-import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
-import Redis from 'ioredis'
+import { readFromDiskCache } from '@/app/utils/diskCache'
+import {
+  getRedisClient,
+  ensureDistanceData,
+  generateAndStoreDistances,
+} from '@/app/utils/redisUtil'
 import { NextResponse } from 'next/server'
 
-const redis = new Redis() // Connects to localhost:6379 by default
+const redis = getRedisClient()
 
 const EARTH_RADIUS_MILES = 3958.8 // Earth's radius in miles
 
@@ -23,84 +27,12 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return EARTH_RADIUS_MILES * c
 }
 
-async function generateAndStoreDistances(serviceSetups) {
-  const pipeline = redis.pipeline()
-
-  // Clear existing data
-  pipeline.del('locations')
-  pipeline.del('company_names')
-
-  let validCount = 0
-  let invalidCount = 0
-  const processedLocations = new Set()
-
-  for (const setup of serviceSetups) {
-    const { location, company } = setup
-    if (
-      location &&
-      typeof location.latitude === 'number' &&
-      typeof location.longitude === 'number' &&
-      !processedLocations.has(location.id)
-    ) {
-      pipeline.geoadd(
-        'locations',
-        location.longitude,
-        location.latitude,
-        location.id.toString(),
-      )
-      pipeline.hset('company_names', location.id.toString(), company)
-      validCount++
-      processedLocations.add(location.id)
-    } else if (!processedLocations.has(location.id)) {
-      console.warn(`Invalid location data for id ${location.id}. Skipping.`)
-      invalidCount++
-    }
-  }
-
-  await pipeline.exec()
-
-  console.log(
-    `Locations and company names stored in Redis. Valid: ${validCount}, Invalid: ${invalidCount}`,
-  )
-}
-
-async function getOrGenerateDistances() {
-  const locationCount = await redis.zcard('locations')
-
-  if (locationCount === 0) {
-    console.log('Regenerating distance data...')
-    const serviceSetups = await readFromDiskCache({
-      file: 'serviceSetups.json',
-    })
-    if (!serviceSetups) throw new Error('Unable to read service setups')
-    await generateAndStoreDistances(serviceSetups)
-    console.log('Distance data regenerated and saved')
-  }
-
-  return locationCount
-}
-
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const idPairs = searchParams.getAll('id')
 
   try {
-    let locationCount = await redis.zcard('locations')
-
-    if (locationCount === 0) {
-      console.log('Regenerating distance data...')
-      const serviceSetups = await readFromDiskCache({
-        file: 'serviceSetups.json',
-      })
-      if (!serviceSetups || !Array.isArray(serviceSetups)) {
-        throw new Error('Unable to read service setups or invalid data format')
-      }
-      await generateAndStoreDistances(serviceSetups)
-      locationCount = await redis.zcard('locations')
-      console.log(
-        `Distance data regenerated and saved. New count: ${locationCount}`,
-      )
-    }
+    await ensureDistanceData()
 
     if (idPairs.length > 0) {
       const results = await Promise.all(

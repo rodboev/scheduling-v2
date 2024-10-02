@@ -1,66 +1,10 @@
-import Redis from 'ioredis'
-import { readFromDiskCache } from '../utils/diskCache.js'
+import {
+  getRedisClient,
+  ensureDistanceData,
+  closeRedisConnection,
+} from '../utils/redisUtil.js'
 
-const redis = new Redis(process.env.REDIS_URL)
-
-async function generateAndStoreDistances(serviceSetups) {
-  const pipeline = redis.pipeline()
-
-  // Clear existing data
-  pipeline.del('locations')
-  pipeline.del('company_names')
-
-  let validCount = 0
-  let invalidCount = 0
-  const processedLocations = new Set()
-
-  for (const setup of serviceSetups) {
-    const { location, company } = setup
-    if (
-      location &&
-      typeof location.latitude === 'number' &&
-      typeof location.longitude === 'number' &&
-      !processedLocations.has(location.id)
-    ) {
-      pipeline.geoadd(
-        'locations',
-        location.longitude,
-        location.latitude,
-        location.id.toString(),
-      )
-      pipeline.hset('company_names', location.id.toString(), company)
-      validCount++
-      processedLocations.add(location.id)
-    } else if (!processedLocations.has(location.id)) {
-      console.warn(`Invalid location data for id ${location.id}. Skipping.`)
-      invalidCount++
-    }
-  }
-
-  await pipeline.exec()
-
-  console.log(
-    `Locations and company names stored in Redis. Valid: ${validCount}, Invalid: ${invalidCount}`,
-  )
-}
-
-async function ensureDistanceData() {
-  const locationCount = await redis.zcard('locations')
-
-  if (locationCount === 0) {
-    console.log('Regenerating distance data...')
-    const serviceSetups = await readFromDiskCache({
-      file: 'serviceSetups.json',
-    })
-    if (!serviceSetups || !Array.isArray(serviceSetups)) {
-      throw new Error('Unable to read service setups or invalid data format')
-    }
-    await generateAndStoreDistances(serviceSetups)
-    console.log('Distance data regenerated and saved')
-  }
-
-  return locationCount
-}
+const redis = getRedisClient()
 
 export async function getDistances(pairs) {
   await ensureDistanceData()
@@ -102,6 +46,4 @@ export async function getLocationInfo(ids) {
   })
 }
 
-export async function closeRedisConnection() {
-  await redis.quit()
-}
+export { closeRedisConnection }

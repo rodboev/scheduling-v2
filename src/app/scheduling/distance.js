@@ -1,5 +1,5 @@
 // /src/app/scheduling/distance.js
-import { getDistances, getLocationInfo } from './redisClient.js'
+import { getDistances } from './redisClient.js'
 
 const distanceCache = new Map()
 const BATCH_SIZE = 50
