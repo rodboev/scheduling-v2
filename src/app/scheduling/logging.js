@@ -1,8 +1,11 @@
+// /src/app/scheduling/logging.js
 import {
   formatDate,
   formatTime,
   calculateDuration,
 } from '../utils/dateHelpers.js'
+
+const SHOW_ONLY_TECH_1_SHIFT_1 = 0 // Toggle to show only Tech 1 Shift 1 when set to 1
 
 export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
@@ -11,7 +14,14 @@ export function printSummary({ techSchedules, unassignedServices }) {
   let totalHours = 0
   let techCount = 0
 
-  Object.entries(techSchedules).forEach(([techId, schedule]) => {
+  Object.entries(techSchedules).forEach(([techId, schedule], techIndex) => {
+    if (
+      SHOW_ONLY_TECH_1_SHIFT_1 &&
+      (techIndex !== 0 || !schedule.shifts || schedule.shifts.length === 0)
+    ) {
+      return // Skip other techs when toggle is enabled
+    }
+
     if (schedule.shifts && schedule.shifts.length > 0) {
       console.log(`${techId}:`)
       techCount++
@@ -19,6 +29,10 @@ export function printSummary({ techSchedules, unassignedServices }) {
       let techTotalHours = 0
 
       schedule.shifts.forEach((shift, shiftIndex) => {
+        if (SHOW_ONLY_TECH_1_SHIFT_1 && shiftIndex !== 0) {
+          return // Skip other shifts when toggle is enabled
+        }
+
         const shiftStart = new Date(shift.shiftStart)
         const shiftEnd = new Date(shift.shiftEnd)
 
@@ -31,9 +45,9 @@ export function printSummary({ techSchedules, unassignedServices }) {
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
-          // Sort services chronologically
+          // Sort services by their assigned index to ensure correct order
           const sortedServices = [...shift.services].sort(
-            (a, b) => new Date(a.start) - new Date(b.start),
+            (a, b) => a.index - b.index,
           )
 
           sortedServices.forEach((service, serviceIndex) => {
@@ -96,31 +110,33 @@ export function printSummary({ techSchedules, unassignedServices }) {
     }
   })
 
-  // Print unassigned services
-  if (unassignedServices.length > 0) {
-    console.log('Unassigned services:')
-    unassignedServices.forEach(service => {
-      const date = formatDate(new Date(service.date))
-      const timeRange =
-        service.time.range[0] && service.time.range[1]
-          ? [
-              formatTime(new Date(service.time.range[0])),
-              formatTime(new Date(service.time.range[1])),
-            ].join(' - ')
-          : 'Invalid time range'
-      console.log(
-        `- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`,
-      )
-    })
-    console.log('')
-  }
+  if (!SHOW_ONLY_TECH_1_SHIFT_1) {
+    // Print unassigned services
+    if (unassignedServices.length > 0) {
+      console.log('Unassigned services:')
+      unassignedServices.forEach(service => {
+        const date = formatDate(new Date(service.date))
+        const timeRange =
+          service.time.range[0] && service.time.range[1]
+            ? [
+                formatTime(new Date(service.time.range[0])),
+                formatTime(new Date(service.time.range[1])),
+              ].join(' - ')
+            : 'Invalid time range'
+        console.log(
+          `- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`,
+        )
+      })
+      console.log('')
+    }
 
-  // Print total hours summary
-  const averageHours = totalHours / techCount
-  const formattedTechHours = techSummaries.map(formatHours).join(', ')
-  console.log(
-    `Total hours: ${formatHours(totalHours)} (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
-  )
+    // Print total hours summary
+    const averageHours = totalHours / techCount
+    const formattedTechHours = techSummaries.map(formatHours).join(', ')
+    console.log(
+      `Total hours: ${formatHours(totalHours)} (between ${techCount} techs): ${formattedTechHours} (average ${formatHours(averageHours)} hrs/tech)`,
+    )
+  }
 }
 
 // Helper function to format hours
@@ -128,34 +144,27 @@ function formatHours(hours) {
   return Number.isInteger(hours) ? hours.toString() : hours.toFixed(2)
 }
 
-function findScheduleGaps(shift, from, to) {
+// Placeholder for findScheduleGaps function
+function findScheduleGaps(shift, shiftStart, shiftEnd) {
   const gaps = []
-  let currentTime = new Date(from)
-  const endTime = new Date(to)
-
   const sortedServices = [...shift.services].sort(
     (a, b) => new Date(a.start) - new Date(b.start),
   )
 
-  for (const service of sortedServices) {
+  let previousEnd = shiftStart
+  sortedServices.forEach(service => {
     const serviceStart = new Date(service.start)
-    const serviceEnd = new Date(service.end)
-
-    if (serviceStart > currentTime) {
-      gaps.push({
-        start: currentTime,
-        end: serviceStart,
-      })
+    if (serviceStart > previousEnd) {
+      gaps.push({ start: previousEnd, end: serviceStart })
     }
+    const serviceEnd = new Date(service.end)
+    if (serviceEnd > previousEnd) {
+      previousEnd = serviceEnd
+    }
+  })
 
-    currentTime = serviceEnd > currentTime ? serviceEnd : currentTime
-  }
-
-  if (endTime > currentTime) {
-    gaps.push({
-      start: currentTime,
-      end: endTime,
-    })
+  if (previousEnd < shiftEnd) {
+    gaps.push({ start: previousEnd, end: shiftEnd })
   }
 
   return gaps

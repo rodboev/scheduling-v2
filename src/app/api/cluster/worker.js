@@ -1,9 +1,16 @@
 import { parentPort } from 'worker_threads'
 
-function customDBSCAN(points, distanceMatrix, maxPointsPerCluster, minPoints) {
+function customDBSCAN({
+  points,
+  distanceMatrix,
+  maxPointsPerCluster,
+  minPoints,
+  clusterUnclustered,
+}) {
   const clusters = []
   const visited = new Set()
   const noise = new Set()
+  const initialNoise = new Set() // New set to keep track of initial noise points
 
   function getNeighbors(pointIndex) {
     return points
@@ -35,7 +42,7 @@ function customDBSCAN(points, distanceMatrix, maxPointsPerCluster, minPoints) {
       }
     }
 
-    return cluster.length >= minPoints ? cluster : []
+    return cluster
   }
 
   for (let i = 0; i < points.length; i++) {
@@ -45,32 +52,70 @@ function customDBSCAN(points, distanceMatrix, maxPointsPerCluster, minPoints) {
     const neighbors = getNeighbors(i)
     if (neighbors.length >= minPoints - 1) {
       const cluster = expandCluster(i, neighbors)
-      if (cluster.length > 0) {
+      if (cluster.length >= minPoints) {
         clusters.push(cluster)
+      } else {
+        cluster.forEach(point => {
+          noise.add(point)
+          initialNoise.add(point) // Add to initialNoise as well
+        })
       }
     } else {
       noise.add(i)
+      initialNoise.add(i) // Add to initialNoise as well
     }
   }
 
-  return clusters
+  // Assign unclustered points to the nearest cluster if clusterUnclustered is true
+  if (clusterUnclustered) {
+    Array.from(noise).forEach(pointIndex => {
+      let nearestCluster = -1
+      let minDistance = Infinity
+
+      clusters.forEach((cluster, clusterIndex) => {
+        cluster.forEach(clusterPointIndex => {
+          const distance = distanceMatrix[pointIndex][clusterPointIndex]
+          if (distance < minDistance) {
+            minDistance = distance
+            nearestCluster = clusterIndex
+          }
+        })
+      })
+
+      if (nearestCluster !== -1) {
+        clusters[nearestCluster].push(pointIndex)
+        noise.delete(pointIndex)
+        // Note: We don't remove from initialNoise
+      }
+    })
+  }
+
+  return { clusters, noise, initialNoise }
 }
 
 parentPort.on(
   'message',
-  ({ services, distanceMatrix, maxPointsPerCluster, minPoints }) => {
+  ({
+    services,
+    distanceMatrix,
+    maxPointsPerCluster,
+    minPoints,
+    clusterUnclustered,
+  }) => {
     const points = services.map((_, index) => [index])
 
-    const clusters = customDBSCAN(
+    const { clusters, noise, initialNoise } = customDBSCAN({
       points,
       distanceMatrix,
       maxPointsPerCluster,
       minPoints,
-    )
+      clusterUnclustered,
+    })
 
     const clusteredServices = services.map((service, index) => ({
       ...service,
       cluster: clusters.findIndex(cluster => cluster.includes(index)),
+      wasNoise: initialNoise.has(index), // Use initialNoise instead of noise
     }))
 
     parentPort.postMessage(clusteredServices)

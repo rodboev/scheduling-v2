@@ -11,6 +11,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const start = searchParams.get('start')
     const end = searchParams.get('end')
+    const clusterUnclustered = searchParams.get('clusterUnclustered') === 'true'
 
     if (!start || !end) {
       return NextResponse.json(
@@ -85,6 +86,7 @@ export async function GET(request) {
         distanceMatrix: distanceMatrix.map(row => [...row]), // Create a copy of the distance matrix
         maxPointsPerCluster,
         minPoints,
+        clusterUnclustered,
       })
     })
 

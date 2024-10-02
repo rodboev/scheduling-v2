@@ -33,6 +33,7 @@ const COLORS = [
 
 const Map = () => {
   const [clusteredServices, setClusteredServices] = useState([])
+  const [clusterUnclustered, setClusterUnclustered] = useState(true)
   const center = [40.7128, -74.006] // New York City coordinates as default center
   const [activeMarker, setActiveMarker] = useState(null)
   const markerRefs = useRef({})
@@ -44,6 +45,7 @@ const Map = () => {
           params: {
             start: '2024-09-01T04:00:00.000Z',
             end: '2024-09-08T03:59:59.999Z',
+            clusterUnclustered: clusterUnclustered,
           },
         })
         setClusteredServices(response.data)
@@ -53,7 +55,7 @@ const Map = () => {
       }
     }
     fetchClusteredServices()
-  }, [])
+  }, [clusterUnclustered])
 
   const eventHandlers = useMemo(
     () => ({
@@ -71,10 +73,10 @@ const Map = () => {
     [],
   )
 
-  const getMarkerIcon = cluster => {
+  const getMarkerIcon = (cluster, wasNoise) => {
     const color = cluster === -1 ? 'gray' : COLORS[cluster % COLORS.length]
     return L.AwesomeMarkers.icon({
-      icon: 'info-sign',
+      icon: wasNoise ? 'question-sign' : 'info-sign',
       markerColor: color,
       prefix: 'fa',
       iconColor: 'white',
@@ -82,42 +84,49 @@ const Map = () => {
   }
 
   return (
-    <MapContainer
-      center={center}
-      zoom={10}
-      style={{ height: '100vh', width: '100vw' }}
-    >
-      <TileLayer
-        url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
-        attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
-      />
-      {clusteredServices.map(service => (
-        <Marker
-          key={service.id}
-          id={service.id}
-          position={[service.location.latitude, service.location.longitude]}
-          eventHandlers={eventHandlers}
-          ref={element => {
-            if (element) {
-              markerRefs.current[service.id] = element
-            }
-          }}
-          icon={getMarkerIcon(service.cluster)}
-        >
-          <Popup>
-            <h3>{service.company}</h3>
-            <p>{service.location.address}</p>
-            <p>{service.location.address2}</p>
-            <p>Tech: {service.tech.name}</p>
-            <p>Date: {new Date(service.date).toLocaleDateString()}</p>
-            <p>
-              Cluster:{' '}
-              {service.cluster === -1 ? 'Unclustered' : service.cluster}
-            </p>
-          </Popup>
-        </Marker>
-      ))}
-    </MapContainer>
+    <div>
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
+        <button onClick={() => setClusterUnclustered(!clusterUnclustered)}>
+          {clusterUnclustered ? 'Uncluster Noise' : 'Cluster Noise'}
+        </button>
+      </div>
+      <MapContainer
+        center={center}
+        zoom={10}
+        style={{ height: '100vh', width: '100vw' }}
+      >
+        <TileLayer
+          url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
+          attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
+        />
+        {clusteredServices.map(service => (
+          <Marker
+            key={service.id}
+            id={service.id}
+            position={[service.location.latitude, service.location.longitude]}
+            eventHandlers={eventHandlers}
+            ref={element => {
+              if (element) {
+                markerRefs.current[service.id] = element
+              }
+            }}
+            icon={getMarkerIcon(service.cluster, service.wasNoise)}
+          >
+            <Popup>
+              <h3>{service.company}</h3>
+              <p>{service.location.address}</p>
+              <p>{new Date(service.date).toLocaleDateString()}</p>
+              <p>
+                Cluster:{' '}
+                {service.cluster === -1
+                  ? 'Unclustered'
+                  : `${service.cluster}${service.wasNoise ? ' (was noise)' : ''}`}
+              </p>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
+    </div>
   )
 }
 
