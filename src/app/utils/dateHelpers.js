@@ -44,3 +44,11 @@ export function isAfter(date1, date2) {
 export function isBefore(date1, date2) {
   return date1.getTime() < date2.getTime()
 }
+
+export function getMax(date1, date2) {
+  return date1.getTime() > date2.getTime() ? date1 : date2
+}
+
+export function getMin(date1, date2) {
+  return date1.getTime() < date2.getTime() ? date1 : date2
+}
