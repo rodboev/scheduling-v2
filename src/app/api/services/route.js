@@ -15,7 +15,7 @@ function round(time) {
 
 const isProduction = process.env.NODE_ENV === 'production'
 
-function createServicesForDateRange(setup, startDate, endDate) {
+function createServicesForRange(setup, startDate, endDate) {
   const services = []
   const start = dayjs(startDate)
   const end = dayjs(endDate)
@@ -102,7 +102,7 @@ export async function GET(request) {
 
     // Generate services for the date range
     const services = serviceSetups.flatMap(setup =>
-      createServicesForDateRange(setup, startDate, endDate),
+      createServicesForRange(setup, startDate, endDate),
     )
 
     // Read enforcement state directly from file

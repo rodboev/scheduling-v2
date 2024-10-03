@@ -14,8 +14,8 @@ export async function GET(request) {
       start: searchParams.get('start'),
       end: searchParams.get('end'),
       clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
-      minPoints: parseInt(searchParams.get('minPoints'), 10) || 6,
-      maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 12,
+      minPoints: parseInt(searchParams.get('minPoints'), 10) || 1,
+      maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
     }
 
     if (!params.start || !params.end) {
@@ -32,25 +32,22 @@ export async function GET(request) {
       return NextResponse.json(cachedData)
     }
 
-    let services = await axios.get(
-      `http://localhost:${process.env.PORT}/api/services`,
-      {
+    let services = (
+      await axios.get(`http://localhost:${process.env.PORT}/api/services`, {
         params: { start: params.start, end: params.end },
-      },
-    )
-
-    services = services.data.filter(service =>
-      service.location.address2.includes('New York, NY'),
-    )
+      })
+    ).data.filter(service => service.location.address2.includes('NY'))
 
     const distanceMatrix = await createDistanceMatrix(services)
+    console.log(services.data)
+    if (!Array.isArray(distanceMatrix)) {
+      console.warn('Distance matrix is not an array')
+      return NextResponse.json(services.data)
+    }
 
-    if (!distanceMatrix) {
-      console.error('Failed to calculate distance matrix')
-      return NextResponse.json(
-        { error: 'Failed to calculate distances' },
-        { status: 500 },
-      )
+    if (distanceMatrix.length === 0) {
+      console.warn('Distance matrix is empty')
+      return NextResponse.json(services.data)
     }
 
     // Log distance statistics

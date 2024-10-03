@@ -1,9 +1,8 @@
 'use client'
 
 import React from 'react'
-import EnforceSwitch from '@/app/components/EnforceSwitch'
 import { capitalize } from '@/app/utils/capitalize'
-import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
+import { formatTime } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
 import { Car } from 'lucide-react'
 import { Popup } from 'react-leaflet'
@@ -25,7 +24,7 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
         </h3>
 
         {service.distanceFromPrevious && (
-          <p className="mb-2">
+          <div className="mb-2">
             <div className="flex items-center gap-x-1">
               <span>
                 <Car />
@@ -39,28 +38,38 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
                 from {service?.previousCompany}
               </div>
             )}
-          </p>
+          </div>
         )}
 
-        <p className="mb-2">
+        <div className="mb-2">
           {service.location.address}
           <br />
           {service.location.address2}
-        </p>
+        </div>
 
-        <p className="whitespace-nowrap">
-          {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
-          {dayjs(service.end).format('M/D')} {formatTime(service.end)}
-        </p>
-        <p className="whitespace-nowrap">
+        {service.start && service.end && (
+          <div className="whitespace-nowrap">
+            {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
+            {dayjs(service.end).format('M/D')} {formatTime(service.end)}
+          </div>
+        )}
+
+        <div className="whitespace-nowrap">
           Preferred Time: {dayjs(service.time.preferred).format('h:mma')}
-        </p>
-        <p>Duration: {service.time.duration} min</p>
-        <p>
-          Calc Range: {dayjs(service.time.range[0]).format('h:mma')} -{' '}
-          {dayjs(service.time.range[1]).format('h:mma')} (from "
-          {service.time.meta.originalRange}")
-        </p>
+        </div>
+        <div>Duration: {service.time.duration} min</div>
+        <div>
+          Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
+          {dayjs(service.time.range[0]).format('h:mma')} -{' '}
+          {dayjs(service.time.range[1]).format('h:mma')}
+        </div>
+
+        {service.cluster !== undefined && (
+          <div className="mt-3 font-bold">
+            Cluster: {service.cluster === -1 ? 'noise' : service.cluster}
+            {service.wasNoise && ` (was noise)`}
+          </div>
+        )}
       </div>
     </Popup>
   )

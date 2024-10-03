@@ -21,17 +21,19 @@ async function getDistances(pairs) {
 }
 
 export async function createDistanceMatrix(services) {
+  // Validate services
+  if (!Array.isArray(services) || services.length === 0) {
+    console.warn(
+      `Invalid services array: expected non-empty array, got ${Array.isArray(services) ? `empty array` : typeof services}`,
+    )
+    return []
+  }
+
   const cacheKey = `distanceMatrix:${services.map(s => s.id).join(',')}`
   const cachedMatrix = getCachedData(cacheKey)
 
   if (cachedMatrix) {
     return cachedMatrix
-  }
-
-  // Validate services
-  if (!Array.isArray(services) || services.length === 0) {
-    console.error('Invalid services array:', services)
-    return null
   }
 
   const pairs = []
