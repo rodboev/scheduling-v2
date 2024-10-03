@@ -37,6 +37,7 @@
     "msnodesqlv8": "^4.2.1",
     "mssql": "^11.0.1",
     "next": "^15.0.0-rc.0",
+    "node-cache": "^5.1.2",
     "odbc": "^2.4.9",
     "pm2": "^5.4.2",
     "priorityqueuejs": "^2.0.0",

@@ -1,8 +1,8 @@
-import { readFromDiskCache } from '@/app/utils/diskCache'
 import {
   getRedisClient,
   ensureDistanceData,
-  generateAndStoreDistances,
+  getCachedData,
+  setCachedData,
 } from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
 
@@ -38,6 +38,13 @@ export async function GET(request) {
       const results = await Promise.all(
         idPairs.map(async pair => {
           const [id1, id2] = pair.split(',')
+          const cacheKey = `distance:${id1},${id2}`
+          const cachedResult = getCachedData(cacheKey)
+
+          if (cachedResult) {
+            return cachedResult
+          }
+
           const [geopos1, company1] = await Promise.all([
             redis.geopos('locations', id1),
             redis.hget('company_names', id1),
@@ -49,17 +56,16 @@ export async function GET(request) {
 
           const [lon1, lat1] = geopos1[0]
 
-          // If only one ID is provided, return information for that location and the nearest 5 locations
           if (!id2) {
             const nearestLocations = await redis.georadius(
               'locations',
               lon1,
               lat1,
-              100, // Search radius in miles
+              100,
               'mi',
               'WITHDIST',
               'COUNT',
-              6, // Get 6 to include the location itself
+              6,
               'ASC',
             )
 
@@ -82,7 +88,7 @@ export async function GET(request) {
               }),
             )
 
-            return {
+            const result = {
               from: {
                 id: id1,
                 company: company1,
@@ -93,9 +99,10 @@ export async function GET(request) {
               },
               distances: nearestLocationDetails,
             }
+            setCachedData(cacheKey, result)
+            return result
           }
 
-          // Existing code for handling pair of IDs
           const [geopos2, company2, distance] = await Promise.all([
             redis.geopos('locations', id2),
             redis.hget('company_names', id2),
@@ -108,7 +115,7 @@ export async function GET(request) {
 
           const [lon2, lat2] = geopos2[0]
 
-          return {
+          const result = {
             from: {
               id: id1,
               company: company1,
@@ -129,6 +136,8 @@ export async function GET(request) {
               },
             ],
           }
+          setCachedData(cacheKey, result)
+          return result
         }),
       )
 

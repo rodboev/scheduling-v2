@@ -4,7 +4,7 @@ import {
   max as getMax,
   min as getMin,
 } from '../utils/dateHelpers.js'
-import { createDistanceMatrix } from '../utils/distance.js/index.js'
+import { createDistanceMatrix } from '../utils/distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
 /**

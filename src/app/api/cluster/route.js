@@ -1,4 +1,5 @@
 import { createDistanceMatrix } from '@/app/utils/distance'
+import { getCachedData, setCachedData } from '@/app/utils/redisClient'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 import path from 'path'
@@ -9,27 +10,35 @@ const MILES_TO_METERS = 1609.34
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    const start = searchParams.get('start')
-    const end = searchParams.get('end')
-    const clusterUnclustered = searchParams.get('clusterUnclustered') === 'true'
-    const minPoints = parseInt(searchParams.get('minPoints'), 10) || 6
-    const maxPoints = parseInt(searchParams.get('maxPoints'), 10) || 12
+    const params = {
+      start: searchParams.get('start'),
+      end: searchParams.get('end'),
+      clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
+      minPoints: parseInt(searchParams.get('minPoints'), 10) || 6,
+      maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 12,
+    }
 
-    if (!start || !end) {
+    if (!params.start || !params.end) {
       return NextResponse.json(
         { error: 'Missing start or end date' },
         { status: 400 },
       )
     }
 
+    const cacheKey = `clusteredServices:${JSON.stringify(params)}`
+    const cachedData = getCachedData(cacheKey)
+
+    if (cachedData) {
+      return NextResponse.json(cachedData)
+    }
+
     let services = await axios.get(
       `http://localhost:${process.env.PORT}/api/services`,
       {
-        params: { start, end },
+        params: { start: params.start, end: params.end },
       },
     )
 
-    // Filter services to include only those in New York, NY
     services = services.data.filter(service =>
       service.location.address2.includes('New York, NY'),
     )
@@ -44,7 +53,7 @@ export async function GET(request) {
       )
     }
 
-    // Log some statistics about the distance matrix
+    // Log distance statistics
     const flatDistances = distanceMatrix
       .flat()
       .filter(d => d !== null && d !== 0)
@@ -60,11 +69,10 @@ export async function GET(request) {
     )
 
     console.log(`Clustering parameters:`)
-    console.log(`  Max points per cluster: ${maxPoints}`)
-    console.log(`  Min Points: ${minPoints}`)
+    console.log(`  Max points per cluster: ${params.maxPoints}`)
+    console.log(`  Min Points: ${params.minPoints}`)
     console.log(`  Number of services: ${services.length}`)
 
-    // Use worker thread for clustering
     const worker = new Worker(
       path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
     )
@@ -74,16 +82,16 @@ export async function GET(request) {
       worker.on('error', reject)
       worker.postMessage({
         services,
-        distanceMatrix: distanceMatrix.map(row => [...row]), // Create a copy of the distance matrix
-        maxPointsPerCluster: maxPoints,
-        minPoints,
-        clusterUnclustered,
+        distanceMatrix: distanceMatrix.map(row => [...row]),
+        maxPointsPerCluster: params.maxPoints,
+        minPoints: params.minPoints,
+        clusterUnclustered: params.clusterUnclustered,
       })
     })
 
     worker.terminate()
 
-    // Log the clustering results
+    // Log clustering results
     console.log('Clustering Results:')
     const clusterCounts = clusteredServices.reduce((acc, service) => {
       acc[service.cluster] = (acc[service.cluster] || 0) + 1
@@ -91,7 +99,6 @@ export async function GET(request) {
     }, {})
     console.log('  Cluster distribution:', clusterCounts)
 
-    // Check if only one cluster was created
     if (
       Object.keys(clusterCounts).length === 1 &&
       clusterCounts[-1] === undefined
@@ -101,6 +108,7 @@ export async function GET(request) {
       )
     }
 
+    setCachedData(cacheKey, clusteredServices)
     return NextResponse.json(clusteredServices)
   } catch (error) {
     console.error('Error in cluster API:', error)

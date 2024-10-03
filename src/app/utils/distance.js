@@ -1,9 +1,34 @@
-import { getRedisClient, ensureDistanceData } from '@/app/utils/redisClient'
+import {
+  getRedisClient,
+  ensureDistanceData,
+  getCachedData,
+  setCachedData,
+} from './redisClient.js'
 
 const redis = getRedisClient()
 const BATCH_SIZE = 50
 
+async function getDistances(pairs) {
+  await ensureDistanceData()
+
+  const pipeline = redis.pipeline()
+
+  for (const [id1, id2] of pairs) {
+    pipeline.geodist('locations', id1, id2, 'mi')
+  }
+
+  const results = await pipeline.exec()
+  return results.map(([err, result]) => (err ? null : parseFloat(result)))
+}
+
 export async function createDistanceMatrix(services) {
+  const cacheKey = `distanceMatrix:${services.map(s => s.id).join(',')}`
+  const cachedMatrix = getCachedData(cacheKey)
+
+  if (cachedMatrix) {
+    return cachedMatrix
+  }
+
   // Validate services
   if (!Array.isArray(services) || services.length === 0) {
     console.error('Invalid services array:', services)
@@ -59,8 +84,10 @@ export async function createDistanceMatrix(services) {
     }
   }
 
+  setCachedData(cacheKey, distanceMatrix)
   return distanceMatrix
 }
+
 export async function getDistanceBetweenServices(fromService, toService) {
   if (!fromService?.location?.id || !toService?.location?.id) {
     console.warn(
@@ -75,17 +102,4 @@ export async function getDistanceBetweenServices(fromService, toService) {
 
   const [distance] = await getDistances([[fromId, toId]])
   return distance
-}
-
-async function getDistances(pairs) {
-  await ensureDistanceData()
-
-  const pipeline = redis.pipeline()
-
-  for (const [id1, id2] of pairs) {
-    pipeline.geodist('locations', id1, id2, 'mi')
-  }
-
-  const results = await pipeline.exec()
-  return results.map(([err, result]) => (err ? null : parseFloat(result)))
 }

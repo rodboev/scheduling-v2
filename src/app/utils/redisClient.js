@@ -1,7 +1,9 @@
 import axios from 'axios'
 import Redis from 'ioredis'
+import NodeCache from 'node-cache'
 
 let redis
+const memoryCache = new NodeCache({ stdTTL: 900 }) // Cache for 15 minutes
 
 export function getRedisClient() {
   if (!redis) {
@@ -74,6 +76,13 @@ export async function generateAndStoreDistances(serviceSetups) {
 }
 
 export async function ensureDistanceData() {
+  const cacheKey = 'locationCount'
+  const cachedLocationCount = memoryCache.get(cacheKey)
+
+  if (cachedLocationCount !== undefined) {
+    return cachedLocationCount
+  }
+
   const redis = getRedisClient()
   const locationCount = await redis.zcard('locations')
 
@@ -81,7 +90,6 @@ export async function ensureDistanceData() {
     console.log('Regenerating distance data...')
     let serviceSetups
 
-    // Fetch from API directly
     try {
       const response = await axios.get(
         `http://localhost:${process.env.PORT}/api/serviceSetups`,
@@ -101,5 +109,27 @@ export async function ensureDistanceData() {
     console.log('Distance data regenerated and saved to Redis')
   }
 
+  memoryCache.set(cacheKey, locationCount)
   return locationCount
+}
+
+export function getCachedData(key) {
+  return memoryCache.get(key)
+}
+
+export function setCachedData(key, data, ttl = 300) {
+  const defaultTTL = 300
+  let actualTTL = ttl
+
+  if (key.startsWith('location:')) {
+    actualTTL = 86400 // 1 day for location data
+  } else if (key.startsWith('distanceMatrix:')) {
+    actualTTL = 3600 // 1 hour for distance matrix
+  }
+
+  memoryCache.set(key, data, actualTTL)
+}
+
+export function deleteCachedData(key) {
+  memoryCache.del(key)
 }
