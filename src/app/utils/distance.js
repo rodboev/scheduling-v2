@@ -1,15 +1,14 @@
 import {
   getRedisClient,
-  ensureDistanceData,
+  getLocations,
   getCachedData,
   setCachedData,
 } from './redisClient.js'
 
 const redis = getRedisClient()
-const BATCH_SIZE = 50
 
 async function getDistances(pairs) {
-  await ensureDistanceData()
+  await getLocations()
 
   const pipeline = redis.pipeline()
 

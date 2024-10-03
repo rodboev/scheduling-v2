@@ -1,6 +1,6 @@
 import {
   getRedisClient,
-  ensureDistanceData,
+  getLocations,
   getCachedData,
   setCachedData,
 } from '@/app/utils/redisClient'
@@ -32,7 +32,7 @@ export async function GET(request) {
   const idPairs = searchParams.getAll('id')
 
   try {
-    await ensureDistanceData()
+    await getLocations()
 
     if (idPairs.length > 0) {
       const results = await Promise.all(

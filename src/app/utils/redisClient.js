@@ -34,7 +34,7 @@ export async function closeRedisConnection() {
   }
 }
 
-export async function generateAndStoreDistances(serviceSetups) {
+export async function storeLocations(serviceSetups) {
   const redis = getRedisClient()
   const pipeline = redis.pipeline()
 
@@ -75,7 +75,7 @@ export async function generateAndStoreDistances(serviceSetups) {
   )
 }
 
-export async function ensureDistanceData() {
+export async function getLocations() {
   const cacheKey = 'locationCount'
   const cachedLocationCount = memoryCache.get(cacheKey)
 
@@ -105,7 +105,7 @@ export async function ensureDistanceData() {
       throw new Error('Invalid service setups data format')
     }
 
-    await generateAndStoreDistances(serviceSetups)
+    await storeLocations(serviceSetups)
     console.log('Distance data regenerated and saved to Redis')
   }
 
