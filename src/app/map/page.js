@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] })
 // Dynamically import the Map component with ssr disabled
 const Map = dynamic(() => import('./components/Map'), {
   ssr: false,
-  loading: () => <div className="mt-8 text-center text-xl">Loading map...</div>,
+  loading: () => <p className="mt-8 text-center text-xl">Loading map...</p>,
 })
 
 const MapPage = () => {
@@ -18,5 +18,4 @@ const MapPage = () => {
     </div>
   )
 }
-
 export default MapPage

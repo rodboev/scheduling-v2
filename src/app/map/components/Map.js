@@ -43,6 +43,7 @@ const Map = () => {
   const [endDate, setEndDate] = useState('2024-09-02T10:30:00.000Z')
   const center = [40.687, -73.965] // Fixed the array syntax
   const markerRefs = useRef({})
+  const [algorithm, setAlgorithm] = useState('kmeans')
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
     console.log(`Updating service ${serviceId} enforcement to ${checked}`)
@@ -58,6 +59,7 @@ const Map = () => {
           clusterUnclustered,
           minPoints,
           maxPoints,
+          algorithm,
         },
       })
       setClusteredServices(response.data)
@@ -65,7 +67,7 @@ const Map = () => {
       console.error('Error fetching clustered services:', error)
       setClusteredServices([])
     }
-  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints])
+  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm])
 
   useEffect(() => {
     fetchClusteredServices()
@@ -91,6 +93,8 @@ const Map = () => {
         setStartDate={setStartDate}
         endDate={endDate}
         setEndDate={setEndDate}
+        algorithm={algorithm}
+        setAlgorithm={setAlgorithm}
       />
       <MapContainer
         center={center}

@@ -16,6 +16,7 @@ export async function GET(request) {
       clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
       minPoints: parseInt(searchParams.get('minPoints'), 10) || 1,
       maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
+      algorithm: searchParams.get('algorithm') || 'kmeans',
     }
 
     if (!params.start || !params.end) {
@@ -78,16 +79,18 @@ export async function GET(request) {
       path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
     )
 
+    worker.postMessage({
+      services,
+      distanceMatrix,
+      maxPoints: params.maxPoints,
+      minPoints: params.minPoints,
+      clusterUnclustered: params.clusterUnclustered,
+      algorithm: params.algorithm,
+    })
+
     const clusteredServices = await new Promise((resolve, reject) => {
       worker.on('message', resolve)
       worker.on('error', reject)
-      worker.postMessage({
-        services,
-        distanceMatrix: distanceMatrix.map(row => [...row]),
-        maxPointsPerCluster: params.maxPoints,
-        minPoints: params.minPoints,
-        clusterUnclustered: params.clusterUnclustered,
-      })
     })
 
     worker.terminate()
@@ -100,10 +103,13 @@ export async function GET(request) {
     }, {})
     console.log('  Cluster distribution:', clusterCounts)
 
-    if (
-      Object.keys(clusterCounts).length === 1 &&
-      clusterCounts[-1] === undefined
-    ) {
+    const totalClusters = Object.keys(clusterCounts).filter(
+      k => k !== '-1',
+    ).length
+    console.log(`  Total clusters: ${totalClusters}`)
+    console.log(`  Noise points: ${clusterCounts['-1'] || 0}`)
+
+    if (totalClusters === 1 && clusterCounts['-1'] === undefined) {
       console.warn(
         'Warning: Only one cluster was created. Consider adjusting the clustering parameters.',
       )

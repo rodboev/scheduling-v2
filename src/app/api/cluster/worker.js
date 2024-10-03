@@ -1,9 +1,9 @@
 import { parentPort } from 'worker_threads'
 
-function customDBSCAN({
+function DBSCAN({
   points,
   distanceMatrix,
-  maxPointsPerCluster,
+  maxPoints,
   minPoints,
   clusterUnclustered,
 }) {
@@ -22,14 +22,14 @@ function customDBSCAN({
       .sort(
         (a, b) => distanceMatrix[pointIndex][a] - distanceMatrix[pointIndex][b],
       )
-      .slice(0, maxPointsPerCluster - 1)
+      .slice(0, maxPoints - 1)
   }
 
   function expandCluster(point, neighbors) {
     const cluster = [point]
     const queue = [...neighbors]
 
-    while (queue.length > 0 && cluster.length < maxPointsPerCluster) {
+    while (queue.length > 0 && cluster.length < maxPoints) {
       const currentPoint = queue.shift()
       if (!visited.has(currentPoint)) {
         visited.add(currentPoint)
@@ -93,30 +93,120 @@ function customDBSCAN({
   return { clusters, noise, initialNoise }
 }
 
+function kMeans({ points, maxIterations = 100 }) {
+  const k = 3 // Fixed k value
+
+  console.log(`K-means: Using k = ${k}`)
+
+  // Initialize centroids randomly
+  let centroids = Array.from({ length: k }, () => {
+    const randomIndex = Math.floor(Math.random() * points.length)
+    return points[randomIndex]
+  })
+
+  let clusters = []
+  let iterations = 0
+
+  while (iterations < maxIterations) {
+    // Assign points to nearest centroid
+    clusters = Array.from({ length: k }, () => [])
+
+    for (const [index, point] of points.entries()) {
+      let nearestCentroidIndex = 0
+      let minDistance = Infinity
+
+      for (let i = 0; i < k; i++) {
+        const distance = Math.sqrt(
+          centroids[i].reduce((sum, coord, dim) => {
+            return sum + Math.pow(coord - point[dim], 2)
+          }, 0),
+        )
+        if (distance < minDistance) {
+          minDistance = distance
+          nearestCentroidIndex = i
+        }
+      }
+
+      clusters[nearestCentroidIndex].push(index)
+    }
+
+    // Recalculate centroids
+    const newCentroids = clusters.map(cluster => {
+      if (cluster.length === 0) return centroids[0] // Avoid empty clusters
+      return cluster
+        .reduce((sum, pointIndex) => {
+          return sum.map((coord, dim) => coord + points[pointIndex][dim])
+        }, new Array(points[0].length).fill(0))
+        .map(coord => coord / cluster.length)
+    })
+
+    // Check for convergence
+    if (JSON.stringify(newCentroids) === JSON.stringify(centroids)) {
+      break
+    }
+
+    centroids = newCentroids
+    iterations++
+  }
+
+  return { clusters, centroids, k }
+}
+
 parentPort.on(
   'message',
   ({
     services,
     distanceMatrix,
-    maxPointsPerCluster,
+    maxPoints,
     minPoints,
     clusterUnclustered,
+    algorithm = 'kmeans',
   }) => {
-    const points = services.map((_, index) => [index])
+    const points = services.map(service => [
+      service.location.latitude,
+      service.location.longitude,
+    ])
 
-    const { clusters, noise, initialNoise } = customDBSCAN({
-      points,
-      distanceMatrix,
-      maxPointsPerCluster,
-      minPoints,
-      clusterUnclustered,
-    })
+    let clusteredServices
 
-    const clusteredServices = services.map((service, index) => ({
-      ...service,
-      cluster: clusters.findIndex(cluster => cluster.includes(index)),
-      wasNoise: initialNoise.has(index), // Use initialNoise instead of noise
-    }))
+    if (algorithm === 'dbscan') {
+      const { clusters, initialNoise } = DBSCAN({
+        points,
+        distanceMatrix,
+        maxPoints,
+        minPoints,
+        clusterUnclustered,
+      })
+
+      clusteredServices = services.map((service, index) => ({
+        ...service,
+        cluster: clusters.findIndex(cluster => cluster.includes(index)),
+        wasNoise: initialNoise.has(index),
+      }))
+    } else if (algorithm === 'kmeans') {
+      const { clusters, centroids, k } = kMeans({ points })
+
+      clusteredServices = services.map((service, index) => {
+        const clusterIndex = clusters.findIndex(cluster =>
+          cluster.includes(index),
+        )
+        return {
+          ...service,
+          cluster: clusterIndex,
+          wasNoise: false, // K-means doesn't produce noise points
+        }
+      })
+
+      // Log clustering results
+      console.log('K-means Clustering Results:')
+      console.log(`Used k: ${k}`)
+      console.log(`Number of clusters: ${clusters.length}`)
+      clusters.forEach((cluster, index) => {
+        console.log(`Cluster ${index}: ${cluster.length} points`)
+      })
+    } else {
+      throw new Error('Invalid clustering algorithm specified')
+    }
 
     parentPort.postMessage(clusteredServices)
   },

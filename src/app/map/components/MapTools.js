@@ -13,6 +13,8 @@ const MapTools = ({
   setStartDate,
   endDate,
   setEndDate,
+  algorithm,
+  setAlgorithm,
 }) => {
   // Convert ISO string to local datetime string
   const toLocalDateTimeString = isoString => {
@@ -87,6 +89,17 @@ const MapTools = ({
             step="900" // 15 minutes in seconds
           />
         </div>
+      </div>
+      <div className="mt-4">
+        <label className="mb-1 block text-sm font-bold">Algorithm:</label>
+        <select
+          value={algorithm}
+          onChange={e => setAlgorithm(e.target.value)}
+          className="w-full rounded border p-2"
+        >
+          <option value="kmeans">K-means</option>
+          <option value="dbscan">DBSCAN</option>
+        </select>
       </div>
     </div>
   )
