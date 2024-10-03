@@ -83,18 +83,18 @@ const Map = () => {
   return (
     <div className="relative h-screen w-screen">
       <MapTools
-        clusterUnclustered={clusterUnclustered}
-        setClusterUnclustered={setClusterUnclustered}
+        algorithm={algorithm}
+        setAlgorithm={setAlgorithm}
         minPoints={minPoints}
         setMinPoints={setMinPoints}
         maxPoints={maxPoints}
         setMaxPoints={setMaxPoints}
+        clusterUnclustered={clusterUnclustered}
+        setClusterUnclustered={setClusterUnclustered}
         startDate={startDate}
         setStartDate={setStartDate}
         endDate={endDate}
         setEndDate={setEndDate}
-        algorithm={algorithm}
-        setAlgorithm={setAlgorithm}
       />
       <MapContainer
         center={center}

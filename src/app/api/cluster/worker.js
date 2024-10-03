@@ -93,10 +93,11 @@ function DBSCAN({
   return { clusters, noise, initialNoise }
 }
 
-function kMeans({ points, maxIterations = 100 }) {
-  const k = 3 // Fixed k value
+function kMeans({ points, maxPoints, maxIterations = 100 }) {
+  // Calculate k based on the number of points and maxPoints
+  const k = Math.max(1, Math.ceil(points.length / maxPoints))
 
-  console.log(`K-means: Using k = ${k}`)
+  console.log(`K-means: Calculated k = ${k}`)
 
   // Initialize centroids randomly
   let centroids = Array.from({ length: k }, () => {
@@ -184,7 +185,7 @@ parentPort.on(
         wasNoise: initialNoise.has(index),
       }))
     } else if (algorithm === 'kmeans') {
-      const { clusters, centroids, k } = kMeans({ points })
+      const { clusters, centroids, k } = kMeans({ points, maxPoints })
 
       clusteredServices = services.map((service, index) => {
         const clusterIndex = clusters.findIndex(cluster =>
