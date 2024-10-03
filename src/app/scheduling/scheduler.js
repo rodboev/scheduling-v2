@@ -1,6 +1,5 @@
 // /src/app/scheduling/scheduler.js
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
-import { calculateTravelDistance } from './distance.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import { findBestPosition, updateDistances } from './optimize.js'
 import {

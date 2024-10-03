@@ -4,7 +4,7 @@ import {
   max as getMax,
   min as getMin,
 } from '../utils/dateHelpers.js'
-import { calculateDistances } from './distance.js'
+import { createDistanceMatrix } from '../utils/distance.js/index.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
 /**
@@ -15,7 +15,7 @@ import { MAX_SHIFT_HOURS } from './index.js'
  */
 export async function recalculateOptimalIndices(shift) {
   const services = [...shift.services] // Clone to avoid mutating the original array
-  const distanceMatrix = await calculateDistances(services)
+  const distanceMatrix = await createDistanceMatrix(services)
 
   if (services.length === 0) return
 
@@ -193,7 +193,7 @@ function canFitInGap(service, gap) {
  * @param {Object} shift - The shift containing scheduled services.
  */
 export async function updateDistances(services) {
-  const distanceMatrix = await calculateDistances(services)
+  const distanceMatrix = await createDistanceMatrix(services)
 
   for (let i = 1; i < services.length; i++) {
     const previousService = services[i - 1]
@@ -208,7 +208,7 @@ export async function findBestPosition(shift, newService) {
     ...shift,
     services: [...shift.services, newService],
   }
-  const distanceMatrix = await calculateDistances(extendedShift.services)
+  const distanceMatrix = await createDistanceMatrix(extendedShift.services)
 
   let bestPosition = 0
   let minTotalDistance = Infinity

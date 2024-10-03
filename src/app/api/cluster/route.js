@@ -1,4 +1,4 @@
-import { calculateDistances } from '@/app/scheduling/distance'
+import { createDistanceMatrix } from '@/app/utils/distance'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 import path from 'path'
@@ -34,7 +34,7 @@ export async function GET(request) {
       service.location.address2.includes('New York, NY'),
     )
 
-    const distanceMatrix = await calculateDistances(services)
+    const distanceMatrix = await createDistanceMatrix(services)
 
     if (!distanceMatrix) {
       console.error('Failed to calculate distance matrix')
