@@ -111,3 +111,14 @@
     transition: none !important;
   }
 }
+
+div.leaflet-popup-content p {
+  margin: inherit;
+}
+
+div.leaflet-container {
+  font-family: var(--font-sans);
+}
+div.leaflet-container a {
+  color: inherit;
+}

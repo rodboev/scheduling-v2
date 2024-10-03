@@ -1,34 +1,12 @@
 'use client'
 
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import L from 'leaflet'
-import 'leaflet.awesome-markers'
-import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
-import NumberInput from './NumberInput'
-
-const COLORS = [
-  'red',
-  'darkred',
-  'orange',
-  'green',
-  'darkgreen',
-  'blue',
-  'purple',
-  'darkpurple',
-  'cadetblue',
-  'lightred',
-  'beige',
-  'lightgreen',
-  'lightblue',
-  'pink',
-  'white',
-  'lightgray',
-  'gray',
-  'black',
-]
+import { MapContainer, TileLayer } from 'react-leaflet'
+import MapMarker from './MapMarker'
+import MapPopup from './MapPopup'
+import MapTools from './MapTools'
 
 const Map = () => {
   const [clusteredServices, setClusteredServices] = useState([])
@@ -38,6 +16,11 @@ const Map = () => {
   const [activePopup, setActivePopup] = useState(null)
   const center = [40.7676, -73.956] // New York City coordinates as default center
   const markerRefs = useRef({})
+  const updateServiceEnforcement = (serviceId, checked) => {
+    // Implement the logic to update service enforcement
+    console.log(`Updating service ${serviceId} enforcement to ${checked}`)
+    // You might want to update the state or make an API call here
+  }
 
   useEffect(() => {
     const fetchClusteredServices = async () => {
@@ -60,47 +43,6 @@ const Map = () => {
     fetchClusteredServices()
   }, [clusterUnclustered, minPoints, maxPoints])
 
-  const eventHandlers = useMemo(
-    () => ({
-      mouseover(event) {
-        const markerId = event.target.options.id
-        if (!activePopup) {
-          markerRefs.current[markerId].openPopup()
-        }
-      },
-      mouseout(event) {
-        const markerId = event.target.options.id
-        if (!activePopup) {
-          markerRefs.current[markerId].closePopup()
-        }
-      },
-      click(event) {
-        const markerId = event.target.options.id
-        if (activePopup === markerId) {
-          markerRefs.current[markerId].closePopup()
-          setActivePopup(null)
-        } else {
-          if (activePopup) {
-            markerRefs.current[activePopup].closePopup()
-          }
-          markerRefs.current[markerId].openPopup()
-          setActivePopup(markerId)
-        }
-      },
-    }),
-    [activePopup],
-  )
-
-  const getMarkerIcon = (cluster, wasNoise) => {
-    const color = cluster === -1 ? 'gray' : COLORS[cluster % COLORS.length]
-    return L.AwesomeMarkers.icon({
-      icon: wasNoise ? 'question-sign' : 'info-sign',
-      markerColor: color,
-      prefix: 'fa',
-      iconColor: 'white',
-    })
-  }
-
   const handleMapClick = () => {
     if (activePopup) {
       markerRefs.current[activePopup].closePopup()
@@ -110,33 +52,14 @@ const Map = () => {
 
   return (
     <div className="relative h-screen w-screen">
-      <div className="absolute right-4 top-4 z-[1000] rounded bg-white p-4 shadow">
-        <button
-          onClick={() => setClusterUnclustered(!clusterUnclustered)}
-          className="mb-4 w-full rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-        >
-          {clusterUnclustered ? 'Uncluster Noise' : 'Cluster Noise'}
-        </button>
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <label className="mb-1 block text-sm font-bold">Min Points:</label>
-            <NumberInput
-              value={minPoints}
-              onChange={setMinPoints}
-              min={2}
-              max={maxPoints - 1}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-bold">Max Points:</label>
-            <NumberInput
-              value={maxPoints}
-              onChange={setMaxPoints}
-              min={minPoints + 1}
-            />
-          </div>
-        </div>
-      </div>
+      <MapTools
+        clusterUnclustered={clusterUnclustered}
+        setClusterUnclustered={setClusterUnclustered}
+        minPoints={minPoints}
+        setMinPoints={setMinPoints}
+        maxPoints={maxPoints}
+        setMaxPoints={setMaxPoints}
+      />
       <MapContainer
         center={center}
         zoom={13}
@@ -149,32 +72,18 @@ const Map = () => {
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
         />
         {clusteredServices.map(service => (
-          <Marker
+          <MapMarker
             key={service.id}
-            id={service.id}
-            position={[service.location.latitude, service.location.longitude]}
-            eventHandlers={eventHandlers}
-            ref={element => {
-              if (element) {
-                markerRefs.current[service.id] = element
-              }
-            }}
-            icon={getMarkerIcon(service.cluster, service.wasNoise)}
+            service={service}
+            markerRefs={markerRefs}
+            activePopup={activePopup}
+            setActivePopup={setActivePopup}
           >
-            <Popup>
-              <div className="text-sm">
-                <h3 className="font-bold">{service.company}</h3>
-                <div>{service.location.address}</div>
-                <div>{new Date(service.date).toLocaleDateString()}</div>
-                <div>
-                  Cluster:{' '}
-                  {service.cluster === -1
-                    ? 'Unclustered'
-                    : `${service.cluster}${service.wasNoise ? ' (was noise)' : ''}`}
-                </div>
-              </div>
-            </Popup>
-          </Marker>
+            <MapPopup
+              service={service}
+              updateServiceEnforcement={updateServiceEnforcement}
+            />
+          </MapMarker>
         ))}
       </MapContainer>
     </div>

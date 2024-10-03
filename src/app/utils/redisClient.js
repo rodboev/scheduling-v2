@@ -3,7 +3,7 @@ import Redis from 'ioredis'
 import NodeCache from 'node-cache'
 
 let redis
-const memoryCache = new NodeCache({ stdTTL: 900 }) // Cache for 15 minutes
+const memoryCache = new NodeCache({ stdTTL: 3600 }) // Cache for 1 hour
 
 export function getRedisClient() {
   if (!redis) {
