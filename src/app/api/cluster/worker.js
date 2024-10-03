@@ -1,5 +1,36 @@
 import { parentPort } from 'worker_threads'
 
+const MAX_RADIUS_MILES = 5
+
+function filterOutliers(points, distanceMatrix) {
+  const connectedPoints = []
+  const outliers = []
+
+  for (let i = 0; i < points.length; i++) {
+    let hasNearbyPoint = false
+    for (let j = 0; j < points.length; j++) {
+      if (i !== j && distanceMatrix[i][j] <= MAX_RADIUS_MILES) {
+        hasNearbyPoint = true
+        break
+      }
+    }
+    if (hasNearbyPoint) {
+      connectedPoints.push(i)
+    } else {
+      outliers.push(i)
+    }
+  }
+
+  console.log(`Filtered outliers: ${outliers.length} outliers found`)
+  outliers.forEach(index => {
+    console.log(
+      `  Outlier at index ${index}: [${points[index][0]}, ${points[index][1]}]`,
+    )
+  })
+
+  return { connectedPoints, outliers }
+}
+
 function DBSCAN({
   points,
   distanceMatrix,
@@ -168,47 +199,82 @@ parentPort.on(
       service.location.longitude,
     ])
 
+    console.log(
+      'Max distance in matrix:',
+      Math.max(...distanceMatrix.flat().filter(d => d !== null)).toFixed(2),
+      'miles',
+    )
+
+    const { connectedPoints, outliers } = filterOutliers(points, distanceMatrix)
+
+    console.log(`Connected points: ${connectedPoints.length}`)
+    console.log(`Outliers: ${outliers.length}`)
+
+    const filteredPoints = connectedPoints.map(index => points[index])
+    const filteredDistanceMatrix = connectedPoints.map(i =>
+      connectedPoints.map(j => distanceMatrix[i][j]),
+    )
+
     let clusteredServices
+    let clusteringInfo = {}
 
     if (algorithm === 'dbscan') {
       const { clusters, initialNoise } = DBSCAN({
-        points,
-        distanceMatrix,
+        points: filteredPoints,
+        distanceMatrix: filteredDistanceMatrix,
         maxPoints,
         minPoints,
         clusterUnclustered,
       })
 
-      clusteredServices = services.map((service, index) => ({
-        ...service,
-        cluster: clusters.findIndex(cluster => cluster.includes(index)),
-        wasNoise: initialNoise.has(index),
-      }))
+      clusteredServices = services.map((service, index) => {
+        if (outliers.includes(index)) {
+          return { ...service, cluster: -2, wasNoise: true }
+        }
+        const filteredIndex = connectedPoints.indexOf(index)
+        const clusterIndex = clusters.findIndex(cluster =>
+          cluster.includes(filteredIndex),
+        )
+        return {
+          ...service,
+          cluster: clusterIndex !== -1 ? clusterIndex : -1,
+          wasNoise: initialNoise.has(filteredIndex),
+        }
+      })
     } else if (algorithm === 'kmeans') {
-      const { clusters, centroids, k } = kMeans({ points, maxPoints })
+      const { clusters, centroids, k } = kMeans({
+        points: filteredPoints,
+        maxPoints,
+      })
 
       clusteredServices = services.map((service, index) => {
+        if (outliers.includes(index)) {
+          return { ...service, cluster: -2, wasNoise: true }
+        }
+        const filteredIndex = connectedPoints.indexOf(index)
         const clusterIndex = clusters.findIndex(cluster =>
-          cluster.includes(index),
+          cluster.includes(filteredIndex),
         )
         return {
           ...service,
           cluster: clusterIndex,
-          wasNoise: false, // K-means doesn't produce noise points
+          wasNoise: false,
         }
       })
 
-      // Log clustering results
-      console.log('K-means Clustering Results:')
-      console.log(`Used k: ${k}`)
-      console.log(`Number of clusters: ${clusters.length}`)
-      clusters.forEach((cluster, index) => {
-        console.log(`Cluster ${index}: ${cluster.length} points`)
-      })
+      clusteringInfo = {
+        algorithm: 'K-means',
+        k,
+        clusterSizes: clusters.map(cluster => cluster.length),
+        outlierCount: outliers.length,
+      }
     } else {
       throw new Error('Invalid clustering algorithm specified')
     }
 
-    parentPort.postMessage(clusteredServices)
+    console.log('Clustering completed, sending results back')
+    parentPort.postMessage({ clusteredServices, clusteringInfo })
   },
 )
+
+console.log('Worker script loaded')
