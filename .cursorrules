@@ -7,6 +7,7 @@ Code Style and Structure
 - Write concise, idiomatic JavaScript code with accurate examples.
 - Use functional and declarative programming patterns; avoid classes.
 - Prefer iteration and modularization over code duplication.
+- For imports, use @ aliases unless a worker thread is involved. In those cases use relative imports with the .js extension.
 - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
 - Add one-liner comments where helpful. Don't explain obvious code.
 - Keep my comments and console.log statements.

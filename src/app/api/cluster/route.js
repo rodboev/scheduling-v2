@@ -1,4 +1,4 @@
-import { calculateDistancesForShift } from '@/app/scheduling/distance'
+import { calculateDistances } from '@/app/scheduling/distance'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 import path from 'path'
@@ -22,7 +22,7 @@ export async function GET(request) {
       )
     }
 
-    const servicesResponse = await axios.get(
+    let services = await axios.get(
       `http://localhost:${process.env.PORT}/api/services`,
       {
         params: { start, end },
@@ -30,11 +30,11 @@ export async function GET(request) {
     )
 
     // Filter services to include only those in New York, NY
-    const services = servicesResponse.data.filter(service =>
+    services = services.data.filter(service =>
       service.location.address2.includes('New York, NY'),
     )
 
-    const distanceMatrix = await calculateDistancesForShift({ services })
+    const distanceMatrix = await calculateDistances(services)
 
     if (!distanceMatrix) {
       console.error('Failed to calculate distance matrix')

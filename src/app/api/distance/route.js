@@ -3,7 +3,7 @@ import {
   getRedisClient,
   ensureDistanceData,
   generateAndStoreDistances,
-} from '@/app/utils/redisUtil'
+} from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
 
 const redis = getRedisClient()

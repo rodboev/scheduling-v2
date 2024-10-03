@@ -2,7 +2,7 @@
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { calculateTravelDistance } from './distance.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
-import { findBestPosition, updateShiftDistances } from './optimize.js'
+import { findBestPosition, updateDistances } from './optimize.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
@@ -137,7 +137,7 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
       shift.services.push(scheduledService)
 
       // Update distances for the shift
-      await updateShiftDistances(shift)
+      await updateDistances(shift.services)
 
       if (endTime > shift.shiftEnd) shift.shiftEnd = endTime
 
@@ -216,7 +216,7 @@ export async function scheduleEnforcedService({ service, techSchedules }) {
   targetShift.services.splice(bestPosition, 0, scheduledService)
 
   // Update distances and previous companies for all services in the shift
-  await updateShiftDistances(targetShift)
+  await updateDistances(targetShift.services)
 
   return { scheduled: true }
 }

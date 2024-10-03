@@ -4,7 +4,7 @@ import {
   max as getMax,
   min as getMin,
 } from '../utils/dateHelpers.js'
-import { calculateDistancesForShift } from './distance.js'
+import { calculateDistances } from './distance.js'
 import { MAX_SHIFT_HOURS } from './index.js'
 
 /**
@@ -15,7 +15,7 @@ import { MAX_SHIFT_HOURS } from './index.js'
  */
 export async function recalculateOptimalIndices(shift) {
   const services = [...shift.services] // Clone to avoid mutating the original array
-  const distanceMatrix = await calculateDistancesForShift(shift)
+  const distanceMatrix = await calculateDistances(services)
 
   if (services.length === 0) return
 
@@ -119,7 +119,7 @@ export async function recalculateOptimalIndices(shift) {
           shift.services[i].index = i
         }
         // Update distances
-        await updateShiftDistances(shift)
+        await updateDistances(shift.services)
         // Remove the service from remainingServices
         remainingServices.splice(remainingServices.indexOf(service), 1)
         break // Move to the next gap after inserting a service
@@ -133,7 +133,7 @@ export async function recalculateOptimalIndices(shift) {
   })
 
   // Update distances after inserting into gaps
-  await updateShiftDistances(shift)
+  await updateDistances(shift.services)
 }
 
 /**
@@ -192,12 +192,12 @@ function canFitInGap(service, gap) {
  * Updates the distance information for each service within a shift.
  * @param {Object} shift - The shift containing scheduled services.
  */
-export async function updateShiftDistances(shift) {
-  const distanceMatrix = await calculateDistancesForShift(shift)
+export async function updateDistances(services) {
+  const distanceMatrix = await calculateDistances(services)
 
-  for (let i = 1; i < shift.services.length; i++) {
-    const previousService = shift.services[i - 1]
-    const currentService = shift.services[i]
+  for (let i = 1; i < services.length; i++) {
+    const previousService = services[i - 1]
+    const currentService = services[i]
     currentService.distanceFromPrevious = distanceMatrix[i - 1][i]
     currentService.previousCompany = previousService.company
   }
@@ -208,7 +208,7 @@ export async function findBestPosition(shift, newService) {
     ...shift,
     services: [...shift.services, newService],
   }
-  const distanceMatrix = await calculateDistancesForShift(extendedShift)
+  const distanceMatrix = await calculateDistances(extendedShift.services)
 
   let bestPosition = 0
   let minTotalDistance = Infinity

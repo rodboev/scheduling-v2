@@ -1,6 +1,5 @@
 import axios from 'axios'
 import Redis from 'ioredis'
-import { readFromDiskCache } from './diskCache.js'
 
 let redis
 

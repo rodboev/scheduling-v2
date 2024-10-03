@@ -1,11 +1,54 @@
-// /src/app/scheduling/distance.js
-import { getDistances } from './redisClient.js'
+import {
+  getRedisClient,
+  ensureDistanceData,
+  closeRedisConnection,
+} from '../utils/redisClient.js'
 
+const redis = getRedisClient()
 const distanceCache = new Map()
 const BATCH_SIZE = 50
 
-export async function calculateDistancesForShift(shift) {
-  const services = shift.services
+async function getDistances(pairs) {
+  await ensureDistanceData()
+
+  const pipeline = redis.pipeline()
+
+  for (const [id1, id2] of pairs) {
+    pipeline.geodist('locations', id1, id2, 'mi')
+  }
+
+  const results = await pipeline.exec()
+  return results.map(([err, result]) => (err ? null : parseFloat(result)))
+}
+
+async function getLocationInfo(ids) {
+  await ensureDistanceData()
+
+  const pipeline = redis.pipeline()
+
+  for (const id of ids) {
+    pipeline.geopos('locations', id)
+    pipeline.hget('company_names', id)
+  }
+
+  const results = await pipeline.exec()
+  return ids.map((id, index) => {
+    const [, pos] = results[index * 2]
+    const [, company] = results[index * 2 + 1]
+    return pos
+      ? {
+          id,
+          company,
+          location: {
+            longitude: parseFloat(pos[0]),
+            latitude: parseFloat(pos[1]),
+          },
+        }
+      : null
+  })
+}
+
+export async function calculateDistances(services) {
   const pairs = []
 
   // Validate services
@@ -66,11 +109,6 @@ export async function calculateDistancesForShift(shift) {
       }
     }
   }
-
-  // console.log(
-  //   `Distance Matrix for Shift: ${shift.shiftStart} - ${shift.shiftEnd}`,
-  // )
-  // console.table(distanceMatrix)
 
   return distanceMatrix
 }

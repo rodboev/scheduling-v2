@@ -3,8 +3,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
 import axios from 'axios'
 import L from 'leaflet'
-import 'leaflet-defaulticon-compatibility'
-import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css'
 import 'leaflet.awesome-markers'
 import 'leaflet.awesome-markers/dist/leaflet.awesome-markers.css'
 import 'leaflet/dist/leaflet.css'

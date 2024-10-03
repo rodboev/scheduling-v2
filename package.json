@@ -32,7 +32,6 @@
     "firebase": "^10.13.0",
     "ioredis": "^5.4.1",
     "leaflet": "^1.9.4",
-    "leaflet-defaulticon-compatibility": "^0.1.2",
     "leaflet.awesome-markers": "^2.0.5",
     "lucide-react": "^0.445.0",
     "msnodesqlv8": "^4.2.1",
