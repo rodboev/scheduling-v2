@@ -94,15 +94,19 @@ export async function GET(request) {
     )
   }
 
-  const startDate = dayjs(start).startOf('day')
-  const endDate = dayjs(end).endOf('day')
+  const startDate = dayjs(start)
+  const endDate = dayjs(end)
 
   try {
     const serviceSetups = await fetchServiceSetups()
 
     // Generate services for the date range
     const services = serviceSetups.flatMap(setup =>
-      createServicesForRange(setup, startDate, endDate),
+      createServicesForRange(
+        setup,
+        startDate.startOf('day'),
+        endDate.endOf('day'),
+      ),
     )
 
     // Read enforcement state directly from file
@@ -118,9 +122,9 @@ export async function GET(request) {
       console.error('Error reading or parsing enforcement state file:', error)
     }
 
-    // Apply enforcement state to services and remove the schedule.string key
-    const processedServices = services.map(
-      ({ schedule: { string, ...restSchedule }, ...restService }) => {
+    // Apply enforcement state to services, remove the schedule.string key, and filter by time range
+    const processedServices = services
+      .map(({ schedule: { string, ...restSchedule }, ...restService }) => {
         const serviceSetupId = restService.id.split('-')[0]
         return {
           ...restService,
@@ -130,10 +134,24 @@ export async function GET(request) {
             enforced: enforcementState[serviceSetupId] || false,
           },
         }
-      },
-    )
+      })
+      .filter(service => {
+        const serviceStart = dayjs(service.time.range[0])
+        const serviceEnd = dayjs(service.time.range[1])
 
-    // return NextResponse.json(customServices) // processedServices
+        // Handle services that cross midnight
+        const serviceEndAdjusted = serviceEnd.isBefore(serviceStart)
+          ? serviceEnd.add(1, 'day')
+          : serviceEnd
+
+        return (
+          (serviceStart.isBefore(endDate) &&
+            serviceEndAdjusted.isAfter(startDate)) ||
+          serviceStart.isSame(startDate) ||
+          serviceEndAdjusted.isSame(endDate)
+        )
+      })
+
     return NextResponse.json(processedServices)
   } catch (error) {
     console.error('Error processing services:', error)

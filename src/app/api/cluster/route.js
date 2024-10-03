@@ -36,7 +36,11 @@ export async function GET(request) {
       await axios.get(`http://localhost:${process.env.PORT}/api/services`, {
         params: { start: params.start, end: params.end },
       })
-    ).data.filter(service => service.location.address2.includes('NY'))
+    ).data.filter(
+      service =>
+        // service.location.address2.includes('NY') &&
+        service.time.range[0] !== null && service.time.range[1] !== null,
+    )
 
     const distanceMatrix = await createDistanceMatrix(services)
     console.log(services.data)

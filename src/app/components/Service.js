@@ -116,7 +116,8 @@ export default function Service({ service, updateServiceEnforcement }) {
         </p>
         <p>Duration: {service.time.duration} min</p>
         <p>
-          Calc Range: {dayjs(service.time.range[0]).format('h:mma')} -{' '}
+          Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
+          {dayjs(service.time.range[0]).format('h:mma')} -{' '}
           {dayjs(service.time.range[1]).format('h:mma')} (from "
           {service.time.meta.originalRange}")
         </p>
