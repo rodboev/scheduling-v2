@@ -153,13 +153,13 @@ const Map = () => {
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
+          <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Clusters: {clusteringInfo.totalClusters}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
           {clusteringInfo.algorithm === 'dbscan' && (
             <p>Noise: {clusteringInfo.noisePoints}</p>
           )}
-          <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
         </div>
       )}
     </div>

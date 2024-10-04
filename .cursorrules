@@ -49,4 +49,4 @@ General preferences
 - Leave NO todo's, placeholders or missing pieces in the code.
 - Be sure to reference file names.
 - If you think there might not be a correct answer, you say so. If you do not know the answer, say so instead of guessing.
-- Annotate functions with JSDoc and explain the logic inside them in the description.
+- Describe functions and explain the logic inside them in a comment above the function.

@@ -167,19 +167,20 @@ export async function GET(request) {
       `Distance: max ${clusteringInfo.maxDistance} mi, min ${clusteringInfo.minDistance} mi, avg ${clusteringInfo.avgDistance} mi`,
     )
 
+    // Log cluster distribution
     console.log(`Clusters:`, clusteringInfo.clusterDistribution)
 
     if (LOG_MATRIX) {
       console.log('Sample Distance Matrix (in miles):')
       console.log(
-        clusteringInfo.sampleMatrix.map(row =>
+        clusteringInfo.sampleMatrix?.map(row =>
           row.map(d => d?.toFixed(4) ?? 'null'),
         ),
       )
     }
 
     // Log outliers
-    clusteringInfo.outliers.forEach((outlier, index) => {
+    clusteringInfo.outliers?.forEach((outlier, index) => {
       console.log(
         `Outlier ${index + 1}: ${outlier.company} [${outlier.latitude}, ${outlier.longitude}]`,
       )
