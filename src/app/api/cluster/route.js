@@ -8,130 +8,157 @@ import { Worker } from 'worker_threads'
 const LOG_MATRIX = false
 let currentWorker = null
 let currentAbortController = null
-let lastRequestTimestamp = 0
+let currentRequestId = 0
+const WORKER_TIMEOUT = 2000 // 2 secs
 
-const WORKER_TIMEOUT = 30000 // 30 seconds timeout
-const CHECK_INTERVAL = 1000 // Check every 1 second
+async function processRequest(params, requestId) {
+  console.log(`Processing request ${requestId} with params:`, params)
 
-export async function GET(request) {
-  const currentRequestTimestamp = Date.now()
-  lastRequestTimestamp = currentRequestTimestamp
+  if (currentWorker) {
+    console.log(`Terminating existing worker for request ${currentRequestId}`)
+    currentAbortController.abort()
+    await terminateWorker()
+  }
 
+  currentRequestId = requestId
+  currentAbortController = new AbortController()
+
+  let services = []
   try {
-    const { searchParams } = new URL(request.url)
-    const params = {
-      start: searchParams.get('start'),
-      end: searchParams.get('end'),
-      clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
-      minPoints: parseInt(searchParams.get('minPoints'), 10) || 2,
-      maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
-      algorithm: searchParams.get('algorithm') || 'kmeans',
-    }
-
-    if (!params.start || !params.end) {
-      return NextResponse.json(
-        { error: 'Missing start or end date' },
-        { status: 400 },
-      )
-    }
-
-    const cacheKey = `clusteredServices:${JSON.stringify(params)}`
-    const cachedData = getCachedData(cacheKey)
-
-    if (cachedData) {
-      return NextResponse.json(cachedData)
-    }
-
-    let services = (
-      await axios.get(`http://localhost:${process.env.PORT}/api/services`, {
+    const response = await axios.get(
+      `http://localhost:${process.env.PORT}/api/services`,
+      {
         params: { start: params.start, end: params.end },
-      })
-    ).data.filter(
+      },
+    )
+    services = response.data.filter(
       service =>
         service.time.range[0] !== null && service.time.range[1] !== null,
     )
+  } catch (error) {
+    console.error(`Error fetching services for request ${requestId}:`, error)
+    throw error
+  }
 
-    const distanceMatrix = await createDistanceMatrix(services)
-    if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
-      console.warn('Invalid distance matrix')
-      return NextResponse.json(services)
-    }
+  const distanceMatrix = await createDistanceMatrix(services)
+  if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
+    console.warn(`Invalid distance matrix for request ${requestId}`)
+    return { clusteredServices: services, clusteringInfo: {} }
+  }
 
-    // Terminate the current worker if it exists
-    if (currentWorker) {
-      console.log('Terminating existing worker due to new request')
-      currentAbortController.abort()
-      currentWorker.terminate()
-      currentWorker = null
-      currentAbortController = null
-    }
+  console.log(`Starting worker for request ${requestId}`)
+  currentWorker = new Worker(
+    path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
+  )
 
-    // Create a new AbortController
-    currentAbortController = new AbortController()
-
-    // Create a new worker
-    currentWorker = new Worker(
-      path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
-    )
-
-    const checkForNewRequests = () => {
-      if (lastRequestTimestamp > currentRequestTimestamp) {
-        console.log('New request detected, terminating current worker')
-        currentAbortController.abort()
-        currentWorker.terminate()
-        currentWorker = null
-        currentAbortController = null
-        throw new Error('New request detected')
-      }
-    }
-
-    const { clusteredServices, clusteringInfo } = await Promise.race([
-      new Promise((resolve, reject) => {
-        const intervalId = setInterval(checkForNewRequests, CHECK_INTERVAL)
-
-        currentWorker.on('message', result => {
-          clearInterval(intervalId)
-          resolve(result)
-        })
-        currentWorker.on('error', error => {
-          clearInterval(intervalId)
-          reject(error)
-        })
-        currentWorker.postMessage({
-          services,
-          distanceMatrix,
-          minPoints: params.minPoints,
-          maxPoints: params.maxPoints,
-          clusterUnclustered: params.clusterUnclustered,
-          algorithm: params.algorithm,
-        })
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Worker timeout')), WORKER_TIMEOUT),
-      ),
-      new Promise((_, reject) => {
-        currentAbortController.signal.addEventListener('abort', () =>
-          reject(new Error('Worker aborted')),
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(async () => {
+      if (currentRequestId === requestId) {
+        console.log(
+          `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
         )
-      }),
-    ])
+        await terminateWorker()
+        reject(new Error('Worker timeout'))
+      }
+    }, WORKER_TIMEOUT)
 
-    // Clear the currentWorker reference after it's done
-    if (currentWorker) {
+    currentWorker.on('message', async result => {
+      if (currentRequestId === requestId) {
+        console.log(`Received result for request ${requestId}`)
+        clearTimeout(timeoutId)
+        await terminateWorker()
+        resolve(result)
+      }
+    })
+
+    currentWorker.on('error', async error => {
+      if (currentRequestId === requestId) {
+        console.error(`Worker error for request ${requestId}:`, error)
+        clearTimeout(timeoutId)
+        await terminateWorker()
+        reject(error)
+      }
+    })
+
+    currentAbortController.signal.addEventListener('abort', async () => {
+      if (currentRequestId === requestId) {
+        console.log(`Request ${requestId} aborted`)
+        clearTimeout(timeoutId)
+        await terminateWorker()
+        reject(new Error('Worker aborted'))
+      }
+    })
+
+    console.log(`Posting message to worker for request ${requestId}`)
+    currentWorker.postMessage({
+      services,
+      distanceMatrix,
+      minPoints: params.minPoints,
+      maxPoints: params.maxPoints,
+      clusterUnclustered: params.clusterUnclustered,
+      algorithm: params.algorithm,
+    })
+  })
+}
+
+async function terminateWorker() {
+  if (currentWorker) {
+    await new Promise(resolve => {
+      currentWorker.once('exit', resolve)
       currentWorker.terminate()
-      currentWorker = null
-      currentAbortController = null
+    })
+    currentWorker = null
+  }
+  currentAbortController = null
+}
+
+export async function GET(request) {
+  const requestId = ++currentRequestId
+  const { searchParams } = new URL(request.url)
+  const params = {
+    start: searchParams.get('start'),
+    end: searchParams.get('end'),
+    clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
+    minPoints: parseInt(searchParams.get('minPoints'), 10) || 2,
+    maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
+    algorithm: searchParams.get('algorithm') || 'kmeans',
+  }
+
+  if (!params.start || !params.end) {
+    console.log(`Request ${requestId} missing start or end date`)
+    return NextResponse.json(
+      { error: 'Missing start or end date' },
+      { status: 400 },
+    )
+  }
+
+  const cacheKey = `clusteredServices:${JSON.stringify(params)}`
+  const cachedData = getCachedData(cacheKey)
+
+  if (cachedData) {
+    return NextResponse.json(cachedData)
+  }
+
+  try {
+    const result = await processRequest(params, requestId)
+
+    if (currentRequestId !== requestId) {
+      console.log(`Request ${requestId} superseded by a newer request`)
+      return NextResponse.json({ error: 'Request superseded' }, { status: 409 })
     }
+
+    const { clusteredServices, clusteringInfo } = result
 
     // Log clustering results
     console.log(
-      `Results from clustering (${clusteringInfo.algorithm}${
+      `Results from clustering for request ${requestId} (${clusteringInfo.algorithm}${
         clusteringInfo.algorithm === 'K-means'
           ? `, k = ${clusteringInfo.k}`
           : ''
       }):`,
     )
     console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
+    console.log(`Runtime: ${clusteringInfo.performanceDuration} ms`)
 
     // Log distance statistics
     console.log(
@@ -156,8 +183,6 @@ export async function GET(request) {
       )
     })
 
-    console.log(`Runtime: ${clusteringInfo.performanceDuration} ms`)
-
     if (
       clusteringInfo.totalClusters === 1 &&
       !clusteringInfo.noisePoints &&
@@ -177,17 +202,12 @@ export async function GET(request) {
     setCachedData(cacheKey, responseData)
     return NextResponse.json(responseData)
   } catch (error) {
-    console.error('Error in cluster API:', error)
-    // Make sure to clear the currentWorker reference if there's an error
-    if (currentWorker) {
-      console.log('Terminating worker due to error')
-      currentWorker.terminate()
-      currentWorker = null
-      currentAbortController = null
-    }
+    console.error(`Error in cluster API for request ${requestId}:`, error)
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 },
     )
+  } finally {
+    await terminateWorker()
   }
 }

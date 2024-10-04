@@ -37,9 +37,20 @@ const MapTools = ({
     return date.toISOString()
   }
 
-  const handleDateChange = (e, setter) => {
-    const isoString = toISOString(e.target.value)
-    setter(isoString)
+  const handleDateChange = (e, setter, isStartDate) => {
+    const newDate = new Date(e.target.value)
+    const otherDate = isStartDate ? new Date(endDate) : new Date(startDate)
+
+    if (isStartDate && newDate > otherDate) {
+      // If new start date is after end date, set end date to new start date
+      setEndDate(newDate.toISOString())
+    } else if (!isStartDate && newDate < otherDate) {
+      // If new end date is before start date, set start date to new end date
+      setStartDate(newDate.toISOString())
+    }
+
+    // Set the changed date
+    setter(newDate.toISOString())
   }
 
   const startDateRef = useRef(null)
@@ -131,7 +142,7 @@ const MapTools = ({
             ref={startDateRef}
             type="datetime-local"
             value={toLocalDateTimeString(startDate)}
-            onChange={e => handleDateChange(e, setStartDate)}
+            onChange={e => handleDateChange(e, setStartDate, true)}
             className="w-full cursor-pointer rounded border p-2"
             step="900" // 15 minutes in seconds
           />
@@ -142,7 +153,7 @@ const MapTools = ({
             ref={endDateRef}
             type="datetime-local"
             value={toLocalDateTimeString(endDate)}
-            onChange={e => handleDateChange(e, setEndDate)}
+            onChange={e => handleDateChange(e, setEndDate, false)}
             className="w-full cursor-pointer rounded border p-2"
             step="900" // 15 minutes in seconds
           />

@@ -153,7 +153,9 @@ const Map = () => {
           <p>Total Clusters: {clusteringInfo.totalClusters}</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
-          <p>Noise Points: {clusteringInfo.noisePoints}</p>
+          {clusteringInfo.algorithm === 'DBSCAN' && (
+            <p>Noise Points: {clusteringInfo.noisePoints}</p>
+          )}
           <p>Max Distance: {clusteringInfo.maxDistance} mi</p>
           <p>Min Distance: {clusteringInfo.minDistance} mi</p>
           <p>Avg Distance: {clusteringInfo.avgDistance} mi</p>

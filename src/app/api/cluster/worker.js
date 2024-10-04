@@ -1,11 +1,19 @@
 import { performance } from 'perf_hooks'
-import { parentPort, workerData } from 'worker_threads'
+import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
-const MAX_K_CHANGES = 500 // Maximum number of times k can be adjusted
+const MAX_K_CHANGES = 5000 // Maximum number of times k can be adjusted
 const MAX_ITERATIONS = 1000 // Maximum number of iterations for k-means
-const MAX_EXECUTION_TIME = 30000 // Maximum execution time in milliseconds (30 seconds)
 
+/**
+ * Filters out outliers from the given points based on the distance matrix.
+ * @param {number[][]} points - Array of [latitude, longitude] coordinates.
+ * @param {number[][]} distanceMatrix - Matrix of distances between points.
+ * @returns {{connectedPoints: number[], outliers: number[]}} - Indices of connected points and outliers.
+ *
+ * This function identifies points that have at least one neighbor within MAX_RADIUS_MILES.
+ * Points without nearby neighbors are considered outliers.
+ */
 function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
   const outliers = []
@@ -28,11 +36,24 @@ function filterOutliers(points, distanceMatrix) {
   return { connectedPoints, outliers }
 }
 
+/**
+ * Performs DBSCAN clustering on the given points.
+ * @param {Object} params - The parameters for DBSCAN.
+ * @param {number[][]} params.points - Array of [latitude, longitude] coordinates.
+ * @param {number[][]} params.distanceMatrix - Matrix of distances between points.
+ * @param {number} params.minPoints - Minimum number of points to form a cluster.
+ * @param {number} params.maxPoints - Maximum number of points in a cluster.
+ * @param {boolean} params.clusterUnclustered - Whether to assign unclustered points to the nearest cluster.
+ * @returns {{clusters: number[][], noise: Set<number>, initialStatus: Map<number, string>}} - Clustering result.
+ *
+ * This function implements the DBSCAN algorithm. It forms clusters based on density,
+ * identifies noise points, and optionally assigns unclustered points to the nearest cluster.
+ */
 function DBSCAN({
   points,
   distanceMatrix,
-  minPoints,
   maxPoints,
+  minPoints,
   clusterUnclustered,
 }) {
   const clusters = []
@@ -64,7 +85,9 @@ function DBSCAN({
         cluster.push(currentPoint)
 
         const currentNeighbors = getNeighbors(currentPoint)
-        queue.push(...currentNeighbors.filter(n => !visited.has(n)))
+        if (currentNeighbors.length >= minPoints - 1) {
+          queue.push(...currentNeighbors.filter(n => !visited.has(n)))
+        }
       }
     }
 
@@ -81,8 +104,10 @@ function DBSCAN({
       if (cluster.length >= minPoints) {
         clusters.push(cluster)
       } else {
-        noise.add(i)
-        initialStatus.set(i, 'noise')
+        cluster.forEach(point => {
+          noise.add(point)
+          initialStatus.set(point, 'noise')
+        })
       }
     } else {
       noise.add(i)
@@ -90,25 +115,26 @@ function DBSCAN({
     }
   }
 
+  // Assign unclustered points to the nearest cluster if clusterUnclustered is true
   if (clusterUnclustered) {
     Array.from(noise).forEach(pointIndex => {
       let nearestCluster = -1
       let minDistance = Infinity
 
-      for (let i = 0; i < clusters.length; i++) {
-        const cluster = clusters[i]
-        for (let j = 0; j < cluster.length; j++) {
-          const distance = distanceMatrix[pointIndex][cluster[j]]
+      clusters.forEach((cluster, clusterIndex) => {
+        cluster.forEach(clusterPointIndex => {
+          const distance = distanceMatrix[pointIndex][clusterPointIndex]
           if (distance < minDistance) {
             minDistance = distance
-            nearestCluster = i
+            nearestCluster = clusterIndex
           }
-        }
-      }
+        })
+      })
 
       if (nearestCluster !== -1) {
         clusters[nearestCluster].push(pointIndex)
         noise.delete(pointIndex)
+        // Note: We don't remove from initialNoise
       }
     })
   }
@@ -116,6 +142,19 @@ function DBSCAN({
   return { clusters, noise, initialStatus }
 }
 
+/**
+ * Performs K-means clustering on the given points.
+ * @param {Object} params - The parameters for K-means.
+ * @param {number[][]} params.points - Array of [latitude, longitude] coordinates.
+ * @param {number} params.minPoints - Minimum number of points in a cluster.
+ * @param {number} params.maxPoints - Maximum number of points in a cluster.
+ * @param {number} [params.maxIterations=MAX_ITERATIONS] - Maximum number of iterations.
+ * @returns {{clusters: number[][], centroids: number[][], k: number, initialClusters: number[][], kChangeCount: number}} - Clustering result.
+ *
+ * This function implements the K-means algorithm with dynamic adjustment of k.
+ * It starts with an initial k and adjusts it based on cluster sizes until all clusters
+ * are within the specified size limits or MAX_K_CHANGES is reached.
+ */
 function kMeans({
   points,
   minPoints,
@@ -176,6 +215,12 @@ function kMeans({
       iterations++
     }
 
+    if (iterations === maxIterations) {
+      console.warn(
+        `MAX_ITERATIONS (${MAX_ITERATIONS}) reached in k-means algorithm`,
+      )
+    }
+
     initialClusters = clusters.map(cluster => [...cluster])
 
     const tooLargeClusters = clusters.filter(
@@ -198,7 +243,7 @@ function kMeans({
     }
 
     if (kChangeCount === MAX_K_CHANGES - 1) {
-      console.log('MAX_K_CHANGES reached in k-means algorithm')
+      console.warn('MAX_K_CHANGES reached in k-means algorithm')
     }
   }
 
@@ -300,10 +345,6 @@ parentPort.on(
             maxPoints,
           })
 
-        if (kChangeCount === MAX_K_CHANGES) {
-          console.log('MAX_K_CHANGES reached in k-means algorithm')
-        }
-
         clusteredServices = services.map((service, index) => {
           if (outliers.includes(index)) {
             return { ...service, cluster: -2, wasStatus: 'outlier' }
@@ -354,10 +395,6 @@ parentPort.on(
       const endTime = performance.now()
       const duration = endTime - startTime
 
-      if (duration >= MAX_EXECUTION_TIME) {
-        console.log('MAX_EXECUTION_TIME reached in clustering algorithm')
-      }
-
       clusteringInfo = {
         ...clusteringInfo,
         performanceDuration: duration.toPrecision(3),
@@ -371,15 +408,6 @@ parentPort.on(
       console.error('Error in clustering worker:', error.message)
       parentPort.postMessage({
         error: error.message,
-      })
-    }
-
-    if (performance.now() - startTime > MAX_EXECUTION_TIME) {
-      console.log(
-        'MAX_EXECUTION_TIME exceeded, terminating clustering operation',
-      )
-      parentPort.postMessage({
-        error: 'Clustering operation timed out',
       })
     }
   },

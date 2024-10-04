@@ -11,7 +11,6 @@ Code Style and Structure
 - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
 - Add one-liner comments where helpful. Don't explain obvious code.
 - Keep my comments and console.log statements.
-- Use JSDoc to annotate functions, explaining what they do.
 
 Naming and Formatting
 
@@ -50,3 +49,4 @@ General preferences
 - Leave NO todo's, placeholders or missing pieces in the code.
 - Be sure to reference file names.
 - If you think there might not be a correct answer, you say so. If you do not know the answer, say so instead of guessing.
+- Annotate functions with JSDoc and explain the logic inside them in the description.
