@@ -115,6 +115,7 @@ const Map = () => {
             markerRefs={markerRefs}
             activePopup={activePopup}
             setActivePopup={setActivePopup}
+            color={service.cluster < 0 ? '#808080' : undefined} // Use dark gray for noise and outliers
           >
             <MapPopup
               service={service}

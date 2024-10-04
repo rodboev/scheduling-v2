@@ -24,7 +24,7 @@ function filterOutliers(points, distanceMatrix) {
   console.log(`Filtered outliers: ${outliers.length} outliers found`)
   outliers.forEach(index => {
     console.log(
-      `  Outlier at index ${index}: [${points[index][0]}, ${points[index][1]}]`,
+      `  ► Outlier at index ${index}: [${points[index][0]}, ${points[index][1]}]`,
     )
   })
 
@@ -41,7 +41,7 @@ function DBSCAN({
   const clusters = []
   const visited = new Set()
   const noise = new Set()
-  const initialNoise = new Set() // New set to keep track of initial noise points
+  const initialStatus = new Map()
 
   function getNeighbors(pointIndex) {
     return points
@@ -88,12 +88,12 @@ function DBSCAN({
       } else {
         cluster.forEach(point => {
           noise.add(point)
-          initialNoise.add(point) // Add to initialNoise as well
+          initialStatus.set(point, 'noise')
         })
       }
     } else {
       noise.add(i)
-      initialNoise.add(i) // Add to initialNoise as well
+      initialStatus.set(i, 'noise')
     }
   }
 
@@ -121,7 +121,7 @@ function DBSCAN({
     })
   }
 
-  return { clusters, noise, initialNoise }
+  return { clusters, noise, initialStatus }
 }
 
 function kMeans({ points, maxPoints, maxIterations = 100 }) {
@@ -138,6 +138,8 @@ function kMeans({ points, maxPoints, maxIterations = 100 }) {
 
   let clusters = []
   let iterations = 0
+
+  let initialClusters = clusters.map(cluster => [...cluster])
 
   while (iterations < maxIterations) {
     // Assign points to nearest centroid
@@ -181,7 +183,7 @@ function kMeans({ points, maxPoints, maxIterations = 100 }) {
     iterations++
   }
 
-  return { clusters, centroids, k }
+  return { clusters, centroids, k, initialClusters }
 }
 
 parentPort.on(
@@ -219,7 +221,7 @@ parentPort.on(
     let clusteringInfo = {}
 
     if (algorithm === 'dbscan') {
-      const { clusters, initialNoise } = DBSCAN({
+      const { clusters, initialStatus } = DBSCAN({
         points: filteredPoints,
         distanceMatrix: filteredDistanceMatrix,
         maxPoints,
@@ -229,7 +231,7 @@ parentPort.on(
 
       clusteredServices = services.map((service, index) => {
         if (outliers.includes(index)) {
-          return { ...service, cluster: -2, wasNoise: true }
+          return { ...service, cluster: -2, wasStatus: 'outlier' }
         }
         const filteredIndex = connectedPoints.indexOf(index)
         const clusterIndex = clusters.findIndex(cluster =>
@@ -238,27 +240,30 @@ parentPort.on(
         return {
           ...service,
           cluster: clusterIndex !== -1 ? clusterIndex : -1,
-          wasNoise: initialNoise.has(filteredIndex),
+          wasStatus: initialStatus.get(filteredIndex) ?? clusterIndex,
         }
       })
     } else if (algorithm === 'kmeans') {
-      const { clusters, centroids, k } = kMeans({
+      const { clusters, centroids, k, initialClusters } = kMeans({
         points: filteredPoints,
         maxPoints,
       })
 
       clusteredServices = services.map((service, index) => {
         if (outliers.includes(index)) {
-          return { ...service, cluster: -2, wasNoise: true }
+          return { ...service, cluster: -2, wasStatus: 'outlier' }
         }
         const filteredIndex = connectedPoints.indexOf(index)
         const clusterIndex = clusters.findIndex(cluster =>
           cluster.includes(filteredIndex),
         )
+        const initialClusterIndex = initialClusters.findIndex(cluster =>
+          cluster.includes(filteredIndex),
+        )
         return {
           ...service,
           cluster: clusterIndex,
-          wasNoise: false,
+          wasStatus: initialClusterIndex, // Use the initial cluster assignment
         }
       })
 

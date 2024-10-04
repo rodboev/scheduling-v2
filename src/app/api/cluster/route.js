@@ -90,7 +90,7 @@ export async function GET(request) {
       console.log(`  Used k: ${clusteringInfo.k}`)
       console.log(`  Number of clusters: ${clusteringInfo.clusterSizes.length}`)
       clusteringInfo.clusterSizes.forEach((size, index) => {
-        console.log(`  Cluster ${index}: ${size} points`)
+        console.log(`  > Cluster ${index}: ${size} points`)
       })
     }
 
@@ -110,9 +110,9 @@ export async function GET(request) {
     // Log outliers
     const outliers = clusteredServices.filter(service => service.cluster === -2)
     if (outliers.length > 0) {
-      outliers.forEach(service => {
+      outliers.forEach((service, serviceIndex) => {
         console.log(
-          `    ${service.company}: [${service.location.latitude}, ${service.location.longitude}]`,
+          `  ► Outlier ${serviceIndex + 1}: ${service.company} [${service.location.latitude}, ${service.location.longitude}]`,
         )
       })
     }

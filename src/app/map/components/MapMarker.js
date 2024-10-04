@@ -34,10 +34,10 @@ const MapMarker = ({
   setActivePopup,
   children,
 }) => {
-  const getMarkerIcon = (cluster, wasNoise) => {
-    const color = cluster === -1 ? 'gray' : COLORS[cluster % COLORS.length]
+  const getMarkerIcon = (cluster, wasStatus) => {
+    const color = cluster < 0 ? 'gray' : COLORS[cluster % COLORS.length]
     return L.AwesomeMarkers.icon({
-      icon: wasNoise ? 'question-sign' : 'info-sign',
+      icon: wasStatus ? 'circle-exclamation' : '',
       markerColor: color,
       prefix: 'fa',
       iconColor: 'white',
@@ -85,7 +85,7 @@ const MapMarker = ({
           markerRefs.current[service.id] = element
         }
       }}
-      icon={getMarkerIcon(service.cluster, service.wasNoise)}
+      icon={getMarkerIcon(service.cluster, service.wasStatus)}
     >
       {children}
     </Marker>

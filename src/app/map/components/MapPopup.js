@@ -66,8 +66,8 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
 
         {service.cluster !== undefined && (
           <div className="mt-3 font-bold">
-            Cluster: {service.cluster === -1 ? 'noise' : service.cluster}
-            {service.wasNoise && ` (was noise)`}
+            Cluster: {service.cluster}
+            {service.cluster < 0 && ` (was ${service.wasStatus})`}
           </div>
         )}
       </div>
