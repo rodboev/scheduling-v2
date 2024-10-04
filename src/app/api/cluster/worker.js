@@ -1,6 +1,7 @@
 import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
+const MILES_TO_METERS = 1609.34
 
 function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
@@ -20,13 +21,6 @@ function filterOutliers(points, distanceMatrix) {
       outliers.push(i)
     }
   }
-
-  console.log(`Filtered outliers: ${outliers.length} outliers found`)
-  outliers.forEach(index => {
-    console.log(
-      `  ► Outlier at index ${index}: [${points[index][0]}, ${points[index][1]}]`,
-    )
-  })
 
   return { connectedPoints, outliers }
 }
@@ -128,8 +122,6 @@ function kMeans({ points, maxPoints, maxIterations = 100 }) {
   // Calculate k based on the number of points and maxPoints
   const k = Math.max(1, Math.ceil(points.length / maxPoints))
 
-  console.log(`K-means: Calculated k = ${k}`)
-
   // Initialize centroids randomly
   let centroids = Array.from({ length: k }, () => {
     const randomIndex = Math.floor(Math.random() * points.length)
@@ -201,16 +193,24 @@ parentPort.on(
       service.location.longitude,
     ])
 
-    console.log(
-      'Max distance in matrix:',
-      Math.max(...distanceMatrix.flat().filter(d => d !== null)).toFixed(2),
-      'miles',
-    )
+    // Calculate max, min, and avg distances
+    const flatDistances = distanceMatrix
+      .flat()
+      .filter(d => d !== null && d !== 0)
+    const maxDistance = Math.max(...flatDistances)
+    const minDistance = Math.min(...flatDistances)
+    const avgDistance =
+      flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
+
+    let clusteringInfo = {
+      connectedPointsCount: 0,
+      outlierCount: 0,
+      maxDistance: Number((maxDistance / MILES_TO_METERS).toPrecision(3)),
+      minDistance: Number((minDistance / MILES_TO_METERS).toPrecision(3)),
+      avgDistance: Number((avgDistance / MILES_TO_METERS).toPrecision(3)),
+    }
 
     const { connectedPoints, outliers } = filterOutliers(points, distanceMatrix)
-
-    console.log(`Connected points: ${connectedPoints.length}`)
-    console.log(`Outliers: ${outliers.length}`)
 
     const filteredPoints = connectedPoints.map(index => points[index])
     const filteredDistanceMatrix = connectedPoints.map(i =>
@@ -218,7 +218,12 @@ parentPort.on(
     )
 
     let clusteredServices
-    let clusteringInfo = {}
+
+    clusteringInfo = {
+      ...clusteringInfo,
+      connectedPointsCount: connectedPoints.length,
+      outlierCount: outliers.length,
+    }
 
     if (algorithm === 'dbscan') {
       const { clusters, initialStatus } = DBSCAN({
@@ -243,6 +248,12 @@ parentPort.on(
           wasStatus: initialStatus.get(filteredIndex) ?? clusterIndex,
         }
       })
+
+      clusteringInfo = {
+        ...clusteringInfo,
+        algorithm: 'DBSCAN',
+        clusterSizes: clusters.map(cluster => cluster.length),
+      }
     } else if (algorithm === 'kmeans') {
       const { clusters, centroids, k, initialClusters } = kMeans({
         points: filteredPoints,
@@ -263,23 +274,46 @@ parentPort.on(
         return {
           ...service,
           cluster: clusterIndex,
-          wasStatus: initialClusterIndex, // Use the initial cluster assignment
+          wasStatus: initialClusterIndex,
         }
       })
 
       clusteringInfo = {
+        ...clusteringInfo,
         algorithm: 'K-means',
         k,
         clusterSizes: clusters.map(cluster => cluster.length),
-        outlierCount: outliers.length,
       }
     } else {
       throw new Error('Invalid clustering algorithm specified')
     }
 
-    console.log('Clustering completed, sending results back')
-    parentPort.postMessage({ clusteredServices, clusteringInfo })
+    // Calculate additional statistics
+    const clusterCounts = clusteredServices.reduce((acc, service) => {
+      acc[service.cluster] = (acc[service.cluster] || 0) + 1
+      return acc
+    }, {})
+
+    clusteringInfo = {
+      ...clusteringInfo,
+      totalClusters: clusteringInfo.clusterSizes.length,
+      noisePoints: clusterCounts['-1'] || 0,
+      outliersCount: clusterCounts['-2'] || 0,
+      clusterDistribution: Object.entries(clusterCounts).map(
+        ([cluster, count]) => ({ [cluster]: count }),
+      ),
+      outliers: clusteredServices
+        .filter(service => service.cluster === -2)
+        .map(service => ({
+          company: service.company,
+          latitude: service.location.latitude,
+          longitude: service.location.longitude,
+        })),
+    }
+
+    parentPort.postMessage({
+      clusteredServices,
+      clusteringInfo,
+    })
   },
 )
-
-console.log('Worker script loaded')

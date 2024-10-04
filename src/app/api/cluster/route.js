@@ -5,8 +5,6 @@ import { NextResponse } from 'next/server'
 import path from 'path'
 import { Worker } from 'worker_threads'
 
-const MILES_TO_METERS = 1609.34
-
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -68,56 +66,32 @@ export async function GET(request) {
     )
 
     worker.terminate()
+    // Log clustering results
+    console.log(
+      `Results from clustering (${clusteringInfo.algorithm}${clusteringInfo.algorithm === 'K-means' ? `, k = ${clusteringInfo.k}` : ''}):`,
+    )
+    console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
 
     // Log distance statistics
-    const flatDistances = distanceMatrix
-      .flat()
-      .filter(d => d !== null && d !== 0)
-    console.log('Distance Statistics:')
     console.log(
-      `  Min distance: ${(Math.min(...flatDistances) / MILES_TO_METERS).toFixed(3)} miles`,
-    )
-    console.log(
-      `  Max distance: ${(Math.max(...flatDistances) / MILES_TO_METERS).toFixed(3)} miles`,
-    )
-    console.log(
-      `  Average distance: ${(flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length / MILES_TO_METERS).toFixed(3)} miles`,
+      `Distance: max ${clusteringInfo.maxDistance} mi, min ${clusteringInfo.minDistance} mi, avg ${clusteringInfo.avgDistance} mi`,
     )
 
-    // Log clustering results
-    console.log(`Results from clustering (${clusteringInfo.algorithm}):`)
-    if (clusteringInfo.algorithm === 'K-means') {
-      console.log(`  Used k: ${clusteringInfo.k}`)
-      console.log(`  Number of clusters: ${clusteringInfo.clusterSizes.length}`)
-      clusteringInfo.clusterSizes.forEach((size, index) => {
-        console.log(`  > Cluster ${index}: ${size} points`)
-      })
-    }
-
-    const clusterCounts = clusteredServices.reduce((acc, service) => {
-      acc[service.cluster] = (acc[service.cluster] || 0) + 1
-      return acc
-    }, {})
-    console.log('  Cluster distribution:', clusterCounts)
-
-    const totalClusters = Object.keys(clusterCounts).filter(
-      k => k !== '-1' && k !== '-2',
-    ).length
-    console.log(
-      `  Total clusters: ${totalClusters}, Noise points: ${clusterCounts['-1'] || 0}, Outliers: ${clusterCounts['-2'] || 0}`,
-    )
+    // Log cluster distribution
+    console.log(`Clusters:`, clusteringInfo.clusterDistribution)
 
     // Log outliers
-    const outliers = clusteredServices.filter(service => service.cluster === -2)
-    if (outliers.length > 0) {
-      outliers.forEach((service, serviceIndex) => {
-        console.log(
-          `  ► Outlier ${serviceIndex + 1}: ${service.company} [${service.location.latitude}, ${service.location.longitude}]`,
-        )
-      })
-    }
+    clusteringInfo.outliers.forEach((outlier, index) => {
+      console.log(
+        `Outlier ${index + 1}: ${outlier.company} [${outlier.latitude}, ${outlier.longitude}]`,
+      )
+    })
 
-    if (totalClusters === 1 && !clusterCounts['-1'] && !clusterCounts['-2']) {
+    if (
+      clusteringInfo.totalClusters === 1 &&
+      !clusteringInfo.noisePoints &&
+      !clusteringInfo.outliersCount
+    ) {
       console.warn(
         'Warning: Only one cluster was created. Consider adjusting the clustering parameters.',
       )

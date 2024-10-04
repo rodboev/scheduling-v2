@@ -73,7 +73,7 @@ const MapTools = ({
         >
           <label className="mb-1 block text-sm font-bold">Min Points:</label>
           <NumberInput
-            value={minPoints}
+            value={algorithm === 'kmeans' ? 1 : minPoints}
             onChange={setMinPoints}
             min={2}
             max={maxPoints - 1}
