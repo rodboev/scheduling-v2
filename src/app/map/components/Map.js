@@ -43,6 +43,7 @@ const Map = () => {
   const [clusteredServices, setClusteredServices] = useState([])
   const [clusteringInfo, setClusteringInfo] = useState(null)
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
+  const [minPoints, setMinPoints] = useState(2)
   const [maxPoints, setMaxPoints] = useState(12)
   const [activePopup, setActivePopup] = useState(null)
   const [startDate, setStartDate] = useState('2024-09-02T02:30:00.000Z')
@@ -63,6 +64,7 @@ const Map = () => {
           start: startDate,
           end: endDate,
           clusterUnclustered,
+          minPoints,
           maxPoints,
           algorithm,
         },
@@ -74,7 +76,7 @@ const Map = () => {
       setClusteredServices([])
       setClusteringInfo(null)
     }
-  }, [startDate, endDate, clusterUnclustered, maxPoints, algorithm])
+  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm])
 
   useEffect(() => {
     fetchClusteredServices()
@@ -92,6 +94,8 @@ const Map = () => {
       <MapTools
         algorithm={algorithm}
         setAlgorithm={setAlgorithm}
+        minPoints={minPoints}
+        setMinPoints={setMinPoints}
         maxPoints={maxPoints}
         setMaxPoints={setMaxPoints}
         clusterUnclustered={clusterUnclustered}
@@ -145,14 +149,14 @@ const Map = () => {
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
+          <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
           <p>Total Clusters: {clusteringInfo.totalClusters}</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
           <p>Noise Points: {clusteringInfo.noisePoints}</p>
-          <p>Max Distance: {clusteringInfo.maxDistance}</p>
-          <p>Min Distance: {clusteringInfo.minDistance}</p>
-          <p>Avg Distance: {clusteringInfo.avgDistance}</p>
-          <p>Runtime: {clusteringInfo.performanceDuration}</p>
+          <p>Max Distance: {clusteringInfo.maxDistance} mi</p>
+          <p>Min Distance: {clusteringInfo.minDistance} mi</p>
+          <p>Avg Distance: {clusteringInfo.avgDistance} mi</p>
         </div>
       )}
     </div>

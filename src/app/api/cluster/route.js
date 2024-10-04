@@ -7,14 +7,23 @@ import { Worker } from 'worker_threads'
 
 const LOG_MATRIX = false
 let currentWorker = null
+let currentAbortController = null
+let lastRequestTimestamp = 0
+
+const WORKER_TIMEOUT = 30000 // 30 seconds timeout
+const CHECK_INTERVAL = 1000 // Check every 1 second
 
 export async function GET(request) {
+  const currentRequestTimestamp = Date.now()
+  lastRequestTimestamp = currentRequestTimestamp
+
   try {
     const { searchParams } = new URL(request.url)
     const params = {
       start: searchParams.get('start'),
       end: searchParams.get('end'),
       clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
+      minPoints: parseInt(searchParams.get('minPoints'), 10) || 2,
       maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
       algorithm: searchParams.get('algorithm') || 'kmeans',
     }
@@ -50,32 +59,69 @@ export async function GET(request) {
 
     // Terminate the current worker if it exists
     if (currentWorker) {
+      console.log('Terminating existing worker due to new request')
+      currentAbortController.abort()
       currentWorker.terminate()
-      console.log('Terminated existing worker')
+      currentWorker = null
+      currentAbortController = null
     }
+
+    // Create a new AbortController
+    currentAbortController = new AbortController()
 
     // Create a new worker
     currentWorker = new Worker(
       path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
     )
 
-    const { clusteredServices, clusteringInfo } = await new Promise(
-      (resolve, reject) => {
-        currentWorker.on('message', resolve)
-        currentWorker.on('error', reject)
+    const checkForNewRequests = () => {
+      if (lastRequestTimestamp > currentRequestTimestamp) {
+        console.log('New request detected, terminating current worker')
+        currentAbortController.abort()
+        currentWorker.terminate()
+        currentWorker = null
+        currentAbortController = null
+        throw new Error('New request detected')
+      }
+    }
+
+    const { clusteredServices, clusteringInfo } = await Promise.race([
+      new Promise((resolve, reject) => {
+        const intervalId = setInterval(checkForNewRequests, CHECK_INTERVAL)
+
+        currentWorker.on('message', result => {
+          clearInterval(intervalId)
+          resolve(result)
+        })
+        currentWorker.on('error', error => {
+          clearInterval(intervalId)
+          reject(error)
+        })
         currentWorker.postMessage({
           services,
           distanceMatrix,
+          minPoints: params.minPoints,
           maxPoints: params.maxPoints,
           clusterUnclustered: params.clusterUnclustered,
           algorithm: params.algorithm,
         })
-      },
-    )
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Worker timeout')), WORKER_TIMEOUT),
+      ),
+      new Promise((_, reject) => {
+        currentAbortController.signal.addEventListener('abort', () =>
+          reject(new Error('Worker aborted')),
+        )
+      }),
+    ])
 
     // Clear the currentWorker reference after it's done
-    currentWorker.terminate()
-    currentWorker = null
+    if (currentWorker) {
+      currentWorker.terminate()
+      currentWorker = null
+      currentAbortController = null
+    }
 
     // Log clustering results
     console.log(
@@ -86,9 +132,6 @@ export async function GET(request) {
       }):`,
     )
     console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
-    console.log(
-      `Performance duration: ${clusteringInfo.performanceDuration} ms`,
-    )
 
     // Log distance statistics
     console.log(
@@ -113,6 +156,8 @@ export async function GET(request) {
       )
     })
 
+    console.log(`Runtime: ${clusteringInfo.performanceDuration} ms`)
+
     if (
       clusteringInfo.totalClusters === 1 &&
       !clusteringInfo.noisePoints &&
@@ -135,8 +180,10 @@ export async function GET(request) {
     console.error('Error in cluster API:', error)
     // Make sure to clear the currentWorker reference if there's an error
     if (currentWorker) {
+      console.log('Terminating worker due to error')
       currentWorker.terminate()
       currentWorker = null
+      currentAbortController = null
     }
     return NextResponse.json(
       { error: 'Internal Server Error' },

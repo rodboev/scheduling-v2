@@ -6,6 +6,8 @@ import NumberInput from './NumberInput'
 const MapTools = ({
   clusterUnclustered,
   setClusterUnclustered,
+  minPoints,
+  setMinPoints,
   maxPoints,
   setMaxPoints,
   startDate,
@@ -72,35 +74,45 @@ const MapTools = ({
 
   return (
     <div className="absolute right-4 top-4 z-[1000] rounded bg-white p-4 shadow">
-      <div className="mb-4 flex">
-        <div className="w-1/2 pr-2">
-          <label className="mb-1 block text-sm font-bold">Algorithm:</label>
-          <select
-            value={algorithm}
-            onChange={e => setAlgorithm(e.target.value)}
-            className="w-full overflow-hidden rounded border"
-            size="2"
+      <div className="mb-4">
+        <label className="mb-1 block text-sm font-bold">Algorithm:</label>
+        <select
+          value={algorithm}
+          onChange={e => setAlgorithm(e.target.value)}
+          className="w-full overflow-hidden rounded border"
+          size="2"
+        >
+          <option
+            value="kmeans"
+            className="p-2"
           >
-            <option
-              value="kmeans"
-              className="p-2"
-            >
-              K-means
-            </option>
-            <option
-              value="dbscan"
-              className="p-2"
-            >
-              DBSCAN
-            </option>
-          </select>
+            K-means
+          </option>
+          <option
+            value="dbscan"
+            className="p-2"
+          >
+            DBSCAN
+          </option>
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <label className="mb-1 block text-sm font-bold">Min Points:</label>
+          <NumberInput
+            value={minPoints}
+            onChange={setMinPoints}
+            min={2}
+            max={maxPoints - 1}
+            disabled={algorithm === 'kmeans'}
+          />
         </div>
-        <div className="w-1/2 pl-2">
+        <div>
           <label className="mb-1 block text-sm font-bold">Max Points:</label>
           <NumberInput
             value={maxPoints}
             onChange={setMaxPoints}
-            min={2}
+            min={minPoints + 1}
           />
         </div>
       </div>

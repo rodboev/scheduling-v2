@@ -1,8 +1,8 @@
 import { performance } from 'perf_hooks'
-import { parentPort } from 'worker_threads'
+import { parentPort, workerData } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
-const MAX_K_CHANGES = 100 // Maximum number of times k can be adjusted
+const MAX_K_CHANGES = 500 // Maximum number of times k can be adjusted
 const MAX_ITERATIONS = 1000 // Maximum number of iterations for k-means
 const MAX_EXECUTION_TIME = 30000 // Maximum execution time in milliseconds (30 seconds)
 
@@ -28,7 +28,13 @@ function filterOutliers(points, distanceMatrix) {
   return { connectedPoints, outliers }
 }
 
-function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
+function DBSCAN({
+  points,
+  distanceMatrix,
+  minPoints,
+  maxPoints,
+  clusterUnclustered,
+}) {
   const clusters = []
   const visited = new Set()
   const noise = new Set()
@@ -70,9 +76,9 @@ function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
     visited.add(i)
 
     const neighbors = getNeighbors(i)
-    if (neighbors.length > 0) {
+    if (neighbors.length >= minPoints - 1) {
       const cluster = expandCluster(i, neighbors)
-      if (cluster.length > 1) {
+      if (cluster.length >= minPoints) {
         clusters.push(cluster)
       } else {
         noise.add(i)
@@ -110,7 +116,12 @@ function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
   return { clusters, noise, initialStatus }
 }
 
-function kMeans({ points, maxPoints, maxIterations = MAX_ITERATIONS }) {
+function kMeans({
+  points,
+  minPoints,
+  maxPoints,
+  maxIterations = MAX_ITERATIONS,
+}) {
   let k = Math.max(1, Math.ceil(points.length / maxPoints))
   let clusters, centroids, initialClusters
   let allClustersWithinLimits = false
@@ -170,12 +181,24 @@ function kMeans({ points, maxPoints, maxIterations = MAX_ITERATIONS }) {
     const tooLargeClusters = clusters.filter(
       cluster => cluster.length > maxPoints,
     )
+    const tooSmallClusters = clusters.filter(
+      cluster => cluster.length < minPoints,
+    )
 
-    allClustersWithinLimits = tooLargeClusters.length === 0
+    allClustersWithinLimits =
+      tooLargeClusters.length === 0 && tooSmallClusters.length === 0
 
     if (!allClustersWithinLimits) {
-      k++
+      if (tooLargeClusters.length > 0) {
+        k++
+      } else if (tooSmallClusters.length > 0) {
+        k = Math.max(1, k - 1)
+      }
       kChangeCount++
+    }
+
+    if (kChangeCount === MAX_K_CHANGES - 1) {
+      console.log('MAX_K_CHANGES reached in k-means algorithm')
     }
   }
 
@@ -187,6 +210,7 @@ parentPort.on(
   ({
     services,
     distanceMatrix,
+    minPoints,
     maxPoints,
     clusterUnclustered,
     algorithm = 'kmeans',
@@ -243,6 +267,7 @@ parentPort.on(
         const { clusters, initialStatus } = DBSCAN({
           points: filteredPoints,
           distanceMatrix: filteredDistanceMatrix,
+          minPoints,
           maxPoints,
           clusterUnclustered,
         })
@@ -271,8 +296,13 @@ parentPort.on(
         const { clusters, centroids, k, initialClusters, kChangeCount } =
           kMeans({
             points: filteredPoints,
+            minPoints,
             maxPoints,
           })
+
+        if (kChangeCount === MAX_K_CHANGES) {
+          console.log('MAX_K_CHANGES reached in k-means algorithm')
+        }
 
         clusteredServices = services.map((service, index) => {
           if (outliers.includes(index)) {
@@ -324,6 +354,10 @@ parentPort.on(
       const endTime = performance.now()
       const duration = endTime - startTime
 
+      if (duration >= MAX_EXECUTION_TIME) {
+        console.log('MAX_EXECUTION_TIME reached in clustering algorithm')
+      }
+
       clusteringInfo = {
         ...clusteringInfo,
         performanceDuration: duration.toPrecision(3),
@@ -334,15 +368,25 @@ parentPort.on(
         clusteringInfo,
       })
     } catch (error) {
+      console.error('Error in clustering worker:', error.message)
       parentPort.postMessage({
         error: error.message,
       })
     }
 
     if (performance.now() - startTime > MAX_EXECUTION_TIME) {
+      console.log(
+        'MAX_EXECUTION_TIME exceeded, terminating clustering operation',
+      )
       parentPort.postMessage({
         error: 'Clustering operation timed out',
       })
     }
   },
 )
+
+// Add a listener for the 'terminate' event
+parentPort.on('terminate', () => {
+  console.log('Worker received terminate signal')
+  process.exit(0)
+})
