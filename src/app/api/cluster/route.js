@@ -6,6 +6,7 @@ import path from 'path'
 import { Worker } from 'worker_threads'
 
 const LOG_MATRIX = false
+let currentWorker = null
 
 export async function GET(request) {
   try {
@@ -47,15 +48,22 @@ export async function GET(request) {
       return NextResponse.json(services)
     }
 
-    const worker = new Worker(
+    // Terminate the current worker if it exists
+    if (currentWorker) {
+      currentWorker.terminate()
+      console.log('Terminated existing worker')
+    }
+
+    // Create a new worker
+    currentWorker = new Worker(
       path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
     )
 
     const { clusteredServices, clusteringInfo } = await new Promise(
       (resolve, reject) => {
-        worker.on('message', resolve)
-        worker.on('error', reject)
-        worker.postMessage({
+        currentWorker.on('message', resolve)
+        currentWorker.on('error', reject)
+        currentWorker.postMessage({
           services,
           distanceMatrix,
           maxPoints: params.maxPoints,
@@ -65,7 +73,9 @@ export async function GET(request) {
       },
     )
 
-    worker.terminate()
+    // Clear the currentWorker reference after it's done
+    currentWorker.terminate()
+    currentWorker = null
 
     // Log clustering results
     console.log(
@@ -123,6 +133,11 @@ export async function GET(request) {
     return NextResponse.json(responseData)
   } catch (error) {
     console.error('Error in cluster API:', error)
+    // Make sure to clear the currentWorker reference if there's an error
+    if (currentWorker) {
+      currentWorker.terminate()
+      currentWorker = null
+    }
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 },

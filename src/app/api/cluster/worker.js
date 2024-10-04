@@ -3,6 +3,8 @@ import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
 const MAX_K_CHANGES = 100 // Maximum number of times k can be adjusted
+const MAX_ITERATIONS = 1000 // Maximum number of iterations for k-means
+const MAX_EXECUTION_TIME = 30000 // Maximum execution time in milliseconds (30 seconds)
 
 function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
@@ -82,21 +84,21 @@ function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
     }
   }
 
-  // Assign unclustered points to the nearest cluster if clusterUnclustered is true
   if (clusterUnclustered) {
     Array.from(noise).forEach(pointIndex => {
       let nearestCluster = -1
       let minDistance = Infinity
 
-      clusters.forEach((cluster, clusterIndex) => {
-        cluster.forEach(clusterPointIndex => {
-          const distance = distanceMatrix[pointIndex][clusterPointIndex]
+      for (let i = 0; i < clusters.length; i++) {
+        const cluster = clusters[i]
+        for (let j = 0; j < cluster.length; j++) {
+          const distance = distanceMatrix[pointIndex][cluster[j]]
           if (distance < minDistance) {
             minDistance = distance
-            nearestCluster = clusterIndex
+            nearestCluster = i
           }
-        })
-      })
+        }
+      }
 
       if (nearestCluster !== -1) {
         clusters[nearestCluster].push(pointIndex)
@@ -108,67 +110,63 @@ function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
   return { clusters, noise, initialStatus }
 }
 
-function kMeans({ points, maxPoints, maxIterations = 100 }) {
+function kMeans({ points, maxPoints, maxIterations = MAX_ITERATIONS }) {
   let k = Math.max(1, Math.ceil(points.length / maxPoints))
   let clusters, centroids, initialClusters
   let allClustersWithinLimits = false
   let kChangeCount = 0
 
   while (!allClustersWithinLimits && kChangeCount < MAX_K_CHANGES) {
-    // Initialize centroids randomly
-    let centroids = Array.from({ length: k }, () => {
+    centroids = Array.from({ length: k }, () => {
       const randomIndex = Math.floor(Math.random() * points.length)
       return points[randomIndex]
     })
 
     clusters = []
     let iterations = 0
+    let previousCentroids = null
 
     while (iterations < maxIterations) {
-      // Assign points to nearest centroid
       clusters = Array.from({ length: k }, () => [])
 
-      for (const [index, point] of points.entries()) {
+      for (let i = 0; i < points.length; i++) {
         let nearestCentroidIndex = 0
         let minDistance = Infinity
 
-        for (let i = 0; i < k; i++) {
-          const distance = Math.sqrt(
-            centroids[i].reduce((sum, coord, dim) => {
-              return sum + Math.pow(coord - point[dim], 2)
-            }, 0),
+        for (let j = 0; j < k; j++) {
+          const distance = Math.hypot(
+            centroids[j][0] - points[i][0],
+            centroids[j][1] - points[i][1],
           )
           if (distance < minDistance) {
             minDistance = distance
-            nearestCentroidIndex = i
+            nearestCentroidIndex = j
           }
         }
 
-        clusters[nearestCentroidIndex].push(index)
+        clusters[nearestCentroidIndex].push(i)
       }
 
-      // Recalculate centroids
-      const newCentroids = clusters.map(cluster => {
-        if (cluster.length === 0) return centroids[0] // Avoid empty clusters
-        return cluster
-          .reduce((sum, pointIndex) => {
-            return sum.map((coord, dim) => coord + points[pointIndex][dim])
-          }, new Array(points[0].length).fill(0))
-          .map(coord => coord / cluster.length)
+      previousCentroids = centroids
+      centroids = clusters.map(cluster => {
+        if (cluster.length === 0) return previousCentroids[0]
+        const sum = [0, 0]
+        for (const pointIndex of cluster) {
+          sum[0] += points[pointIndex][0]
+          sum[1] += points[pointIndex][1]
+        }
+        return [sum[0] / cluster.length, sum[1] / cluster.length]
       })
 
-      // Check for convergence
-      if (JSON.stringify(newCentroids) === JSON.stringify(centroids)) {
+      if (JSON.stringify(centroids) === JSON.stringify(previousCentroids)) {
         break
       }
 
-      centroids = newCentroids
       iterations++
     }
 
     initialClusters = clusters.map(cluster => [...cluster])
 
-    // Check if all clusters are within the maxPoints limit
     const tooLargeClusters = clusters.filter(
       cluster => cluster.length > maxPoints,
     )
@@ -176,7 +174,7 @@ function kMeans({ points, maxPoints, maxIterations = 100 }) {
     allClustersWithinLimits = tooLargeClusters.length === 0
 
     if (!allClustersWithinLimits) {
-      k++ // Increase k if any cluster exceeds maxPoints
+      k++
       kChangeCount++
     }
   }
@@ -195,146 +193,156 @@ parentPort.on(
   }) => {
     const startTime = performance.now()
 
-    const points = services.map(service => [
-      service.location.latitude,
-      service.location.longitude,
-    ])
+    try {
+      const points = services.map(service => [
+        service.location.latitude,
+        service.location.longitude,
+      ])
 
-    // Calculate max, min, and avg distances
-    const flatDistances = distanceMatrix
-      .flat()
-      .filter(d => d !== null && d !== 0)
-    const maxDistance = Math.max(...flatDistances)
-    const minDistance = Math.min(...flatDistances)
-    const avgDistance =
-      flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
+      const flatDistances = distanceMatrix
+        .flat()
+        .filter(d => d !== null && d !== 0)
+      const maxDistance = Math.max(...flatDistances)
+      const minDistance = Math.min(...flatDistances)
+      const avgDistance =
+        flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
 
-    // Sample matrix info
-    const sampleSize = Math.min(5, distanceMatrix.length)
-    const sampleMatrix = distanceMatrix
-      .slice(0, sampleSize)
-      .map(row => row.slice(0, sampleSize))
+      const sampleSize = Math.min(5, distanceMatrix.length)
+      const sampleMatrix = distanceMatrix
+        .slice(0, sampleSize)
+        .map(row => row.slice(0, sampleSize))
 
-    let clusteringInfo = {
-      connectedPointsCount: 0,
-      outlierCount: 0,
-      maxDistance: Number(maxDistance.toPrecision(3)),
-      minDistance: Number(minDistance.toPrecision(3)),
-      avgDistance: Number(avgDistance.toPrecision(3)),
-      sampleMatrix: sampleMatrix,
-    }
+      let clusteringInfo = {
+        connectedPointsCount: 0,
+        outlierCount: 0,
+        maxDistance: Number(maxDistance.toPrecision(3)),
+        minDistance: Number(minDistance.toPrecision(3)),
+        avgDistance: Number(avgDistance.toPrecision(3)),
+        sampleMatrix: sampleMatrix,
+      }
 
-    const { connectedPoints, outliers } = filterOutliers(points, distanceMatrix)
+      const { connectedPoints, outliers } = filterOutliers(
+        points,
+        distanceMatrix,
+      )
 
-    const filteredPoints = connectedPoints.map(index => points[index])
-    const filteredDistanceMatrix = connectedPoints.map(i =>
-      connectedPoints.map(j => distanceMatrix[i][j]),
-    )
+      const filteredPoints = connectedPoints.map(index => points[index])
+      const filteredDistanceMatrix = connectedPoints.map(i =>
+        connectedPoints.map(j => distanceMatrix[i][j]),
+      )
 
-    let clusteredServices
-
-    clusteringInfo = {
-      ...clusteringInfo,
-      connectedPointsCount: connectedPoints.length,
-      outlierCount: outliers.length,
-    }
-
-    if (algorithm === 'dbscan') {
-      const { clusters, initialStatus } = DBSCAN({
-        points: filteredPoints,
-        distanceMatrix: filteredDistanceMatrix,
-        maxPoints,
-        clusterUnclustered,
-      })
-
-      clusteredServices = services.map((service, index) => {
-        if (outliers.includes(index)) {
-          return { ...service, cluster: -2, wasStatus: 'outlier' }
-        }
-        const filteredIndex = connectedPoints.indexOf(index)
-        const clusterIndex = clusters.findIndex(cluster =>
-          cluster.includes(filteredIndex),
-        )
-        return {
-          ...service,
-          cluster: clusterIndex !== -1 ? clusterIndex : -1,
-          wasStatus: initialStatus.get(filteredIndex) ?? clusterIndex,
-        }
-      })
+      let clusteredServices
 
       clusteringInfo = {
         ...clusteringInfo,
-        algorithm: 'DBSCAN',
-        clusterSizes: clusters.map(cluster => cluster.length),
+        connectedPointsCount: connectedPoints.length,
+        outlierCount: outliers.length,
       }
-    } else if (algorithm === 'kmeans') {
-      const { clusters, centroids, k, initialClusters, kChangeCount } = kMeans({
-        points: filteredPoints,
-        maxPoints,
-      })
 
-      clusteredServices = services.map((service, index) => {
-        if (outliers.includes(index)) {
-          return { ...service, cluster: -2, wasStatus: 'outlier' }
+      if (algorithm === 'dbscan') {
+        const { clusters, initialStatus } = DBSCAN({
+          points: filteredPoints,
+          distanceMatrix: filteredDistanceMatrix,
+          maxPoints,
+          clusterUnclustered,
+        })
+
+        clusteredServices = services.map((service, index) => {
+          if (outliers.includes(index)) {
+            return { ...service, cluster: -2, wasStatus: 'outlier' }
+          }
+          const filteredIndex = connectedPoints.indexOf(index)
+          const clusterIndex = clusters.findIndex(cluster =>
+            cluster.includes(filteredIndex),
+          )
+          return {
+            ...service,
+            cluster: clusterIndex !== -1 ? clusterIndex : -1,
+            wasStatus: initialStatus.get(filteredIndex) ?? clusterIndex,
+          }
+        })
+
+        clusteringInfo = {
+          ...clusteringInfo,
+          algorithm: 'DBSCAN',
+          clusterSizes: clusters.map(cluster => cluster.length),
         }
-        const filteredIndex = connectedPoints.indexOf(index)
-        const clusterIndex = clusters.findIndex(cluster =>
-          cluster.includes(filteredIndex),
-        )
-        const initialClusterIndex = initialClusters.findIndex(cluster =>
-          cluster.includes(filteredIndex),
-        )
-        return {
-          ...service,
-          cluster: clusterIndex,
+      } else if (algorithm === 'kmeans') {
+        const { clusters, centroids, k, initialClusters, kChangeCount } =
+          kMeans({
+            points: filteredPoints,
+            maxPoints,
+          })
+
+        clusteredServices = services.map((service, index) => {
+          if (outliers.includes(index)) {
+            return { ...service, cluster: -2, wasStatus: 'outlier' }
+          }
+          const filteredIndex = connectedPoints.indexOf(index)
+          const clusterIndex = clusters.findIndex(cluster =>
+            cluster.includes(filteredIndex),
+          )
+          return {
+            ...service,
+            cluster: clusterIndex,
+          }
+        })
+
+        clusteringInfo = {
+          ...clusteringInfo,
+          algorithm: 'K-means',
+          k,
+          kChangeCount,
+          clusterSizes: clusters.map(cluster => cluster.length),
         }
-      })
+      } else {
+        throw new Error('Invalid clustering algorithm specified')
+      }
+
+      const clusterCounts = clusteredServices.reduce((acc, service) => {
+        acc[service.cluster] = (acc[service.cluster] || 0) + 1
+        return acc
+      }, {})
 
       clusteringInfo = {
         ...clusteringInfo,
-        algorithm: 'K-means',
-        k,
-        kChangeCount,
-        clusterSizes: clusters.map(cluster => cluster.length),
+        totalClusters: clusteringInfo.clusterSizes.length,
+        noisePoints: clusterCounts['-1'] || 0,
+        outliersCount: clusterCounts['-2'] || 0,
+        clusterDistribution: Object.entries(clusterCounts).map(
+          ([cluster, count]) => ({ [cluster]: count }),
+        ),
+        outliers: clusteredServices
+          .filter(service => service.cluster === -2)
+          .map(service => ({
+            company: service.company,
+            latitude: service.location.latitude,
+            longitude: service.location.longitude,
+          })),
       }
-    } else {
-      throw new Error('Invalid clustering algorithm specified')
+
+      const endTime = performance.now()
+      const duration = endTime - startTime
+
+      clusteringInfo = {
+        ...clusteringInfo,
+        performanceDuration: duration.toPrecision(3),
+      }
+
+      parentPort.postMessage({
+        clusteredServices,
+        clusteringInfo,
+      })
+    } catch (error) {
+      parentPort.postMessage({
+        error: error.message,
+      })
     }
 
-    // Calculate additional statistics
-    const clusterCounts = clusteredServices.reduce((acc, service) => {
-      acc[service.cluster] = (acc[service.cluster] || 0) + 1
-      return acc
-    }, {})
-
-    clusteringInfo = {
-      ...clusteringInfo,
-      totalClusters: clusteringInfo.clusterSizes.length,
-      noisePoints: clusterCounts['-1'] || 0,
-      outliersCount: clusterCounts['-2'] || 0,
-      clusterDistribution: Object.entries(clusterCounts).map(
-        ([cluster, count]) => ({ [cluster]: count }),
-      ),
-      outliers: clusteredServices
-        .filter(service => service.cluster === -2)
-        .map(service => ({
-          company: service.company,
-          latitude: service.location.latitude,
-          longitude: service.location.longitude,
-        })),
+    if (performance.now() - startTime > MAX_EXECUTION_TIME) {
+      parentPort.postMessage({
+        error: 'Clustering operation timed out',
+      })
     }
-
-    const endTime = performance.now()
-    const duration = endTime - startTime
-
-    clusteringInfo = {
-      ...clusteringInfo,
-      performanceDuration: duration.toPrecision(3),
-    }
-
-    parentPort.postMessage({
-      clusteredServices,
-      clusteringInfo,
-    })
   },
 )
