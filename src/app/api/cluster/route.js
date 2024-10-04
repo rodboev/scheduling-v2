@@ -14,7 +14,6 @@ export async function GET(request) {
       start: searchParams.get('start'),
       end: searchParams.get('end'),
       clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
-      minPoints: parseInt(searchParams.get('minPoints'), 10) || 1,
       maxPoints: parseInt(searchParams.get('maxPoints'), 10) || 10,
       algorithm: searchParams.get('algorithm') || 'kmeans',
     }
@@ -60,7 +59,6 @@ export async function GET(request) {
           services,
           distanceMatrix,
           maxPoints: params.maxPoints,
-          minPoints: params.minPoints,
           clusterUnclustered: params.clusterUnclustered,
           algorithm: params.algorithm,
         })
@@ -68,11 +66,19 @@ export async function GET(request) {
     )
 
     worker.terminate()
+
     // Log clustering results
     console.log(
-      `Results from clustering (${clusteringInfo.algorithm}${clusteringInfo.algorithm === 'K-means' ? `, k = ${clusteringInfo.k}` : ''}):`,
+      `Results from clustering (${clusteringInfo.algorithm}${
+        clusteringInfo.algorithm === 'K-means'
+          ? `, k = ${clusteringInfo.k}`
+          : ''
+      }):`,
     )
     console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
+    console.log(
+      `Performance duration: ${clusteringInfo.performanceDuration} ms`,
+    )
 
     // Log distance statistics
     console.log(
@@ -107,8 +113,14 @@ export async function GET(request) {
       )
     }
 
-    setCachedData(cacheKey, clusteredServices)
-    return NextResponse.json(clusteredServices)
+    // Include clusteringInfo in the response
+    const responseData = {
+      clusteredServices,
+      clusteringInfo,
+    }
+
+    setCachedData(cacheKey, responseData)
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('Error in cluster API:', error)
     return NextResponse.json(

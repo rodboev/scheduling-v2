@@ -1,6 +1,8 @@
+import { performance } from 'perf_hooks'
 import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
+const MAX_K_CHANGES = 100 // Maximum number of times k can be adjusted
 
 function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
@@ -24,13 +26,7 @@ function filterOutliers(points, distanceMatrix) {
   return { connectedPoints, outliers }
 }
 
-function DBSCAN({
-  points,
-  distanceMatrix,
-  maxPoints,
-  minPoints,
-  clusterUnclustered,
-}) {
+function DBSCAN({ points, distanceMatrix, maxPoints, clusterUnclustered }) {
   const clusters = []
   const visited = new Set()
   const noise = new Set()
@@ -60,9 +56,7 @@ function DBSCAN({
         cluster.push(currentPoint)
 
         const currentNeighbors = getNeighbors(currentPoint)
-        if (currentNeighbors.length >= minPoints - 1) {
-          queue.push(...currentNeighbors.filter(n => !visited.has(n)))
-        }
+        queue.push(...currentNeighbors.filter(n => !visited.has(n)))
       }
     }
 
@@ -74,15 +68,13 @@ function DBSCAN({
     visited.add(i)
 
     const neighbors = getNeighbors(i)
-    if (neighbors.length >= minPoints - 1) {
+    if (neighbors.length > 0) {
       const cluster = expandCluster(i, neighbors)
-      if (cluster.length >= minPoints) {
+      if (cluster.length > 1) {
         clusters.push(cluster)
       } else {
-        cluster.forEach(point => {
-          noise.add(point)
-          initialStatus.set(point, 'noise')
-        })
+        noise.add(i)
+        initialStatus.set(i, 'noise')
       }
     } else {
       noise.add(i)
@@ -109,7 +101,6 @@ function DBSCAN({
       if (nearestCluster !== -1) {
         clusters[nearestCluster].push(pointIndex)
         noise.delete(pointIndex)
-        // Note: We don't remove from initialNoise
       }
     })
   }
@@ -120,9 +111,10 @@ function DBSCAN({
 function kMeans({ points, maxPoints, maxIterations = 100 }) {
   let k = Math.max(1, Math.ceil(points.length / maxPoints))
   let clusters, centroids, initialClusters
-  let allClustersWithinLimit = false
+  let allClustersWithinLimits = false
+  let kChangeCount = 0
 
-  while (!allClustersWithinLimit) {
+  while (!allClustersWithinLimits && kChangeCount < MAX_K_CHANGES) {
     // Initialize centroids randomly
     let centroids = Array.from({ length: k }, () => {
       const randomIndex = Math.floor(Math.random() * points.length)
@@ -177,16 +169,19 @@ function kMeans({ points, maxPoints, maxIterations = 100 }) {
     initialClusters = clusters.map(cluster => [...cluster])
 
     // Check if all clusters are within the maxPoints limit
-    allClustersWithinLimit = clusters.every(
-      cluster => cluster.length <= maxPoints,
+    const tooLargeClusters = clusters.filter(
+      cluster => cluster.length > maxPoints,
     )
 
-    if (!allClustersWithinLimit) {
+    allClustersWithinLimits = tooLargeClusters.length === 0
+
+    if (!allClustersWithinLimits) {
       k++ // Increase k if any cluster exceeds maxPoints
+      kChangeCount++
     }
   }
 
-  return { clusters, centroids, k, initialClusters }
+  return { clusters, centroids, k, initialClusters, kChangeCount }
 }
 
 parentPort.on(
@@ -195,10 +190,11 @@ parentPort.on(
     services,
     distanceMatrix,
     maxPoints,
-    minPoints,
     clusterUnclustered,
     algorithm = 'kmeans',
   }) => {
+    const startTime = performance.now()
+
     const points = services.map(service => [
       service.location.latitude,
       service.location.longitude,
@@ -248,7 +244,6 @@ parentPort.on(
         points: filteredPoints,
         distanceMatrix: filteredDistanceMatrix,
         maxPoints,
-        minPoints,
         clusterUnclustered,
       })
 
@@ -273,7 +268,7 @@ parentPort.on(
         clusterSizes: clusters.map(cluster => cluster.length),
       }
     } else if (algorithm === 'kmeans') {
-      const { clusters, centroids, k, initialClusters } = kMeans({
+      const { clusters, centroids, k, initialClusters, kChangeCount } = kMeans({
         points: filteredPoints,
         maxPoints,
       })
@@ -299,6 +294,7 @@ parentPort.on(
         ...clusteringInfo,
         algorithm: 'K-means',
         k,
+        kChangeCount,
         clusterSizes: clusters.map(cluster => cluster.length),
       }
     } else {
@@ -326,6 +322,14 @@ parentPort.on(
           latitude: service.location.latitude,
           longitude: service.location.longitude,
         })),
+    }
+
+    const endTime = performance.now()
+    const duration = endTime - startTime
+
+    clusteringInfo = {
+      ...clusteringInfo,
+      performanceDuration: duration.toPrecision(3),
     }
 
     parentPort.postMessage({

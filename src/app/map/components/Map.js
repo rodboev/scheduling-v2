@@ -41,13 +41,13 @@ function MapEventHandler({ setActivePopup }) {
 
 const Map = () => {
   const [clusteredServices, setClusteredServices] = useState([])
+  const [clusteringInfo, setClusteringInfo] = useState(null)
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
-  const [minPoints, setMinPoints] = useState(4)
   const [maxPoints, setMaxPoints] = useState(12)
   const [activePopup, setActivePopup] = useState(null)
   const [startDate, setStartDate] = useState('2024-09-02T02:30:00.000Z')
   const [endDate, setEndDate] = useState('2024-09-02T10:30:00.000Z')
-  const center = [40.687, -73.965] // Fixed the array syntax
+  const center = [40.687, -73.965]
   const markerRefs = useRef({})
   const [algorithm, setAlgorithm] = useState('kmeans')
 
@@ -63,17 +63,18 @@ const Map = () => {
           start: startDate,
           end: endDate,
           clusterUnclustered,
-          minPoints,
           maxPoints,
           algorithm,
         },
       })
-      setClusteredServices(response.data)
+      setClusteredServices(response.data.clusteredServices)
+      setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
       console.error('Error fetching clustered services:', error)
       setClusteredServices([])
+      setClusteringInfo(null)
     }
-  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm])
+  }, [startDate, endDate, clusterUnclustered, maxPoints, algorithm])
 
   useEffect(() => {
     fetchClusteredServices()
@@ -91,8 +92,6 @@ const Map = () => {
       <MapTools
         algorithm={algorithm}
         setAlgorithm={setAlgorithm}
-        minPoints={minPoints}
-        setMinPoints={setMinPoints}
         maxPoints={maxPoints}
         setMaxPoints={setMaxPoints}
         clusterUnclustered={clusterUnclustered}
@@ -108,11 +107,12 @@ const Map = () => {
         className="h-full w-full"
         onClick={handleMapClick}
         tap={false}
+        attributionControl={false} // Remove attribution control
       >
         <MapEventHandler setActivePopup={setActivePopup} />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
-          attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
+          attribution="" // Remove attribution
         />
         {
           clusteredServices.reduce(
@@ -143,6 +143,18 @@ const Map = () => {
           ).markers
         }
       </MapContainer>
+      {clusteringInfo && (
+        <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
+          <p>Total Clusters: {clusteringInfo.totalClusters}</p>
+          <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
+          <p>Outliers: {clusteringInfo.outlierCount}</p>
+          <p>Noise Points: {clusteringInfo.noisePoints}</p>
+          <p>Max Distance: {clusteringInfo.maxDistance}</p>
+          <p>Min Distance: {clusteringInfo.minDistance}</p>
+          <p>Avg Distance: {clusteringInfo.avgDistance}</p>
+          <p>Runtime: {clusteringInfo.performanceDuration}</p>
+        </div>
+      )}
     </div>
   )
 }
