@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server'
 import path from 'path'
 import { Worker } from 'worker_threads'
 
+const LOG_MATRIX = false
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -77,8 +79,16 @@ export async function GET(request) {
       `Distance: max ${clusteringInfo.maxDistance} mi, min ${clusteringInfo.minDistance} mi, avg ${clusteringInfo.avgDistance} mi`,
     )
 
-    // Log cluster distribution
     console.log(`Clusters:`, clusteringInfo.clusterDistribution)
+
+    if (LOG_MATRIX) {
+      console.log('Sample Distance Matrix (in miles):')
+      console.log(
+        clusteringInfo.sampleMatrix.map(row =>
+          row.map(d => d?.toFixed(4) ?? 'null'),
+        ),
+      )
+    }
 
     // Log outliers
     clusteringInfo.outliers.forEach((outlier, index) => {

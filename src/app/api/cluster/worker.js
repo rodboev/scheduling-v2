@@ -1,7 +1,6 @@
 import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
-const MILES_TO_METERS = 1609.34
 
 function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
@@ -202,12 +201,19 @@ parentPort.on(
     const avgDistance =
       flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
 
+    // Sample matrix info
+    const sampleSize = Math.min(5, distanceMatrix.length)
+    const sampleMatrix = distanceMatrix
+      .slice(0, sampleSize)
+      .map(row => row.slice(0, sampleSize))
+
     let clusteringInfo = {
       connectedPointsCount: 0,
       outlierCount: 0,
-      maxDistance: Number((maxDistance / MILES_TO_METERS).toPrecision(3)),
-      minDistance: Number((minDistance / MILES_TO_METERS).toPrecision(3)),
-      avgDistance: Number((avgDistance / MILES_TO_METERS).toPrecision(3)),
+      maxDistance: Number(maxDistance.toPrecision(3)),
+      minDistance: Number(minDistance.toPrecision(3)),
+      avgDistance: Number(avgDistance.toPrecision(3)),
+      sampleMatrix: sampleMatrix,
     }
 
     const { connectedPoints, outliers } = filterOutliers(points, distanceMatrix)
