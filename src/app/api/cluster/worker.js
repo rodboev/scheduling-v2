@@ -3,7 +3,7 @@ import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
 const MAX_K_CHANGES = 10000 // Maximum number of times k can be adjusted
-const MAX_ITERATIONS = 1000 // Maximum number of iterations for k-means
+const MAX_ITERATIONS = 50000 // Maximum number of iterations for k-means
 
 /**
  * Filters out outliers from the given points based on the distance matrix.
@@ -149,11 +149,7 @@ function DBSCAN({
  * @param {number} params.minPoints - Minimum number of points in a cluster.
  * @param {number} params.maxPoints - Maximum number of points in a cluster.
  * @param {number} [params.maxIterations=MAX_ITERATIONS] - Maximum number of iterations.
- * @returns {{clusters: number[][], centroids: number[][], k: number, initialClusters: number[][], kChangeCount: number}} - Clustering result.
- *
- * This function implements the K-means algorithm with dynamic adjustment of k.
- * It starts with an initial k and adjusts it based on cluster sizes until all clusters
- * are within the specified size limits or MAX_K_CHANGES is reached.
+ * @returns {{clusters: number[][], centroids: number[][], k: number, initialClusters: number[][], kChangeCount: number, totalIterations: number}} - Clustering result.
  */
 function kMeans({
   points,
@@ -161,95 +157,161 @@ function kMeans({
   maxPoints,
   maxIterations = MAX_ITERATIONS,
 }) {
-  let k = Math.max(1, Math.ceil(points.length / maxPoints))
-  let clusters, centroids, initialClusters
-  let allClustersWithinLimits = false
-  let kChangeCount = 0
+  try {
+    const startTime = performance.now()
+    let k = Math.max(1, Math.ceil(points.length / maxPoints))
+    let bestClusters, bestCentroids, bestK, bestCost
+    let lowestCost = Infinity
+    let kChangeCount = 0
+    let totalIterations = 0
+    let maxIterationsReached = false
+    let currentClusters, currentCentroids, currentCost
 
-  while (!allClustersWithinLimits && kChangeCount < MAX_K_CHANGES) {
-    centroids = Array.from({ length: k }, () => {
-      const randomIndex = Math.floor(Math.random() * points.length)
-      return points[randomIndex]
-    })
+    while (kChangeCount < MAX_K_CHANGES && totalIterations < MAX_ITERATIONS) {
+      let iterations = 0
+      let previousCost = Infinity
 
-    clusters = []
-    let iterations = 0
-    let previousCentroids = null
+      // Initialize centroids
+      currentCentroids = Array.from({ length: k }, () => {
+        const randomIndex = Math.floor(Math.random() * points.length)
+        return points[randomIndex]
+      })
 
-    while (iterations < maxIterations) {
-      clusters = Array.from({ length: k }, () => [])
+      while (iterations < maxIterations && totalIterations < MAX_ITERATIONS) {
+        currentClusters = Array.from({ length: k }, () => [])
 
-      for (let i = 0; i < points.length; i++) {
-        let nearestCentroidIndex = 0
-        let minDistance = Infinity
+        // Assign points to clusters
+        for (let i = 0; i < points.length; i++) {
+          let nearestCentroidIndex = 0
+          let minDistance = Infinity
 
-        for (let j = 0; j < k; j++) {
-          const distance = Math.hypot(
-            centroids[j][0] - points[i][0],
-            centroids[j][1] - points[i][1],
-          )
-          if (distance < minDistance) {
-            minDistance = distance
-            nearestCentroidIndex = j
+          for (let j = 0; j < k; j++) {
+            const distance = Math.hypot(
+              currentCentroids[j][0] - points[i][0],
+              currentCentroids[j][1] - points[i][1],
+            )
+            if (distance < minDistance) {
+              minDistance = distance
+              nearestCentroidIndex = j
+            }
+          }
+
+          currentClusters[nearestCentroidIndex].push(i)
+        }
+
+        // Recalculate centroids
+        currentCentroids = currentClusters.map(cluster => {
+          if (cluster.length === 0)
+            return currentCentroids[Math.floor(Math.random() * k)]
+          const sum = [0, 0]
+          for (const pointIndex of cluster) {
+            sum[0] += points[pointIndex][0]
+            sum[1] += points[pointIndex][1]
+          }
+          return [sum[0] / cluster.length, sum[1] / cluster.length]
+        })
+
+        // Calculate cost (sum of squared distances)
+        currentCost = 0
+        for (let i = 0; i < k; i++) {
+          for (const pointIndex of currentClusters[i]) {
+            currentCost += Math.pow(
+              Math.hypot(
+                currentCentroids[i][0] - points[pointIndex][0],
+                currentCentroids[i][1] - points[pointIndex][1],
+              ),
+              2,
+            )
           }
         }
 
-        clusters[nearestCentroidIndex].push(i)
-      }
-
-      previousCentroids = centroids
-      centroids = clusters.map(cluster => {
-        if (cluster.length === 0) return previousCentroids[0]
-        const sum = [0, 0]
-        for (const pointIndex of cluster) {
-          sum[0] += points[pointIndex][0]
-          sum[1] += points[pointIndex][1]
+        // Check for convergence
+        if (Math.abs(currentCost - previousCost) < 1e-6) {
+          break
         }
-        return [sum[0] / cluster.length, sum[1] / cluster.length]
-      })
 
-      if (JSON.stringify(centroids) === JSON.stringify(previousCentroids)) {
-        break
+        previousCost = currentCost
+        iterations++
+        totalIterations++
       }
 
-      iterations++
-    }
+      // Check if this clustering satisfies minPoints and maxPoints constraints
+      const clusterSizes = currentClusters.map(cluster => cluster.length)
+      const maxClusterSize = Math.max(...clusterSizes)
+      const minClusterSize = Math.min(...clusterSizes)
 
-    if (iterations === maxIterations) {
-      console.warn(
-        `❌ MAX_ITERATIONS (${MAX_ITERATIONS}) reached, K_CHANGES is ${kChangeCount}`,
-      )
-    }
+      if (minClusterSize >= minPoints && maxClusterSize <= maxPoints) {
+        // This clustering satisfies the constraints
+        if (currentCost < lowestCost) {
+          lowestCost = currentCost
+          bestClusters = currentClusters
+          bestCentroids = currentCentroids
+          bestK = k
+          bestCost = currentCost
+        }
+      }
 
-    initialClusters = clusters.map(cluster => [...cluster])
-
-    const tooLargeClusters = clusters.filter(
-      cluster => cluster.length > maxPoints,
-    )
-    const tooSmallClusters = clusters.filter(
-      cluster => cluster.length < minPoints,
-    )
-
-    allClustersWithinLimits =
-      tooLargeClusters.length === 0 && tooSmallClusters.length === 0
-
-    if (!allClustersWithinLimits) {
-      if (tooLargeClusters.length > 0) {
+      // Adjust k based on cluster sizes
+      if (maxClusterSize > maxPoints) {
         k++
-      } else if (tooSmallClusters.length > 0) {
-        k = Math.max(1, k - 1)
+      } else if (minClusterSize < minPoints && k > 1) {
+        k--
+      } else {
+        // If we've found a valid clustering, we can stop
+        if (bestClusters) break
+        // Otherwise, slightly adjust k to keep searching
+        k += Math.random() < 0.5 ? 1 : -1
+        k = Math.max(1, k)
       }
+
       kChangeCount++
     }
 
-    if (kChangeCount === MAX_K_CHANGES - 1) {
+    if (totalIterations >= MAX_ITERATIONS) {
+      const runtime = performance.now() - startTime
       console.warn(
-        `❌ MAX_K_CHANGES (${MAX_K_CHANGES}) reached, ITERATIONS is ${iterations}`,
+        `❌ MAX_ITERATIONS (${MAX_ITERATIONS}) reached, K_CHANGES is ${kChangeCount}, runtime ${runtime.toPrecision(3)}ms`,
+      )
+      maxIterationsReached = true
+    }
+    if (kChangeCount >= MAX_K_CHANGES) {
+      const runtime = performance.now() - startTime
+      console.warn(
+        `❌ MAX_K_CHANGES (${MAX_K_CHANGES}) reached, ITERATIONS is ${totalIterations}, runtime ${runtime.toPrecision(2)}ms`,
       )
     }
-  }
 
-  return { clusters, centroids, k, initialClusters, kChangeCount }
+    // If we couldn't find a clustering that satisfies the constraints, use the last one we found
+    if (!bestClusters) {
+      bestClusters = currentClusters
+      bestCentroids = currentCentroids
+      bestK = k
+      bestCost = currentCost
+    }
+
+    // Ensure that clusters are numbered from 0 to k-1
+    const finalClusters = bestClusters.filter(cluster => cluster.length > 0)
+    const clusterMapping = {}
+    finalClusters.forEach((cluster, index) => {
+      cluster.forEach(pointIndex => {
+        clusterMapping[pointIndex] = index
+      })
+    })
+
+    return {
+      clusters: points.map((_, index) => clusterMapping[index] ?? -1),
+      centroids: bestCentroids,
+      k: finalClusters.length,
+      kChangeCount,
+      totalIterations,
+      clusterSizes: finalClusters.map(cluster => cluster.length),
+      cost: bestCost,
+      maxIterationsReached,
+    }
+  } catch (error) {
+    console.error('Error in kMeans function:', error)
+    throw error
+  }
 }
 
 parentPort.on(
@@ -283,15 +345,6 @@ parentPort.on(
         .slice(0, sampleSize)
         .map(row => row.slice(0, sampleSize))
 
-      let clusteringInfo = {
-        connectedPointsCount: 0,
-        outlierCount: 0,
-        maxDistance: Number(maxDistance.toPrecision(3)),
-        minDistance: Number(minDistance.toPrecision(3)),
-        avgDistance: Number(avgDistance.toPrecision(3)),
-        sampleMatrix: sampleMatrix,
-      }
-
       const { connectedPoints, outliers } = filterOutliers(
         points,
         distanceMatrix,
@@ -303,11 +356,14 @@ parentPort.on(
       )
 
       let clusteredServices
-
-      clusteringInfo = {
-        ...clusteringInfo,
+      let clusteringInfo = {
+        algorithm,
         connectedPointsCount: connectedPoints.length,
         outlierCount: outliers.length,
+        maxDistance: Number(maxDistance.toPrecision(3)),
+        minDistance: Number(minDistance.toPrecision(3)),
+        avgDistance: Number(avgDistance.toPrecision(3)),
+        sampleMatrix: sampleMatrix,
       }
 
       if (algorithm === 'dbscan') {
@@ -336,37 +392,43 @@ parentPort.on(
 
         clusteringInfo = {
           ...clusteringInfo,
-          algorithm: 'DBSCAN',
           clusterSizes: clusters.map(cluster => cluster.length),
         }
       } else if (algorithm === 'kmeans') {
-        const { clusters, centroids, k, initialClusters, kChangeCount } =
-          kMeans({
-            points: filteredPoints,
-            minPoints,
-            maxPoints,
-          })
+        const {
+          clusters,
+          centroids,
+          k,
+          kChangeCount,
+          totalIterations,
+          clusterSizes,
+          cost,
+          maxIterationsReached,
+        } = kMeans({
+          points: filteredPoints,
+          minPoints,
+          maxPoints,
+        })
 
         clusteredServices = services.map((service, index) => {
           if (outliers.includes(index)) {
             return { ...service, cluster: -2, wasStatus: 'outlier' }
           }
           const filteredIndex = connectedPoints.indexOf(index)
-          const clusterIndex = clusters.findIndex(cluster =>
-            cluster.includes(filteredIndex),
-          )
           return {
             ...service,
-            cluster: clusterIndex,
+            cluster: filteredIndex !== -1 ? clusters[filteredIndex] : -1,
           }
         })
 
         clusteringInfo = {
           ...clusteringInfo,
-          algorithm: 'K-means',
           k,
           kChangeCount,
-          clusterSizes: clusters.map(cluster => cluster.length),
+          totalIterations,
+          clusterSizes,
+          cost,
+          maxIterationsReached,
         }
       } else {
         throw new Error('Invalid clustering algorithm specified')
@@ -379,7 +441,7 @@ parentPort.on(
 
       clusteringInfo = {
         ...clusteringInfo,
-        totalClusters: clusteringInfo.clusterSizes.length,
+        totalClusters: clusteringInfo.clusterSizes?.length || 0,
         noisePoints: clusterCounts['-1'] || 0,
         outliersCount: clusterCounts['-2'] || 0,
         clusterDistribution: Object.entries(clusterCounts).map(
@@ -410,6 +472,9 @@ parentPort.on(
       console.error('Error in clustering worker:', error.message)
       parentPort.postMessage({
         error: error.message,
+        clusteringInfo: {
+          algorithm,
+        },
       })
     }
   },

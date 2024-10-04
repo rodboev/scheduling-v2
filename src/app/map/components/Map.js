@@ -69,12 +69,16 @@ const Map = () => {
           algorithm,
         },
       })
-      setClusteredServices(response.data.clusteredServices)
-      setClusteringInfo(response.data.clusteringInfo)
+      if (response.data.error) {
+        console.error('Error fetching clustered services:', response.data.error)
+        // Don't update state if there's an error
+      } else {
+        setClusteredServices(response.data.clusteredServices)
+        setClusteringInfo(response.data.clusteringInfo)
+      }
     } catch (error) {
       console.error('Error fetching clustered services:', error)
-      setClusteredServices([])
-      setClusteringInfo(null)
+      // Don't update state if there's an error
     }
   }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm])
 
@@ -149,16 +153,13 @@ const Map = () => {
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
-          <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
-          <p>Total Clusters: {clusteringInfo.totalClusters}</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
+          <p>Clusters: {clusteringInfo.totalClusters}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
-          {clusteringInfo.algorithm === 'DBSCAN' && (
-            <p>Noise Points: {clusteringInfo.noisePoints}</p>
+          {clusteringInfo.algorithm === 'dbscan' && (
+            <p>Noise: {clusteringInfo.noisePoints}</p>
           )}
-          <p>Max Distance: {clusteringInfo.maxDistance} mi</p>
-          <p>Min Distance: {clusteringInfo.minDistance} mi</p>
-          <p>Avg Distance: {clusteringInfo.avgDistance} mi</p>
+          <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
         </div>
       )}
     </div>

@@ -55,7 +55,7 @@ async function processRequest(params, requestId) {
           `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
         )
         await terminateWorker()
-        reject(new Error('Worker timeout'))
+        resolve({ error: 'Worker timeout' })
       }
     }, WORKER_TIMEOUT)
 
@@ -73,7 +73,7 @@ async function processRequest(params, requestId) {
         console.error(`Worker error for request ${requestId}:`, error)
         clearTimeout(timeoutId)
         await terminateWorker()
-        reject(error)
+        resolve({ error: error.message })
       }
     })
 
@@ -143,14 +143,20 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Request superseded' }, { status: 409 })
     }
 
+    if (result.error) {
+      console.error(
+        `Error in cluster API for request ${requestId}:`,
+        result.error,
+      )
+      return NextResponse.json({ error: result.error }, { status: 500 })
+    }
+
     const { clusteredServices, clusteringInfo } = result
 
     // Log clustering results
     console.log(
       `Results from clustering for request ${requestId} (${clusteringInfo.algorithm}${
-        clusteringInfo.algorithm === 'K-means'
-          ? `, k = ${clusteringInfo.k}`
-          : ''
+        clusteringInfo.algorithm === 'kmeans' ? `, k = ${clusteringInfo.k}` : ''
       }):`,
     )
     console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
