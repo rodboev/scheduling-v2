@@ -31,7 +31,6 @@ const MapTools = ({
       .replace(' ', 'T')
   }
 
-  // Convert local datetime string to ISO string
   const toISOString = localString => {
     const date = new Date(localString)
     return date.toISOString()
@@ -40,17 +39,22 @@ const MapTools = ({
   const handleDateChange = (e, setter, isStartDate) => {
     const newDate = new Date(e.target.value)
     const otherDate = isStartDate ? new Date(endDate) : new Date(startDate)
+    const minTimeDiff = 8 * 60 * 60 * 1000 // 8 hours in milliseconds
 
-    if (isStartDate && newDate > otherDate) {
-      // If new start date is after end date, set end date to new start date
-      setEndDate(newDate.toISOString())
-    } else if (!isStartDate && newDate < otherDate) {
-      // If new end date is before start date, set start date to new end date
-      setStartDate(newDate.toISOString())
+    if (isStartDate) {
+      setter(newDate.toISOString())
+      if (newDate > otherDate || otherDate - newDate < minTimeDiff) {
+        const newEndDate = new Date(newDate.getTime() + minTimeDiff)
+        setEndDate(newEndDate.toISOString())
+      }
+    } else {
+      if (newDate < otherDate) {
+        const newEndDate = new Date(otherDate.getTime() + minTimeDiff)
+        setter(newEndDate.toISOString())
+      } else {
+        setter(newDate.toISOString())
+      }
     }
-
-    // Set the changed date
-    setter(newDate.toISOString())
   }
 
   const startDateRef = useRef(null)
