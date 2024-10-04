@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef, useEffect } from 'react'
 import NumberInput from './NumberInput'
 
 const MapTools = ({
@@ -40,6 +41,36 @@ const MapTools = ({
     const isoString = toISOString(e.target.value)
     setter(isoString)
   }
+
+  const startDateRef = useRef(null)
+  const endDateRef = useRef(null)
+
+  useEffect(() => {
+    const openDatePicker = inputRef => {
+      if (inputRef.current) {
+        inputRef.current.showPicker()
+      }
+    }
+
+    const handleStartDateClick = () => openDatePicker(startDateRef)
+    const handleEndDateClick = () => openDatePicker(endDateRef)
+
+    if (startDateRef.current) {
+      startDateRef.current.addEventListener('click', handleStartDateClick)
+    }
+    if (endDateRef.current) {
+      endDateRef.current.addEventListener('click', handleEndDateClick)
+    }
+
+    return () => {
+      if (startDateRef.current) {
+        startDateRef.current.removeEventListener('click', handleStartDateClick)
+      }
+      if (endDateRef.current) {
+        endDateRef.current.removeEventListener('click', handleEndDateClick)
+      }
+    }
+  }, [])
 
   return (
     <div className="absolute right-4 top-4 z-[1000] rounded bg-white p-4 shadow">
@@ -101,20 +132,22 @@ const MapTools = ({
         <div>
           <label className="mb-1 block text-sm font-bold">Start Date:</label>
           <input
+            ref={startDateRef}
             type="datetime-local"
             value={toLocalDateTimeString(startDate)}
             onChange={e => handleDateChange(e, setStartDate)}
-            className="w-full rounded border p-2"
+            className="w-full cursor-pointer rounded border p-2"
             step="900" // 15 minutes in seconds
           />
         </div>
         <div>
           <label className="mb-1 block text-sm font-bold">End Date:</label>
           <input
+            ref={endDateRef}
             type="datetime-local"
             value={toLocalDateTimeString(endDate)}
             onChange={e => handleDateChange(e, setEndDate)}
-            className="w-full rounded border p-2"
+            className="w-full cursor-pointer rounded border p-2"
             step="900" // 15 minutes in seconds
           />
         </div>

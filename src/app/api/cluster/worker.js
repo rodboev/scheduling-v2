@@ -118,60 +118,72 @@ function DBSCAN({
 }
 
 function kMeans({ points, maxPoints, maxIterations = 100 }) {
-  // Calculate k based on the number of points and maxPoints
-  const k = Math.max(1, Math.ceil(points.length / maxPoints))
+  let k = Math.max(1, Math.ceil(points.length / maxPoints))
+  let clusters, centroids, initialClusters
+  let allClustersWithinLimit = false
 
-  // Initialize centroids randomly
-  let centroids = Array.from({ length: k }, () => {
-    const randomIndex = Math.floor(Math.random() * points.length)
-    return points[randomIndex]
-  })
-
-  let clusters = []
-  let iterations = 0
-
-  let initialClusters = clusters.map(cluster => [...cluster])
-
-  while (iterations < maxIterations) {
-    // Assign points to nearest centroid
-    clusters = Array.from({ length: k }, () => [])
-
-    for (const [index, point] of points.entries()) {
-      let nearestCentroidIndex = 0
-      let minDistance = Infinity
-
-      for (let i = 0; i < k; i++) {
-        const distance = Math.sqrt(
-          centroids[i].reduce((sum, coord, dim) => {
-            return sum + Math.pow(coord - point[dim], 2)
-          }, 0),
-        )
-        if (distance < minDistance) {
-          minDistance = distance
-          nearestCentroidIndex = i
-        }
-      }
-
-      clusters[nearestCentroidIndex].push(index)
-    }
-
-    // Recalculate centroids
-    const newCentroids = clusters.map(cluster => {
-      if (cluster.length === 0) return centroids[0] // Avoid empty clusters
-      return cluster
-        .reduce((sum, pointIndex) => {
-          return sum.map((coord, dim) => coord + points[pointIndex][dim])
-        }, new Array(points[0].length).fill(0))
-        .map(coord => coord / cluster.length)
+  while (!allClustersWithinLimit) {
+    // Initialize centroids randomly
+    let centroids = Array.from({ length: k }, () => {
+      const randomIndex = Math.floor(Math.random() * points.length)
+      return points[randomIndex]
     })
 
-    // Check for convergence
-    if (JSON.stringify(newCentroids) === JSON.stringify(centroids)) {
-      break
+    clusters = []
+    let iterations = 0
+
+    while (iterations < maxIterations) {
+      // Assign points to nearest centroid
+      clusters = Array.from({ length: k }, () => [])
+
+      for (const [index, point] of points.entries()) {
+        let nearestCentroidIndex = 0
+        let minDistance = Infinity
+
+        for (let i = 0; i < k; i++) {
+          const distance = Math.sqrt(
+            centroids[i].reduce((sum, coord, dim) => {
+              return sum + Math.pow(coord - point[dim], 2)
+            }, 0),
+          )
+          if (distance < minDistance) {
+            minDistance = distance
+            nearestCentroidIndex = i
+          }
+        }
+
+        clusters[nearestCentroidIndex].push(index)
+      }
+
+      // Recalculate centroids
+      const newCentroids = clusters.map(cluster => {
+        if (cluster.length === 0) return centroids[0] // Avoid empty clusters
+        return cluster
+          .reduce((sum, pointIndex) => {
+            return sum.map((coord, dim) => coord + points[pointIndex][dim])
+          }, new Array(points[0].length).fill(0))
+          .map(coord => coord / cluster.length)
+      })
+
+      // Check for convergence
+      if (JSON.stringify(newCentroids) === JSON.stringify(centroids)) {
+        break
+      }
+
+      centroids = newCentroids
+      iterations++
     }
 
-    centroids = newCentroids
-    iterations++
+    initialClusters = clusters.map(cluster => [...cluster])
+
+    // Check if all clusters are within the maxPoints limit
+    allClustersWithinLimit = clusters.every(
+      cluster => cluster.length <= maxPoints,
+    )
+
+    if (!allClustersWithinLimit) {
+      k++ // Increase k if any cluster exceeds maxPoints
+    }
   }
 
   return { clusters, centroids, k, initialClusters }
@@ -280,7 +292,6 @@ parentPort.on(
         return {
           ...service,
           cluster: clusterIndex,
-          wasStatus: initialClusterIndex,
         }
       })
 

@@ -54,7 +54,7 @@ const MapMarker = ({
   const markerRef = useRef(null)
   const timeoutRef = useRef(null)
 
-  const getMarkerIcon = (cluster, wasStatus) => {
+  const getMarkerIcon = cluster => {
     const colorKeys = Object.keys(COLORS)
     const color =
       cluster < 0
