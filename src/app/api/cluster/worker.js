@@ -2,7 +2,7 @@ import { performance } from 'perf_hooks'
 import { parentPort } from 'worker_threads'
 
 const MAX_RADIUS_MILES = 5
-const MAX_K_CHANGES = 5000 // Maximum number of times k can be adjusted
+const MAX_K_CHANGES = 10000 // Maximum number of times k can be adjusted
 const MAX_ITERATIONS = 1000 // Maximum number of iterations for k-means
 
 /**
@@ -217,7 +217,7 @@ function kMeans({
 
     if (iterations === maxIterations) {
       console.warn(
-        `MAX_ITERATIONS (${MAX_ITERATIONS}) reached in k-means algorithm`,
+        `❌ MAX_ITERATIONS (${MAX_ITERATIONS}) reached, K_CHANGES is ${kChangeCount}`,
       )
     }
 
@@ -243,7 +243,9 @@ function kMeans({
     }
 
     if (kChangeCount === MAX_K_CHANGES - 1) {
-      console.warn('MAX_K_CHANGES reached in k-means algorithm')
+      console.warn(
+        `❌ MAX_K_CHANGES (${MAX_K_CHANGES}) reached, ITERATIONS is ${iterations}`,
+      )
     }
   }
 

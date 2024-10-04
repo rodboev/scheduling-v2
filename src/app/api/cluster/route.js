@@ -9,11 +9,9 @@ const LOG_MATRIX = false
 let currentWorker = null
 let currentAbortController = null
 let currentRequestId = 0
-const WORKER_TIMEOUT = 2000 // 2 secs
+const WORKER_TIMEOUT = 4000
 
 async function processRequest(params, requestId) {
-  console.log(`Processing request ${requestId} with params:`, params)
-
   if (currentWorker) {
     console.log(`Terminating existing worker for request ${currentRequestId}`)
     currentAbortController.abort()
@@ -46,7 +44,6 @@ async function processRequest(params, requestId) {
     return { clusteredServices: services, clusteringInfo: {} }
   }
 
-  console.log(`Starting worker for request ${requestId}`)
   currentWorker = new Worker(
     path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
   )
@@ -89,7 +86,6 @@ async function processRequest(params, requestId) {
       }
     })
 
-    console.log(`Posting message to worker for request ${requestId}`)
     currentWorker.postMessage({
       services,
       distanceMatrix,
