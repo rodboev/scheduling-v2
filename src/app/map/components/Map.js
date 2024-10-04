@@ -3,13 +3,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import MapMarker from './MapMarker'
 import MapPopup from './MapPopup'
 import MapTools from './MapTools'
 
-function MapEventHandler() {
+function MapEventHandler({ setActivePopup }) {
   const map = useMap()
+
+  useMapEvents({
+    click() {
+      setActivePopup(null)
+    },
+  })
 
   useEffect(() => {
     if (!map) return
@@ -103,26 +109,39 @@ const Map = () => {
         onClick={handleMapClick}
         tap={false}
       >
-        <MapEventHandler />
+        <MapEventHandler setActivePopup={setActivePopup} />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> contributors'
         />
-        {clusteredServices.map(service => (
-          <MapMarker
-            key={service.id}
-            service={service}
-            markerRefs={markerRefs}
-            activePopup={activePopup}
-            setActivePopup={setActivePopup}
-            color={service.cluster < 0 ? '#808080' : undefined} // Use dark gray for noise and outliers
-          >
-            <MapPopup
-              service={service}
-              updateServiceEnforcement={updateServiceEnforcement}
-            />
-          </MapMarker>
-        ))}
+        {
+          clusteredServices.reduce(
+            (acc, service, i) => {
+              const index =
+                service.cluster >= 0 ? acc.validMarkers + 1 : undefined
+              acc.markers.push(
+                <MapMarker
+                  key={service.id}
+                  service={service}
+                  markerRefs={markerRefs}
+                  activePopup={activePopup}
+                  setActivePopup={setActivePopup}
+                  index={index}
+                >
+                  <MapPopup
+                    service={service}
+                    updateServiceEnforcement={updateServiceEnforcement}
+                  />
+                </MapMarker>,
+              )
+              if (service.cluster >= 0) {
+                acc.validMarkers += 1
+              }
+              return acc
+            },
+            { markers: [], validMarkers: 0 },
+          ).markers
+        }
       </MapContainer>
     </div>
   )
