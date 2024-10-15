@@ -1,0 +1,9 @@
+- Initially, services are stored in servicesToSchedule
+- First service defined based on first occurring service in servicesToSchedule. End is 8 hours from that first service (Luzzos Bk on Sun 9/1 10:30pm - 9/2 9:30am, 8 hrs
+- Find all services in those 8 hrs and divide into clusters
+- Schedule cluster 1 (min 6, max 14 (30 min x 7 hrs) jobs), route those jobs using current scheduling logic and local distance optimization
+- Services which could not be assigned due to scheduling logic go back into servicesToSchedule
+- Repeat with first of remaining servicesToSchedule
+
+@route.js should be able to take start and end query string params similar to @route.js , but it should apply them as a filter to the returned object. For example if an ISO string is passed which is 9/1 10:30am-9/2 6:30am, it should return all serviceSetups that have 
+
