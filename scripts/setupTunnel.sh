@@ -1,7 +1,5 @@
 #!/bin/bash
 echo "Starting setupTunnel.sh script"
-set -e  # Exit immediately if a command exits with a non-zero status
-# set -x  # Print commands and their arguments as they are executed
 
 # Detect the operating system
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win"* ]] || [[ -n "$WINDIR" ]]; then
@@ -264,6 +262,4 @@ restart_tunnel() {
 echo $! > ~/tunnel_manager.pid
 echo "Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
 
-# Exit immediately for all systems
 echo "Finished setupTunnel.sh script"
-exit 0

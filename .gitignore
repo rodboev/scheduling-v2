@@ -37,6 +37,3 @@ next-env.d.ts
 
 # ephemeral data
 data/
-
-# envfile
-.env
