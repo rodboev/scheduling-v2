@@ -289,5 +289,43 @@ restart_tunnel() {
 echo $! > ~/tunnel_manager.pid
 echo "Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
 
+echo "Checking if variables exist exist:"
+
+check_and_print_variable "ODBCSYSINI"
+check_and_print_variable "ODBCINI"
+check_and_print_variable "FREETDSCONF"
+check_and_print_variable "LD_LIBRARY_PATH"
+check_and_print_variable "SQL_DATABASE"
+
+# Check if folders and files exist
+echo "Checking if required folders and files exist:"
+
+folders_to_check=(
+    "/app/.apt/etc/freetds"
+    "$ODBCSYSINI"
+)
+
+files_to_check=(
+    "/app/.apt/etc/freetds/freetds.conf"
+    "$ODBCSYSINI/odbcinst.ini"
+    "$ODBCINI"
+)
+
+for folder in "${folders_to_check[@]}"; do
+    if [ -d "$folder" ]; then
+        echo "✅ Folder exists: $folder"
+    else
+        echo "❌ Folder does not exist: $folder"
+    fi
+done
+
+for file in "${files_to_check[@]}"; do
+    if [ -f "$file" ]; then
+        echo "✅ File exists: $file"
+    else
+        echo "❌ File does not exist: $file"
+    fi
+done
+
 # Exit immediately for all systems
 exit 0
