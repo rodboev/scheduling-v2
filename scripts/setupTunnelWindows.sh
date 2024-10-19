@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Starting setupTunnelWindows.sh script for Windows systems"
+echo "Starting setupTunnelWindows.sh"
 
 # Detect the operating system
 if [[ "$OSTYPE" != "msys"* && "$OSTYPE" != "cygwin"* && "$OSTYPE" != "win"* ]] && [[ -z "$WINDIR" ]]; then
