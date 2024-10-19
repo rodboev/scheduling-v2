@@ -7,36 +7,6 @@ export ODBCINI=/app/.apt/etc/odbc.ini
 export FREETDSCONF=/app/.apt/etc/freetds/freetds.conf
 export LD_LIBRARY_PATH=/app/.apt/usr/lib/x86_64-linux-gnu:/app/.apt/usr/lib/x86_64-linux-gnu/odbc:$LD_LIBRARY_PATH
 
-# Check if folders and files exist
-echo "Checking if required folders and files exist:"
-
-folders_to_check=(
-    "/app/.apt/etc/freetds"
-    "$ODBCSYSINI"
-)
-
-files_to_check=(
-    "/app/.apt/etc/freetds/freetds.conf"
-    "$ODBCSYSINI/odbcinst.ini"
-    "$ODBCINI"
-)
-
-for folder in "${folders_to_check[@]}"; do
-    if [ -d "$folder" ]; then
-        echo "✅ Folder exists: $folder"
-    else
-        echo "❌ Folder does not exist: $folder"
-    fi
-done
-
-for file in "${files_to_check[@]}"; do
-    if [ -f "$file" ]; then
-        echo "✅ File exists: $file"
-    else
-        echo "❌ File does not exist: $file"
-    fi
-done
-
 mkdir -p /app/.apt/etc/freetds
 echo "[global]
 tds version = 7.4
@@ -71,6 +41,36 @@ check_and_print_variable() {
         echo "$1=${!1}"
     fi
 }
+
+# Check if folders and files exist
+echo "Checking if required folders and files exist:"
+
+folders_to_check=(
+    "/app/.apt/etc/freetds"
+    "$ODBCSYSINI"
+)
+
+files_to_check=(
+    "/app/.apt/etc/freetds/freetds.conf"
+    "$ODBCSYSINI/odbcinst.ini"
+    "$ODBCINI"
+)
+
+for folder in "${folders_to_check[@]}"; do
+    if [ -d "$folder" ]; then
+        echo "✅ Folder exists: $folder"
+    else
+        echo "❌ Folder does not exist: $folder"
+    fi
+done
+
+for file in "${files_to_check[@]}"; do
+    if [ -f "$file" ]; then
+        echo "✅ File exists: $file"
+    else
+        echo "❌ File does not exist: $file"
+    fi
+done
 
 # SSH Tunnel Setup
 echo "Setting up SSH tunnel..."
