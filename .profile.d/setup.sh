@@ -107,6 +107,7 @@ is_tunnel_running() {
     nc -z -w 5 $host $port > /dev/null 2>&1
     local result=$?
     echo "$(date): Tunnel check result: $result (0 means running)"
+    echo "$(date): Checking $host:$port"
     return $result
 }
 
@@ -129,11 +130,11 @@ start_tunnel() {
     while [ $attempt -le $max_attempts ]; do
         echo "$(date): Attempt $attempt to start SSH tunnel..."
         
-        ssh -N -L $SSH_TUNNEL_FORWARD -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET > ~/ssh_tunnel.log 2>&1 &
+        ssh -v -N -L $SSH_TUNNEL_FORWARD -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET > ~/ssh_tunnel.log 2>&1 &
         local tunnel_pid=$!
         
         echo "$(date): Waiting for tunnel to establish..."
-        sleep 5  # Give the tunnel some time to establish
+        sleep 10  # Increased wait time to 10 seconds
 
         if is_tunnel_running; then
             echo $tunnel_pid > ~/ssh_tunnel.pid
@@ -141,6 +142,8 @@ start_tunnel() {
             return 0
         else
             echo "$(date): Tunnel failed to establish on attempt $attempt"
+            echo "$(date): SSH tunnel log:"
+            cat ~/ssh_tunnel.log
             kill $tunnel_pid 2>/dev/null
         fi
 
@@ -191,4 +194,8 @@ if is_tunnel_running; then
     echo "$(date): Final check: Tunnel is up and running."
 else
     echo "$(date): Final check: Tunnel is not running. Please check the logs."
+    echo "$(date): SSH tunnel log:"
+    cat ~/ssh_tunnel.log
+    echo "$(date): Environment variables:"
+    env | grep SSH_
 fi
