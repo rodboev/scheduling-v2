@@ -7,48 +7,6 @@ if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win"* ]] |
     exit 1
 fi
 
-# Determine the script's directory and project root
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-# Check for .env and .env.local in the project root
-ENV_FILE="$PROJECT_ROOT/.env"
-ENV_LOCAL_FILE="$PROJECT_ROOT/.env.local"
-
-# Function to convert \n to newlines and remove surrounding quotes
-convert_newlines_and_remove_quotes() {
-    local value="$1"
-    value="${value%\"}"
-    value="${value#\"}"
-    echo -e "${value//\\n/\\n}"
-}
-
-# Function to load variables from a file
-load_env_file() {
-    local file="$1"
-    echo "Loading environment variables from $file"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ $line =~ ^#.*$ ]] || [[ -z $line ]]; then
-            continue
-        fi
-        var_name="${line%%=*}"
-        var_value="${line#*=}"
-        export "$var_name"="$(convert_newlines_and_remove_quotes "$var_value")"
-    done < "$file"
-}
-
-# Load variables from .env and .env.local if they exist
-[ -f "$ENV_FILE" ] && load_env_file "$ENV_FILE"
-[ -f "$ENV_LOCAL_FILE" ] && load_env_file "$ENV_LOCAL_FILE"
-
-# If neither .env nor .env.local exist, use local environment variables
-if [ ! -f "$ENV_FILE" ] && [ ! -f "$ENV_LOCAL_FILE" ]; then
-    echo "No .env or .env.local files found. Using local environment variables."
-    while IFS='=' read -r name value ; do
-        [[ $name == *_* ]] && export "$name"="$(convert_newlines_and_remove_quotes "$value")"
-    done < <(env)
-fi
-
 # Function to check if a variable is set and print its value
 check_and_print_variable() {
     if [ -z "${!1}" ]; then
