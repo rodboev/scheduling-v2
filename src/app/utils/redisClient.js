@@ -10,9 +10,10 @@ export function getRedisClient() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
     if (!redisUrl) {
       throw new Error('Error: REDIS_URL environment variable is not set')
-    } else {
-      console.log(`Connecting: ${redisUrl}`)
     }
+
+    console.log(`Connecting: ${redisUrl}`)
+
     redis = new Redis(redisUrl)
 
     redis.on('error', error => {
