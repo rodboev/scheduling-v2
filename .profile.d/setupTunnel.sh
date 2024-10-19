@@ -1,12 +1,10 @@
 #!/bin/bash
-echo "Starting setupTunnel.sh script"
+echo "Starting setupTunnel.sh script for Unix systems"
 
 # Detect the operating system
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win"* ]] || [[ -n "$WINDIR" ]]; then
     echo "Detected Windows environment. This script is for Unix systems. Exiting."
     exit 1
-else
-    echo "Detected Unix environment. Proceeding with setup."
 fi
 
 # Determine the script's directory and project root
@@ -39,27 +37,15 @@ load_env_file() {
     done < "$file"
 }
 
-# Load variables from .env if it exists
-if [ -f "$ENV_FILE" ]; then
-    load_env_file "$ENV_FILE"
-else
-    echo "No .env file found."
-fi
-
-# Load variables from .env.local if it exists (overriding .env)
-if [ -f "$ENV_LOCAL_FILE" ]; then
-    load_env_file "$ENV_LOCAL_FILE"
-else
-    echo "No .env.local file found."
-fi
+# Load variables from .env and .env.local if they exist
+[ -f "$ENV_FILE" ] && load_env_file "$ENV_FILE"
+[ -f "$ENV_LOCAL_FILE" ] && load_env_file "$ENV_LOCAL_FILE"
 
 # If neither .env nor .env.local exist, use local environment variables
 if [ ! -f "$ENV_FILE" ] && [ ! -f "$ENV_LOCAL_FILE" ]; then
     echo "No .env or .env.local files found. Using local environment variables."
     while IFS='=' read -r name value ; do
-        if [[ $name == *_* ]]; then
-            export "$name"="$(convert_newlines_and_remove_quotes "$value")"
-        fi
+        [[ $name == *_* ]] && export "$name"="$(convert_newlines_and_remove_quotes "$value")"
     done < <(env)
 fi
 
@@ -67,12 +53,10 @@ fi
 check_and_print_variable() {
     if [ -z "${!1}" ]; then
         echo "Warning: $1 is not set"
+    elif [[ "$1" == *"KEY"* ]]; then
+        echo "$1=${!1:0:10}..."
     else
-        if [[ "$1" == *"KEY"* ]]; then
-            echo "$1=${!1:0:10}..."
-        else
-            echo "$1=${!1}"
-        fi
+        echo "$1=${!1}"
     fi
 }
 
@@ -84,29 +68,19 @@ check_and_print_variable "SSH_TUNNEL_PORT"
 check_and_print_variable "SSH_TUNNEL_TARGET"
 check_and_print_variable "PRIVATE_SSH_KEY"
 
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-
-echo "$PRIVATE_SSH_KEY" > ~/.ssh/id_rsa
-chmod 600 ~/.ssh/id_rsa
-
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "$PRIVATE_SSH_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
 echo "First 3 lines of ~/.ssh/id_rsa:"
 head -n 3 ~/.ssh/id_rsa
 
 # Function to check if the tunnel is running
 is_tunnel_running() {
-    if [ -f ~/ssh_tunnel.pid ]; then
-        local pid=$(cat ~/ssh_tunnel.pid)
-        ps -p $pid > /dev/null && lsof -i :1433 -t > /dev/null
-        return $?
-    else
-        return 1
-    fi
+    [ -f ~/ssh_tunnel.pid ] && ps -p $(cat ~/ssh_tunnel.pid) > /dev/null && lsof -i :1433 -t > /dev/null
 }
 
 # Function to kill existing SSH tunnels
 kill_existing_tunnels() {
-    echo "Attempting to kill existing SSH tunnels..."
+    echo "Killing existing SSH tunnels..."
     pkill -f "ssh -.*$SSH_TUNNEL_TARGET" || true
     sleep 1
     pkill -9 -f "ssh -.*$SSH_TUNNEL_TARGET" || true
@@ -131,13 +105,9 @@ start_tunnel() {
             return 0
         fi
 
-        echo "Failed to start SSH tunnel."
-        if [ $attempt -lt $max_attempts ]; then
-            echo "Retrying..."
-            kill_existing_tunnels
-        fi
-
-        attempt=$((attempt+1))
+        echo "Failed to start SSH tunnel. Retrying..."
+        kill_existing_tunnels
+        ((attempt++))
     done
 
     echo "Failed to establish tunnel after $max_attempts attempts."
@@ -146,9 +116,7 @@ start_tunnel() {
 
 # Function to restart the tunnel
 restart_tunnel() {
-    if [ -f ~/ssh_tunnel.pid ]; then
-        kill -9 $(cat ~/ssh_tunnel.pid) 2>/dev/null || true
-    fi
+    [ -f ~/ssh_tunnel.pid ] && kill -9 $(cat ~/ssh_tunnel.pid) 2>/dev/null || true
     kill_existing_tunnels
     start_tunnel
 }
@@ -156,8 +124,6 @@ restart_tunnel() {
 # Run the entire tunnel setup and management in the background
 (
     if start_tunnel; then
-        echo "Initial tunnel setup completed. PID: $(cat ~/ssh_tunnel.pid)"
-        
         while true; do
             sleep 1800
             echo "Restarting SSH tunnel..."
