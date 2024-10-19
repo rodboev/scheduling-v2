@@ -1,12 +1,12 @@
 #!/bin/bash
-echo "Starting setupTunnel.sh script"
+echo "Starting setupTunnelWindows.sh script"
 
 # Detect the operating system
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win"* ]] || [[ -n "$WINDIR" ]]; then
-    echo "Detected Windows environment. This script is for Unix systems. Exiting."
-    exit 1
+    echo "Detected Windows environment. Proceeding with setup."
 else
-    echo "Detected Unix environment. Proceeding with setup."
+    echo "Detected non-Windows environment. This script is for Windows systems. Exiting."
+    exit 1
 fi
 
 # Determine the script's directory and project root
@@ -97,7 +97,8 @@ head -n 3 ~/.ssh/id_rsa
 is_tunnel_running() {
     if [ -f ~/ssh_tunnel.pid ]; then
         local pid=$(cat ~/ssh_tunnel.pid)
-        ps -p $pid > /dev/null && lsof -i :1433 -t > /dev/null
+        tasklist //FI "PID eq $pid" //NH | findstr $pid > /dev/null && \
+        netstat -ano | findstr :1433 | findstr LISTENING > /dev/null
         return $?
     else
         return 1
@@ -107,9 +108,37 @@ is_tunnel_running() {
 # Function to kill existing SSH tunnels
 kill_existing_tunnels() {
     echo "Attempting to kill existing SSH tunnels..."
-    pkill -f "ssh -.*$SSH_TUNNEL_TARGET" || true
+    port_1433_pids=($(netstat -ano | findstr :1433 | findstr LISTENING | awk '{print $NF}' | sort -u))
+
+    if [ ${#port_1433_pids[@]} -gt 0 ]; then
+        echo "Found processes using port 1433: ${port_1433_pids[*]}"
+        for pid in "${port_1433_pids[@]}"; do
+            echo "Attempting to terminate process with PID $pid using port 1433"
+            taskkill //F //PID $pid > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                echo "Successfully terminated process with PID $pid using port 1433"
+            else
+                echo "Failed to terminate process with PID $pid using port 1433"
+            fi
+        done
+    else
+        echo "No processes found using port 1433."
+    fi
+
+    ssh_pids=($(tasklist //FI "IMAGENAME eq ssh.exe" //FO CSV //NH | findstr /I "ssh.exe" | awk -F'","' '{print $2}' 2> /dev/null))
+    if [ ${#ssh_pids[@]} -gt 0 ]; then
+        echo "Found additional SSH processes: ${ssh_pids[*]}"
+        for pid in "${ssh_pids[@]}"; do
+            echo "Attempting to terminate SSH process with PID $pid"
+            taskkill //F //PID $pid > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                echo "Successfully terminated SSH process with PID $pid"
+            else
+                echo "Failed to terminate SSH process with PID $pid"
+            fi
+        done
+    fi
     sleep 1
-    pkill -9 -f "ssh -.*$SSH_TUNNEL_TARGET" || true
 }
 
 # Function to start the SSH tunnel
@@ -124,16 +153,19 @@ start_tunnel() {
         
         ssh -N -L $SSH_TUNNEL_FORWARD -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET > ~/ssh_tunnel.log 2>&1 &
         local tunnel_pid=$!
+        echo $tunnel_pid > ~/ssh_tunnel.pid
+        echo "Tunnel started. PID: $tunnel_pid"
         
-        if [ -n "$tunnel_pid" ]; then
-            echo $tunnel_pid > ~/ssh_tunnel.pid
-            echo "Tunnel successfully established. PID: $tunnel_pid"
+        sleep 1
+        
+        if netstat -ano | findstr :1433 | findstr LISTENING > /dev/null; then
+            echo "Tunnel successfully established."
             return 0
         fi
 
-        echo "Failed to start SSH tunnel."
+        echo "Failed to establish tunnel or bind to port."
         if [ $attempt -lt $max_attempts ]; then
-            echo "Retrying..."
+            echo "Killing existing tunnels and retrying..."
             kill_existing_tunnels
         fi
 
@@ -147,7 +179,7 @@ start_tunnel() {
 # Function to restart the tunnel
 restart_tunnel() {
     if [ -f ~/ssh_tunnel.pid ]; then
-        kill -9 $(cat ~/ssh_tunnel.pid) 2>/dev/null || true
+        taskkill //F //PID $(cat ~/ssh_tunnel.pid) 2>/dev/null || true
     fi
     kill_existing_tunnels
     start_tunnel
@@ -173,4 +205,4 @@ restart_tunnel() {
 echo $! > ~/tunnel_manager.pid
 echo "Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
 
-echo "Finished setupTunnel.sh script"
+echo "Finished setupTunnelWindows.sh script"
