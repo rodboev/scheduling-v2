@@ -31,6 +31,47 @@ EOL
 # Add FreeTDS bin to PATH
 export PATH=$PATH:/app/.apt/usr/bin
 
+# Function to check if a variable is set and print its value
+check_and_print_variable() {
+    if [ -z "${!1}" ]; then
+        echo "Warning: $1 is not set"
+    elif [[ "$1" == *"KEY"* ]]; then
+        echo "$1=${!1:0:10}..."
+    else
+        echo "$1=${!1}"
+    fi
+}
+
+# Check if folders and files exist
+echo "Checking if required folders and files exist:"
+
+folders_to_check=(
+    "/app/.apt/etc/freetds"
+    "$ODBCSYSINI"
+)
+
+files_to_check=(
+    "/app/.apt/etc/freetds/freetds.conf"
+    "$ODBCSYSINI/odbcinst.ini"
+    "$ODBCINI"
+)
+
+for folder in "${folders_to_check[@]}"; do
+    if [ -d "$folder" ]; then
+        echo "✅ Folder exists: $folder"
+    else
+        echo "❌ Folder does not exist: $folder"
+    fi
+done
+
+for file in "${files_to_check[@]}"; do
+    if [ -f "$file" ]; then
+        echo "✅ File exists: $file"
+    else
+        echo "❌ File does not exist: $file"
+    fi
+done
+
 # SSH Tunnel Setup
 echo "Setting up SSH tunnel..."
 mkdir -p /app/.ssh
