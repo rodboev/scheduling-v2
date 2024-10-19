@@ -2,22 +2,22 @@
 echo "Starting setup.sh script"
 
 # ODBC and FreeTDS Setup
-export ODBCSYSINI=/app/.apt/etc
-export ODBCINI=/app/.apt/etc/odbc.ini
-export FREETDSCONF=/app/.apt/etc/freetds/freetds.conf
-export LD_LIBRARY_PATH=/app/.apt/usr/lib/x86_64-linux-gnu:/app/.apt/usr/lib/x86_64-linux-gnu/odbc:$LD_LIBRARY_PATH
+export ODBCSYSINI=~/.apt/etc
+export ODBCINI=~/.apt/etc/odbc.ini
+export FREETDSCONF=~/.apt/etc/freetds/freetds.conf
+export LD_LIBRARY_PATH=~/.apt/usr/lib/x86_64-linux-gnu:~/.apt/usr/lib/x86_64-linux-gnu/odbc:$LD_LIBRARY_PATH
 
-mkdir -p /app/.apt/etc/freetds
+mkdir -p ~/.apt/etc/freetds
 echo "[global]
 tds version = 7.4
-" > /app/.apt/etc/freetds/freetds.conf
+" > ~/.apt/etc/freetds/freetds.conf
 
 mkdir -p $ODBCSYSINI
 cat > "$ODBCSYSINI/odbcinst.ini" << EOL
 [FreeTDS]
 Description = FreeTDS Driver
-Driver = /app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so
-Setup = /app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
+Driver = ~/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so
+Setup = ~/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
 EOL
 
 cat > "$ODBCINI" << EOL
@@ -29,7 +29,7 @@ Database = ${SQL_DATABASE}
 EOL
 
 # Add FreeTDS bin to PATH
-export PATH=$PATH:/app/.apt/usr/bin
+export PATH=$PATH:~/.apt/usr/bin
 
 # Function to check if a variable is set and print its value
 check_and_print_variable() {
@@ -46,12 +46,12 @@ check_and_print_variable() {
 echo "Checking if required folders and files exist:"
 
 folders_to_check=(
-    "/app/.apt/etc/freetds"
+    "~/.apt/etc/freetds"
     "$ODBCSYSINI"
 )
 
 files_to_check=(
-    "/app/.apt/etc/freetds/freetds.conf"
+    "~/.apt/etc/freetds/freetds.conf"
     "$ODBCSYSINI/odbcinst.ini"
     "$ODBCINI"
 )
@@ -74,19 +74,19 @@ done
 
 # SSH Tunnel Setup
 echo "Setting up SSH tunnel..."
-mkdir -p /app/.ssh
-chmod 700 /app/.ssh
-echo "$SSH_PRIVATE_KEY" > /app/.ssh/id_rsa
-chmod 600 /app/.ssh/id_rsa
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+chmod 600 ~/.ssh/id_rsa
 
 # Write the command to a file to be executed by pm2
 echo "#!/bin/bash
-ssh -N -L $SSH_TUNNEL_FORWARD -i /app/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET
-" > /app/ssh_tunnel.sh
-chmod +x /app/ssh_tunnel.sh
+ssh -N -L $SSH_TUNNEL_FORWARD -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET
+" > ~/ssh_tunnel.sh
+chmod +x ~/ssh_tunnel.sh
 
 # Start the SSH tunnel using pm2 with a 15-minute cron restart and auto-restart enabled
-pm2 start /app/ssh_tunnel.sh --name "ssh-tunnel" \
+pm2 start ~/ssh_tunnel.sh --name "ssh-tunnel" \
   --cron "*/15 * * * *" \
   --restart-delay 5000
 
