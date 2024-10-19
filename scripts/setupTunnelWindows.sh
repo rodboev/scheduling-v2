@@ -117,7 +117,6 @@ start_tunnel() {
         
         if netstat -ano | findstr :1433 | findstr LISTENING > /dev/null; then
             echo "Tunnel successfully established. PID: $tunnel_pid"
-            
             return 0
         fi
 
@@ -137,20 +136,12 @@ restart_tunnel() {
     start_tunnel
 }
 
-# Function to print status
-print_status() {
-    echo "$(date): Tunnel is running. Next restart in $1 seconds."
-}
-
 # Run the entire tunnel setup and management in the background
 (
     if start_tunnel; then
         while true; do
-            for i in {1..6}; do
-                sleep 300  # Sleep for 5 minutes
-                print_status $((1800 - i*300))
-            done
-            echo "$(date): Restarting SSH tunnel..."
+            sleep 1800
+            echo "Restarting SSH tunnel..."
             restart_tunnel
         done
     else
@@ -164,4 +155,3 @@ echo $! > ~/tunnel_manager.pid
 echo "Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
 
 echo "Finished setupTunnelWindows.sh script"
-echo "The script will continue running in the background, providing status updates every 5 minutes."
