@@ -85,9 +85,12 @@ ssh -N -L $SSH_TUNNEL_FORWARD -i /app/.ssh/id_rsa -o StrictHostKeyChecking=no -p
 " > /app/ssh_tunnel.sh
 chmod +x /app/ssh_tunnel.sh
 
-# Start the SSH tunnel using pm2
-pm2 start /app/ssh_tunnel.sh --name "ssh-tunnel"
+# Start the SSH tunnel using pm2 with a 15-minute cron restart and auto-restart enabled
+pm2 start /app/ssh_tunnel.sh --name "ssh-tunnel" \
+  --cron "*/15 * * * *" \
+  --restart-delay 5000
+
 pm2 save
 
-echo "Tunnel setup successful."
+echo "Tunnel setup successful with 15-minute cron restart and auto-restart enabled."
 echo "setup.sh script completed"
