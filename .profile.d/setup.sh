@@ -2,7 +2,7 @@
 
 ### setup.sh
 
-echo "Starting setup.sh script"
+echo "$(date): Starting setup.sh script"
 
 # ODBC and FreeTDS Setup
 export ODBCSYSINI=/app/.apt/etc
@@ -64,31 +64,31 @@ for file in "${files_to_check[@]}"; do
     fi
 done
 
-echo "setup.sh script completed"
+echo "$(date): setup.sh script completed"
 
 ### setupTunnel.sh
 
-echo "Starting setupTunnel.sh script"
+echo "$(date): Starting setupTunnel.sh script"
 
 # Detect the operating system
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win"* ]] || [[ -n "$WINDIR" ]]; then
-    echo "Detected Windows environment. This script is for Unix systems. Exiting."
+    echo "$(date): Detected Windows environment. This script is for Unix systems. Exiting."
     exit 1
 fi
 
 # Function to check if a variable is set and print its value
 check_and_print_variable() {
     if [ -z "${!1}" ]; then
-        echo "Warning: $1 is not set"
+        echo "$(date): Warning: $1 is not set"
     elif [[ "$1" == *"KEY"* ]]; then
-        echo "$1=${!1:0:10}..."
+        echo "$(date): $1=${!1:0:10}..."
     else
-        echo "$1=${!1}"
+        echo "$(date): $1=${!1}"
     fi
 }
 
 # SSH Tunnel Setup
-echo "Setting up SSH tunnel..."
+echo "$(date): Setting up SSH tunnel..."
 
 check_and_print_variable "SSH_TUNNEL_FORWARD"
 check_and_print_variable "SSH_TUNNEL_PORT"
@@ -97,20 +97,26 @@ check_and_print_variable "PRIVATE_SSH_KEY"
 
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
 echo "$PRIVATE_SSH_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
-echo "First 3 lines of ~/.ssh/id_rsa:"
+echo "$(date): First 3 lines of ~/.ssh/id_rsa:"
 head -n 3 ~/.ssh/id_rsa
 
-# Function to check if the tunnel is running
+# Function to check if the tunnel is running using netcat
 is_tunnel_running() {
-    [ -f ~/ssh_tunnel.pid ] && ps -p $(cat ~/ssh_tunnel.pid) > /dev/null && lsof -i :1433 -t > /dev/null
+    local host=$(echo $SSH_TUNNEL_FORWARD | cut -d ':' -f 1)
+    local port=$(echo $SSH_TUNNEL_FORWARD | cut -d ':' -f 2)
+    nc -z -w 5 $host $port > /dev/null 2>&1
+    local result=$?
+    echo "$(date): Tunnel check result: $result (0 means running)"
+    return $result
 }
 
 # Function to kill existing SSH tunnels
 kill_existing_tunnels() {
-    echo "Killing existing SSH tunnels..."
+    echo "$(date): Killing existing SSH tunnels..."
     pkill -f "ssh -.*$SSH_TUNNEL_TARGET" || true
     sleep 1
     pkill -9 -f "ssh -.*$SSH_TUNNEL_TARGET" || true
+    echo "$(date): Existing tunnels killed."
 }
 
 # Function to start the SSH tunnel
@@ -121,28 +127,35 @@ start_tunnel() {
     kill_existing_tunnels
 
     while [ $attempt -le $max_attempts ]; do
-        echo "Attempt $attempt to start SSH tunnel..."
+        echo "$(date): Attempt $attempt to start SSH tunnel..."
         
         ssh -N -L $SSH_TUNNEL_FORWARD -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p $SSH_TUNNEL_PORT $SSH_TUNNEL_TARGET > ~/ssh_tunnel.log 2>&1 &
         local tunnel_pid=$!
         
-        if [ -n "$tunnel_pid" ]; then
+        echo "$(date): Waiting for tunnel to establish..."
+        sleep 5  # Give the tunnel some time to establish
+
+        if is_tunnel_running; then
             echo $tunnel_pid > ~/ssh_tunnel.pid
-            echo "Tunnel successfully established. PID: $tunnel_pid"
+            echo "$(date): Tunnel successfully established. PID: $tunnel_pid"
             return 0
+        else
+            echo "$(date): Tunnel failed to establish on attempt $attempt"
+            kill $tunnel_pid 2>/dev/null
         fi
 
-        echo "Failed to start SSH tunnel. Retrying..."
+        echo "$(date): Failed to start SSH tunnel. Retrying..."
         kill_existing_tunnels
         ((attempt++))
     done
 
-    echo "Failed to establish tunnel after $max_attempts attempts."
+    echo "$(date): Failed to establish tunnel after $max_attempts attempts."
     return 1
 }
 
 # Function to restart the tunnel
 restart_tunnel() {
+    echo "$(date): Restarting SSH tunnel..."
     [ -f ~/ssh_tunnel.pid ] && kill -9 $(cat ~/ssh_tunnel.pid) 2>/dev/null || true
     kill_existing_tunnels
     start_tunnel
@@ -152,18 +165,30 @@ restart_tunnel() {
 (
     if start_tunnel; then
         while true; do
-            sleep 1800
-            echo "Restarting SSH tunnel..."
-            restart_tunnel
+            sleep 300  # Check every 5 minutes
+            if ! is_tunnel_running; then
+                echo "$(date): Tunnel is down. Restarting..."
+                restart_tunnel
+            else
+                echo "$(date): Tunnel is up and running."
+            fi
         done
     else
-        echo "Failed to set up initial tunnel. Exiting."
+        echo "$(date): Failed to set up initial tunnel. Exiting."
         exit 1
     fi
 ) &
 
 # Save the PID of the background process
 echo $! > ~/tunnel_manager.pid
-echo "Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
+echo "$(date): Tunnel setup and restart mechanism initiated in background. Manager PID: $(cat ~/tunnel_manager.pid)"
 
-echo "Finished setupTunnel.sh script"
+echo "$(date): Finished setupTunnel.sh script"
+
+# Final check to ensure tunnel is running
+sleep 10  # Give the background process some time to start the tunnel
+if is_tunnel_running; then
+    echo "$(date): Final check: Tunnel is up and running."
+else
+    echo "$(date): Final check: Tunnel is not running. Please check the logs."
+fi
