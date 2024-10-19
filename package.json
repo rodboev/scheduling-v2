@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build && bash scripts/setupTunnel.sh > tunnel.log 2>&1",
-    "dev": "bash scripts/setupTunnel.sh & next dev",
+    "build": "next build",
+    "dev": "next dev",
     "lint": "next lint",
     "start": "next start"
   },
