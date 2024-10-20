@@ -1,6 +1,5 @@
-// /src/app/scheduling/worker.js
 import { parentPort, workerData } from 'worker_threads'
-import { recalculateOptimalIndices } from './optimize.js'
+import { closeRedisConnection } from './redisClient.js'
 import { scheduleService, scheduleEnforcedService } from './scheduler.js'
 import {
   filterInvalidServices,
@@ -21,45 +20,37 @@ async function runScheduling() {
   const techSchedules = {}
   const unassignedServices = []
 
-  // Sort services by earliest start time
-  servicesToSchedule.sort(
-    (a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0]),
-  )
+  try {
+    for (const service of servicesToSchedule) {
+      try {
+        let result
+        if (service.tech.enforced && service.tech.code) {
+          result = await scheduleEnforcedService({
+            service,
+            techSchedules,
+          })
+        } else {
+          result = await scheduleService({
+            service,
+            techSchedules,
+            remainingServices: servicesToSchedule.slice(processedCount + 1),
+          })
+        }
 
-  for (const service of servicesToSchedule) {
-    try {
-      let result
-      if (service.tech.enforced && service.tech.code) {
-        result = await scheduleEnforcedService({
-          service,
-          techSchedules,
-        })
-      } else {
-        result = await scheduleService({
-          service,
-          techSchedules,
-          remainingServices: servicesToSchedule.slice(processedCount + 1),
-        })
+        if (!result.scheduled) {
+          unassignedServices.push({ ...service, reason: result.reason })
+        }
+
+        processedCount++
+        const progress = processedCount / servicesToSchedule.length
+        parentPort.postMessage({ type: 'progress', data: progress })
+      } catch (error) {
+        console.error(`Error scheduling service ${service.id}:`, error)
+        unassignedServices.push({ ...service, reason: 'Scheduling error' })
       }
-
-      if (!result.scheduled) {
-        unassignedServices.push({ ...service, reason: result.reason })
-      }
-
-      processedCount++
-      const progress = processedCount / servicesToSchedule.length
-      parentPort.postMessage({ type: 'progress', data: progress })
-    } catch (error) {
-      console.error(`Error scheduling service ${service.id}:`, error)
-      unassignedServices.push({ ...service, reason: 'Scheduling error' })
     }
-  }
-
-  // After all services have been scheduled, optimize each shift's route and assign indices
-  for (const [techId, techSchedule] of Object.entries(techSchedules)) {
-    for (const shift of techSchedule.shifts) {
-      await recalculateOptimalIndices(shift)
-    }
+  } finally {
+    await closeRedisConnection()
   }
 
   console.timeEnd('Total scheduling time')

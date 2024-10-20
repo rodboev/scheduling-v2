@@ -1,20 +1,11 @@
-// /src/app/scheduling/scheduler.js
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
-import { findBestPosition, updateDistances } from './optimize.js'
+import { findBestPosition, updateShiftDistances } from './optimize.js'
 import {
   createNewShiftWithConsistentStartTime,
   countShiftsInWeek,
 } from './shifts.js'
 
-/**
- * Schedules a service across available technicians or creates a new technician if necessary.
- * @param {Object} params - The scheduling parameters
- * @param {Object} params.service - The service to be scheduled
- * @param {Object} params.techSchedules - Current schedules of all technicians
- * @param {Array} params.remainingServices - List of services yet to be scheduled
- * @returns {Object} Result of scheduling attempt
- */
 export async function scheduleService({
   service,
   techSchedules,
@@ -31,10 +22,10 @@ export async function scheduleService({
       techSchedules,
       remainingServices,
     })
+
     if (result.scheduled) return result
   }
 
-  // If no existing tech can accommodate, create a new tech
   const newTechId = `Tech ${Object.keys(techSchedules).length + 1}`
   techSchedules[newTechId] = { shifts: [] }
   const result = await tryScheduleForTech({
@@ -52,12 +43,6 @@ export async function scheduleService({
   }
 }
 
-/**
- * Attempts to schedule a service for a specific technician.
- * Tries existing shifts, then attempts to create a new shift if possible.
- * @param {Object} params - The scheduling parameters
- * @returns {Object} Result of scheduling attempt
- */
 async function tryScheduleForTech({
   service,
   techId,
@@ -66,17 +51,16 @@ async function tryScheduleForTech({
 }) {
   const techSchedule = techSchedules[techId]
 
-  // Sort shifts by end time to find the earliest available shift
-  const sortedShifts = techSchedule.shifts.sort(
-    (a, b) => new Date(a.shiftEnd) - new Date(b.shiftEnd),
-  )
-
-  for (const shift of sortedShifts) {
+  for (
+    let shiftIndex = 0;
+    shiftIndex < techSchedule.shifts.length;
+    shiftIndex++
+  ) {
+    const shift = techSchedule.shifts[shiftIndex]
     const result = await tryScheduleInShift({
       service,
       shift,
       techId,
-      techSchedules,
     })
     if (result.scheduled) {
       return {
@@ -86,7 +70,6 @@ async function tryScheduleForTech({
     }
   }
 
-  // Check if a new shift can be created
   const weekStart = new Date(service.time.range[0])
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
@@ -103,7 +86,6 @@ async function tryScheduleForTech({
       service,
       shift: newShift,
       techId,
-      techSchedules,
     })
     if (result.scheduled) {
       techSchedule.shifts.push(newShift)
@@ -117,13 +99,7 @@ async function tryScheduleForTech({
   return { scheduled: false, reason: `No time in any shift for Tech ${techId}` }
 }
 
-/**
- * Attempts to schedule a service within a specific shift.
- * Checks for available time slots and ensures shift constraints are met.
- * @param {Object} params - The scheduling parameters
- * @returns {Object} Result of scheduling attempt
- */
-async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
+async function tryScheduleInShift({ service, shift, techId }) {
   const [rangeStart, rangeEnd] = service.time.range.map(date => new Date(date))
   const serviceDuration = service.time.duration
   const shiftStart = new Date(shift.shiftStart)
@@ -146,14 +122,23 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
       endTime <= rangeEnd &&
       (await canScheduleAtTime(shift, startTime, endTime, service))
     ) {
-      const scheduledService = { ...service, start: startTime, end: endTime }
+      const scheduledService = {
+        ...service,
+        start: startTime,
+        end: endTime,
+      }
 
-      // Insert the service into the shift's services
-      shift.services.push(scheduledService)
+      // // Find the best position to insert the new service
+      // const bestPosition = await findBestPosition(shift, scheduledService)
+
+      // // Insert the service at the best position
+      // shift.services.splice(bestPosition, 0, scheduledService)
 
       // Update distances for the shift
-      await updateDistances(shift.services)
+      await updateShiftDistances(shift)
+
       if (endTime > shift.shiftEnd) shift.shiftEnd = endTime
+
       return { scheduled: true }
     }
 
@@ -163,15 +148,6 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
   return { scheduled: false }
 }
 
-/**
- * Checks if a service can be scheduled at a specific time within a shift.
- * Ensures no conflicts with existing services and shift duration constraints.
- * @param {Object} shift - The shift to check
- * @param {Date} startTime - Proposed start time for the service
- * @param {Date} endTime - Proposed end time for the service
- * @param {Object} service - The service to be scheduled
- * @returns {boolean} Whether the service can be scheduled at the given time
- */
 async function canScheduleAtTime(shift, startTime, endTime, service) {
   for (const existingService of shift.services) {
     const existingStart = new Date(existingService.start)
@@ -186,23 +162,9 @@ async function canScheduleAtTime(shift, startTime, endTime, service) {
     }
   }
 
-  // Additional Check: Ensure total shift hours do not exceed MAX_SHIFT_HOURS
-  const totalShiftMinutes =
-    shift.services.reduce((acc, srv) => acc + srv.time.duration, 0) +
-    service.time.duration
-  if (totalShiftMinutes > MAX_SHIFT_HOURS * 60) {
-    return false
-  }
-
   return true
 }
 
-/**
- * Schedules an enforced service for a specific technician.
- * Creates a new shift if necessary and optimizes service placement within the shift.
- * @param {Object} params - The scheduling parameters
- * @returns {Object} Result of scheduling attempt
- */
 export async function scheduleEnforcedService({ service, techSchedules }) {
   const techId = service.tech.code
   if (!techSchedules[techId]) techSchedules[techId] = { shifts: [] }
@@ -214,9 +176,13 @@ export async function scheduleEnforcedService({ service, techSchedules }) {
   const startTime = preferredTime
   const endTime = addMinutes(startTime, serviceDuration)
 
-  let targetShift = techSchedules[techId].shifts.find(
-    shift => startTime >= shift.shiftStart && endTime <= shift.shiftEnd,
-  )
+  let targetShift
+  for (let shift of techSchedules[techId].shifts) {
+    if (startTime >= shift.shiftStart && endTime <= shift.shiftEnd) {
+      targetShift = shift
+      break
+    }
+  }
 
   if (!targetShift) {
     targetShift = {
@@ -227,7 +193,11 @@ export async function scheduleEnforcedService({ service, techSchedules }) {
     techSchedules[techId].shifts.push(targetShift)
   }
 
-  const scheduledService = { ...service, start: startTime, end: endTime }
+  const scheduledService = {
+    ...service,
+    start: startTime,
+    end: endTime,
+  }
 
   // Find the best position to insert the new service
   const bestPosition = await findBestPosition(targetShift, scheduledService)
@@ -236,7 +206,7 @@ export async function scheduleEnforcedService({ service, techSchedules }) {
   targetShift.services.splice(bestPosition, 0, scheduledService)
 
   // Update distances and previous companies for all services in the shift
-  await updateDistances(targetShift.services)
+  await updateShiftDistances(targetShift)
 
   return { scheduled: true }
 }

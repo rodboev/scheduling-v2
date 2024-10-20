@@ -1,8 +1,7 @@
 // src/firebase.js
-
+import dotenv from 'dotenv'
 import { initializeApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
-import dotenv from 'dotenv'
 
 dotenv.config()
 
@@ -21,4 +20,4 @@ const firestore = getFirestore(app)
 
 export { firestore }
 
-# Try to test browser whjen it's domn to make sure it works.
+// Try to test browser whjen it's domn to make sure it works.
