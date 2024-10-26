@@ -7,9 +7,9 @@ const memoryCache = new NodeCache({ stdTTL: 3600 }) // Cache for 1 hour
 
 export function getRedisClient() {
   if (!redis) {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
+    const redisUrl = process.env.REDISCLOUD_URL || 'redis://localhost:6379'
     if (!redisUrl) {
-      throw new Error('Error: REDIS_URL environment variable is not set')
+      throw new Error('Error: REDISCLOUD_URL environment variable is not set')
     }
 
     console.log(`Connecting: ${redisUrl}`)
