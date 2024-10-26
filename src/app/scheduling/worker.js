@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads'
-import { closeRedisConnection } from './redisClient.js'
+import { closeRedisConnection } from '../utils/redisClient.js'
 import { scheduleService, scheduleEnforcedService } from './scheduler.js'
 import {
   filterInvalidServices,
