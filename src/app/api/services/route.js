@@ -1,10 +1,9 @@
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { parseTimeRange, parseTime } from '@/app/utils/timeRange'
 import axios from 'axios'
-import fs from 'fs/promises'
+import { promises as fsPromises } from 'node:fs'
 import { NextResponse } from 'next/server'
-import path from 'path'
-import customServices from './customServices.json'
+import path from 'node:path'
 
 function round(time) {
   if (!time) return null
@@ -109,17 +108,23 @@ export async function GET(request) {
       ),
     )
 
-    // Read enforcement state directly from file
+    // Read or create enforcement state file
     const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
     let enforcementState = {}
+
     try {
-      const rawEnforcementState = await fs.readFile(filePath, 'utf8')
+      const rawEnforcementState = await fsPromises.readFile(filePath, 'utf8')
       const parsedState = JSON.parse(rawEnforcementState)
-      if (parsedState && parsedState.cacheData) {
+      if (parsedState?.cacheData) {
         enforcementState = parsedState.cacheData
       }
     } catch (error) {
-      console.error('Error reading or parsing enforcement state file:', error)
+      if (error.code === 'ENOENT') {
+        // File doesn't exist, create it with an empty object
+        await fsPromises.writeFile(filePath, JSON.stringify({ cacheData: {} }))
+      } else {
+        console.error('Error reading enforcement state file:', error)
+      }
     }
 
     // Apply enforcement state to services, remove the schedule.string key, and filter by time range

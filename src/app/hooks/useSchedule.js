@@ -3,6 +3,22 @@ import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
 const BATCH_SIZE = 100 // Adjust this value based on performance
+const PROGRESS_UPDATE_INTERVAL = 10 // Update progress every 10ms
+
+function debounce(func, wait, immediate = false) {
+  let timeout
+  return function executedFunction(...args) {
+    const context = this
+    const later = () => {
+      timeout = null
+      if (!immediate) func.apply(context, args)
+    }
+    const callNow = immediate && !timeout
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+    if (callNow) func.apply(context, args)
+  }
+}
 
 export function useSchedule(currentViewRange) {
   const [loading, setLoading] = useState(true)
@@ -14,6 +30,7 @@ export function useSchedule(currentViewRange) {
     filteredUnassignedServices: [],
   })
   const dataRef = useRef(null)
+  const progressRef = useRef(0)
 
   const dateRange = useMemo(
     () => ({
@@ -21,6 +38,13 @@ export function useSchedule(currentViewRange) {
       end: dayjs(currentViewRange.end).endOf('day').toISOString(),
     }),
     [currentViewRange],
+  )
+
+  const debouncedSetProgress = useCallback(
+    debounce((value) => {
+      setProgress(value)
+    }, PROGRESS_UPDATE_INTERVAL),
+    []
   )
 
   const processDataBatch = useCallback(startIndex => {
@@ -63,7 +87,7 @@ export function useSchedule(currentViewRange) {
           const bIsGeneric = b.id.startsWith('Tech ')
           if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
           return aIsGeneric
-            ? parseInt(a.id.split(' ')[1]) - parseInt(b.id.split(' ')[1])
+            ? Number.parseInt(a.id.split(' ')[1], 10) - Number.parseInt(b.id.split(' ')[1], 10)
             : a.id.localeCompare(b.id)
         })
 
@@ -81,6 +105,7 @@ export function useSchedule(currentViewRange) {
   const fetchSchedule = useCallback(async () => {
     setLoading(true)
     setProgress(0)
+    progressRef.current = 0
     setStatus('Initializing...')
 
     const eventSource = new EventSource(
@@ -90,7 +115,14 @@ export function useSchedule(currentViewRange) {
     eventSource.onmessage = event => {
       const data = JSON.parse(event.data)
       if (data.type === 'progress') {
-        setProgress(data.data)
+        const newProgress = data.data
+        progressRef.current = newProgress
+        if (newProgress === 0 || newProgress === 1) {
+          // Immediately update for first and last progress
+          setProgress(newProgress)
+        } else {
+          debouncedSetProgress(newProgress)
+        }
         setStatus('Scheduling...')
       } else if (data.type === 'result') {
         eventSource.close()
@@ -111,7 +143,7 @@ export function useSchedule(currentViewRange) {
       setLoading(false)
       setStatus('Error occurred')
     }
-  }, [dateRange, processDataBatch])
+  }, [dateRange, processDataBatch, debouncedSetProgress])
 
   useEffect(() => {
     fetchSchedule()

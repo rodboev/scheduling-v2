@@ -115,6 +115,17 @@ function transformServiceSetup(setup) {
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
 
+  // If time range is [null, null], try to use route time
+  if (rangeStart === null && rangeEnd === null) {
+    rangeStart = convertToETTime(setup.RouteStartTime)
+    rangeEnd = convertToETTime(setup.RouteEndTime)
+  }
+
+  // If both time range and route time are [null, null], return null to exclude this service
+  if (rangeStart === null && rangeEnd === null) {
+    return null
+  }
+  
   return {
     id: setup.id,
     location: {

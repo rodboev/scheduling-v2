@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
-    "dev": "next dev & bash scripts/setupTunnelWindows.sh &",
-    "lint": "next lint",
-    "start": "next start"
+    "dev": "concurrently -n \"Tunnel,Next\" -c \"greenBright,purpleBright\" \"bash scripts/setupTunnel.sh\" \"next dev\"",
+    "clean": "rimraf .next",
+    "build": "yarn clean && next build && bash scripts/setupTunnel.sh",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
     "@floating-ui/react": "^0.26.23",
@@ -50,6 +51,7 @@
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
+    "concurrently": "^9.0.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.6",
     "eslint-config-prettier": "^9.1.0",
