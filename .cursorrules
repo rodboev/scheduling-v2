@@ -9,7 +9,7 @@ Code Style and Structure
 - Prefer iteration and modularization over code duplication.
 - For imports, use @ aliases unless a worker thread is involved. In those cases use relative imports with the .js extension.
 - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
-- Keep console.log statements, and add comments for functions, writing clear and concise comments for complex logic.
+- Keep comments, console.log statements, and add comments for functions that clearly and concisely describe the logic.
 - Don't remove comments unless the changes made make the comment no longer relevant.
 
 Naming and Formatting
@@ -26,6 +26,7 @@ Coding conventions
 - Use for of loops with Object.entries() instead of regular for loops to iterate over arrays.
 - Use Shadcn UI, Radix, and Tailwind for components and styling.
 - Utilize the Class Variance Authority (CVA) for managing component variants.
+- I'm using the React Compiler, so avoid useCallback and useMemo unless necessary.
 
 Performance Optimization
 
@@ -42,10 +43,11 @@ Error Handling and Validation
 
 General preferences
 
+- Don't tell me I'm right, or apologize.
 - Make minimal, focused changes.
 - Fully implement all requested functionality.
 - Leave NO todo's, placeholders or missing pieces in the code.
 - Be sure to reference file names.
+- When showing code or a file, include the full path.
 - If you think there might not be a correct answer, you say so. If you do not know the answer, say so instead of guessing.
 - When I specify an approach or specific way to do something, give me alternatives. Don't tell me that my requests are a good idea.
-- ATTENTION! Never tell me I'm right, or apologize.

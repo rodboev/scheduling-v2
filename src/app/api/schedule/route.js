@@ -4,9 +4,12 @@ import { scheduleServices } from '../../scheduling/index.js'
 
 async function fetchServices(start, end) {
   try {
-    const response = await axios.get(`http://localhost:${process.env.PORT}/api/services`, {
-      params: { start, end },
-    })
+    const response = await axios.get(
+      `${process.env.NEXT_PUBLIC_BASE_URL}/api/services`,
+      {
+        params: { start, end },
+      },
+    )
     return response.data
   } catch (error) {
     console.error('Error fetching services:', error)
@@ -49,16 +52,20 @@ export async function GET(request) {
             } else if (result.type === 'result') {
               const { scheduledServices, unassignedServices } = result.data
               console.log(`Scheduled services: ${scheduledServices.length}`)
-              
+
               // Group unassigned services by reason
-              const unassignedGroups = unassignedServices.reduce((acc, service) => {
-                acc[service.reason] = (acc[service.reason] || 0) + 1
-                return acc
-              }, {})
+              const unassignedGroups = unassignedServices.reduce(
+                (acc, service) => {
+                  acc[service.reason] = (acc[service.reason] || 0) + 1
+                  return acc
+                },
+                {},
+              )
 
               // Create summary messages for unassigned services
               const unassignedSummaries = Object.entries(unassignedGroups).map(
-                ([reason, count]) => `${count} services unassigned. Reason: ${reason}`
+                ([reason, count]) =>
+                  `${count} services unassigned. Reason: ${reason}`,
               )
 
               console.log('Unassigned services summary:')
@@ -68,10 +75,10 @@ export async function GET(request) {
 
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ 
-                    type: 'result', 
-                    scheduledServices, 
-                    unassignedServices: unassignedSummaries 
+                  `data: ${JSON.stringify({
+                    type: 'result',
+                    scheduledServices,
+                    unassignedServices: unassignedSummaries,
                   })}\n\n`,
                 ),
               )
@@ -99,6 +106,9 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('Error fetching services:', error)
-    return NextResponse.json({ error: 'Failed to fetch services' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to fetch services' },
+      { status: 500 },
+    )
   }
 }

@@ -68,7 +68,7 @@ export function DBSCAN({
   if (clusterUnclustered) {
     Array.from(noise).forEach(pointIndex => {
       let nearestCluster = -1
-      let minDistance = Infinity
+      let minDistance = Number.POSITIVE_INFINITY
 
       clusters.forEach((cluster, clusterIndex) => {
         cluster.forEach(clusterPointIndex => {

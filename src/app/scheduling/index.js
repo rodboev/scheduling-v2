@@ -1,4 +1,3 @@
-// /src/app/scheduling/index.js
 import path from 'path'
 import { Worker } from 'worker_threads'
 import { printSummary } from './logging.js'
@@ -39,7 +38,7 @@ export async function* scheduleServices(services) {
         }
         break
       } else if (message.type === 'progress') {
-        yield { type: 'progress', data: message.data }
+        yield { type: 'progress', data: message.progress }
       }
     }
   } finally {

@@ -11,7 +11,7 @@ export function kMeans({
     const startTime = performance.now()
     let k = Math.max(1, Math.ceil(points.length / maxPoints))
     let bestClusters, bestCentroids, bestK, bestCost
-    let lowestCost = Infinity
+    let lowestCost = Number.POSITIVE_INFINITY
     let kChangeCount = 0
     let totalIterations = 0
     let maxIterationsReached = false
@@ -19,7 +19,7 @@ export function kMeans({
 
     while (kChangeCount < MAX_K_CHANGES && totalIterations < MAX_ITERATIONS) {
       let iterations = 0
-      let previousCost = Infinity
+      let previousCost = Number.POSITIVE_INFINITY
 
       // Initialize centroids
       currentCentroids = Array.from({ length: k }, () => {
@@ -33,7 +33,7 @@ export function kMeans({
         // Assign points to clusters
         for (let i = 0; i < points.length; i++) {
           let nearestCentroidIndex = 0
-          let minDistance = Infinity
+          let minDistance = Number.POSITIVE_INFINITY
 
           for (let j = 0; j < k; j++) {
             const distance = Math.hypot(
@@ -65,13 +65,13 @@ export function kMeans({
         currentCost = 0
         for (let i = 0; i < k; i++) {
           for (const pointIndex of currentClusters[i]) {
-            currentCost += Math.pow(
+            currentCost += 
               Math.hypot(
                 currentCentroids[i][0] - points[pointIndex][0],
                 currentCentroids[i][1] - points[pointIndex][1],
-              ),
-              2,
-            )
+              ) ** 
+              2
+            
           }
         }
 

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n \"Tunnel,Next\" -c \"greenBright,purpleBright\" \"bash scripts/setupTunnel.sh\" \"next dev\"",
+    "dev": "concurrently -n \"Tunnel,Next\" -c \"greenBright,magentaBright\" \"bash scripts/setupTunnel.sh\" \"next dev\"",
     "clean": "rimraf .next",
     "build": "yarn clean && next build && bash scripts/setupTunnel.sh",
     "start": "next start",
@@ -18,6 +18,7 @@
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-popover": "^1.1.1",
     "@radix-ui/react-progress": "^1.1.0",
+    "@radix-ui/react-slider": "^1.2.1",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-switch": "^1.1.0",
     "@tanstack/react-query": "^5.52.1",

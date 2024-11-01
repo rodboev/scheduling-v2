@@ -8,6 +8,11 @@ import { Car } from 'lucide-react'
 import { Popup } from 'react-leaflet'
 
 const MapPopup = ({ service, updateServiceEnforcement }) => {
+  function getClusterLabel(cluster, reason) {
+    if (cluster >= 0) return `${cluster}`
+    return `${cluster} (${reason || 'unclustered'})`
+  }
+
   return (
     <Popup>
       <div className="w-full max-w-sm text-sm leading-relaxed">
@@ -54,19 +59,25 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
           </div>
         )}
 
+        {service.time.visited && (
+          <div className="whitespace-nowrap">
+            Scheduled: {dayjs(service.time.visited).format('M/D h:mma')} - {dayjs(service.time.visited).add(service.time.duration, 'minutes').format('h:mma')}
+          </div>
+        )}
+
         <div className="whitespace-nowrap">
           Preferred Time: {dayjs(service.time.preferred).format('h:mma')}
         </div>
         <div>Duration: {service.time.duration} min</div>
         <div>
-          Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
+          Time Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
           {dayjs(service.time.range[0]).format('h:mma')} -{' '}
           {dayjs(service.time.range[1]).format('h:mma')}
         </div>
 
         {service.cluster !== undefined && (
           <div className="mt-3 font-bold">
-            Cluster: {service.cluster}
+            Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
             {service.wasStatus && service.cluster !== service.wasStatus
               ? ` (was ${service.wasStatus})`
               : ''}

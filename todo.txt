@@ -1,1 +1,0 @@
-Services API needs to return invalidServices, currently we're filtering out [null, null]

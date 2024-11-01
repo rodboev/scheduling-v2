@@ -1,10 +1,10 @@
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { parseTimeRange, parseTime } from '@/app/utils/timeRange'
+import { getRedisClient } from '@/app/utils/redis'
+import { parseTime } from '@/app/utils/timeRange'
 import axios from 'axios'
-import { promises as fsPromises } from 'node:fs'
 import { NextResponse } from 'next/server'
-import path from 'node:path'
 
+// Utility Functions
 function round(time) {
   if (!time) return null
   const minutes = time.minute()
@@ -12,40 +12,131 @@ function round(time) {
   return time.minute(roundedMinutes).second(0).millisecond(0)
 }
 
-const isProduction = process.env.NODE_ENV === 'production'
+function shouldServiceOccur(scheduleString, date) {
+  if (scheduleString.length !== 420) {
+    throw new Error('The schedule string must be 420 characters long.')
+  }
+
+  const targetDate = new Date(date)
+  const year = targetDate.getFullYear()
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const janFirst = new Date(year, 0, 1)
+  const janFirstWeekday = janFirst.getDay()
+  const firstThursdayOffset = (4 - janFirstWeekday + 7) % 7
+  const firstThursdayIndex = firstThursdayOffset + 1
+
+  const adjustedSchedule =
+    scheduleString.slice(firstThursdayIndex - 1) +
+    scheduleString.slice(0, firstThursdayIndex - 1)
+
+  const finalSchedule = isLeapYear
+    ? `${adjustedSchedule.slice(0, 59)}0${adjustedSchedule.slice(59)}`
+    : adjustedSchedule
+
+  const startOfYear = new Date(year, 0, 1)
+  const dayOfYear = Math.floor(
+    (targetDate - startOfYear) / (1000 * 60 * 60 * 24) + 1,
+  )
+
+  return finalSchedule[dayOfYear - 1] === '1'
+}
+
+function validateServiceSetup(setup) {
+  const errors = []
+
+  if (!setup.id || !setup.company || !setup.time || !setup.location) {
+    errors.push('Missing required fields (id, company, time, or location)')
+  }
+
+  if (!setup.time?.preferred) {
+    errors.push('Missing preferred time')
+  }
+
+  if (
+    !setup.time?.range ||
+    setup.time.range[0] === undefined ||
+    setup.time.range[0] === null ||
+    setup.time.range[1] === undefined ||
+    setup.time.range[1] === null
+  ) {
+    errors.push('Missing or invalid time range')
+  }
+
+  if (!setup.location?.latitude || !setup.location?.longitude) {
+    errors.push('Missing geocoordinates')
+  }
+
+  if (!setup.time?.duration || setup.time.duration <= 0) {
+    errors.push('Invalid duration')
+  }
+
+  if (!setup.schedule?.string || setup.schedule.string.length !== 420) {
+    errors.push('Invalid schedule string')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    setup,
+  }
+}
 
 function createServicesForRange(setup, startDate, endDate) {
   const services = []
   const start = dayjs(startDate)
   const end = dayjs(endDate)
 
+  if (
+    !setup.time?.preferred &&
+    !setup.time?.range[0] &&
+    !setup.route?.time[0]
+  ) {
+    console.warn(
+      `Missing time information for setup ${setup.id} (${setup.company})`,
+    )
+    return []
+  }
+
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
-    if (shouldServiceOccur(setup.schedule.string, date)) {
+    try {
+      if (!shouldServiceOccur(setup.schedule.string, date)) continue
+
       const rangeStart =
         setup.time.range[0] !== null
           ? round(date.add(setup.time.range[0], 'seconds'))
           : null
-      const rangeEnd =
-        setup.time.range[1] !== null
-          ? round(
-              date
-                .add(setup.time.range[1], 'seconds')
-                .add(setup.time.duration, 'minutes'),
-            )
-          : null
+
+      let rangeEnd
+      if (setup.time.range[1] !== null) {
+        const startTime = date.add(setup.time.range[0], 'seconds')
+        let endTime = date.add(setup.time.range[1], 'seconds')
+
+        if (endTime.isBefore(startTime)) {
+          endTime = endTime.add(1, 'day')
+        }
+
+        rangeEnd = round(endTime.add(setup.time.duration, 'minutes'))
+      }
+
       const preferred = round(
-        date.add(parseTime(setup.time.preferred), 'seconds'),
+        date.add(
+          parseTime(
+            setup.time.preferred || setup.time.range[0] || setup.route.time[0],
+          ),
+          'seconds',
+        ),
       )
       const duration = Math.round(setup.time.duration / 15) * 15
 
-      if (!isProduction) delete setup.comments
-      services.push({
+      if (process.env.NODE_ENV !== 'production') delete setup.comments
+
+      const service = {
         ...setup,
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
         date: date.toDate(),
         time: {
-          range: [rangeStart, rangeEnd],
-          preferred,
+          range: [rangeStart?.toDate(), rangeEnd?.toDate()],
+          preferred: preferred?.toDate(),
           duration,
           meta: {
             dayRange: setup.time.range,
@@ -53,31 +144,89 @@ function createServicesForRange(setup, startDate, endDate) {
             preferred: setup.time.preferred,
           },
         },
-      })
+      }
+
+      if (!service.time.range[0] || !service.time.preferred) {
+        console.warn(`Invalid time values for service ${service.id}:`, {
+          range: service.time.range,
+          preferred: service.time.preferred,
+        })
+        continue
+      }
+
+      services.push(service)
+    } catch (error) {
+      console.error(
+        `Error creating service for ${setup.company} on ${date.format('YYYY-MM-DD')}:`,
+        error,
+      )
     }
   }
 
   return services
 }
 
-function shouldServiceOccur(scheduleString, date) {
-  const dayOfYear = date.dayOfYear()
-  const scheduleIndex = dayOfYear
-  const shouldOccur = scheduleString[scheduleIndex] === '1'
-  return shouldOccur
+async function storeServicesInRedis(redis, services) {
+  const pipeline = redis.pipeline()
+
+  for (const service of services) {
+    const timestamp = new Date(service.time.range[0]).getTime()
+    pipeline.zadd('services', timestamp, service.id)
+    pipeline.hset(`service:${service.id}`, {
+      ...service,
+      time: JSON.stringify(service.time),
+      location: JSON.stringify(service.location),
+      tech: JSON.stringify(service.tech),
+      schedule: JSON.stringify(service.schedule),
+    })
+  }
+
+  await pipeline.exec()
+  return services
 }
 
-async function fetchServiceSetups() {
-  try {
-    const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923,20700,480,12271,18923,5143,20513,20730
+async function getServicesFromRedis(redis, start, end) {
+  const startDate = dayjs(start)
+  const endDate = dayjs(end)
+
+  const serviceIds = await redis.zrangebyscore(
+    'services',
+    startDate.valueOf(),
+    endDate.valueOf(),
+  )
+
+  if (serviceIds.length === 0) return []
+
+  const services = await Promise.all(
+    serviceIds.map(async serviceId => {
+      const data = await redis.hgetall(`service:${serviceId}`)
+      if (!data) return null
+
+      return {
+        ...data,
+        time: JSON.parse(data.time),
+        location: JSON.parse(data.location),
+        tech: JSON.parse(data.tech),
+        schedule: JSON.parse(data.schedule),
+      }
+    }),
+  )
+
+  return services
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        dayjs(a.time.range[0]).valueOf() - dayjs(b.time.range[0]).valueOf(),
     )
-    const serviceSetups = response.data
-    console.log('Fetched service setups:', serviceSetups.length)
-    return serviceSetups
+}
+
+async function fetchServiceSetups(baseUrl) {
+  try {
+    const response = await axios.get(`${baseUrl}/api/serviceSetups`)
+    return response.data
   } catch (error) {
     console.error('Error fetching service setups:', error)
-    throw error // Rethrow the error to be handled by the caller
+    throw new Error(`Failed to fetch service setups: ${error.message}`)
   }
 }
 
@@ -85,7 +234,49 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const start = searchParams.get('start')
   const end = searchParams.get('end')
+  const regenerate = searchParams.get('regenerate') === 'true'
+  const redis = getRedisClient()
 
+  // Handle regeneration request
+  if (regenerate) {
+    try {
+      const protocol = request.headers.get('x-forwarded-proto') || 'http'
+      const host = request.headers.get('host')
+      const baseUrl = `${protocol}://${host}`
+
+      const serviceSetups = await fetchServiceSetups(baseUrl)
+      const validationResults = serviceSetups.map(validateServiceSetup)
+      const validSetups = serviceSetups.filter(
+        (_, index) => validationResults[index].isValid,
+      )
+
+      const quarterStart = start ? dayjs(start) : dayjs('2024-07-01')
+      const quarterEnd = end ? dayjs(end) : dayjs('2024-12-31')
+
+      await redis.del('services')
+
+      const services = validSetups.flatMap(setup =>
+        createServicesForRange(setup, quarterStart, quarterEnd),
+      )
+
+      await storeServicesInRedis(redis, services)
+
+      return NextResponse.json({
+        message: 'Services regenerated',
+        servicesCreated: services.length,
+        validSetups: validSetups.length,
+        invalidSetups: validationResults.filter(r => !r.isValid).length,
+      })
+    } catch (error) {
+      console.error('Error regenerating services:', error)
+      return NextResponse.json(
+        { error: 'Failed to regenerate services', details: error.message },
+        { status: 500 },
+      )
+    }
+  }
+
+  // Handle regular service retrieval
   if (!start || !end) {
     return NextResponse.json(
       { error: 'Start and end dates are required' },
@@ -93,75 +284,31 @@ export async function GET(request) {
     )
   }
 
-  const startDate = dayjs(start)
-  const endDate = dayjs(end)
-
   try {
-    const serviceSetups = await fetchServiceSetups()
+    const services = await getServicesFromRedis(redis, start, end)
 
-    // Generate services for the date range
-    const services = serviceSetups.flatMap(setup =>
-      createServicesForRange(
-        setup,
-        startDate.startOf('day'),
-        endDate.endOf('day'),
-      ),
-    )
+    if (services.length === 0) {
+      console.log('No services found in Redis, generating new ones...')
+      const protocol = request.headers.get('x-forwarded-proto') || 'http'
+      const host = request.headers.get('host')
+      const baseUrl = `${protocol}://${host}`
 
-    // Read or create enforcement state file
-    const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
-    let enforcementState = {}
+      const serviceSetups = await fetchServiceSetups(baseUrl)
+      const newServices = serviceSetups.flatMap(setup =>
+        createServicesForRange(setup, start, end),
+      )
 
-    try {
-      const rawEnforcementState = await fsPromises.readFile(filePath, 'utf8')
-      const parsedState = JSON.parse(rawEnforcementState)
-      if (parsedState?.cacheData) {
-        enforcementState = parsedState.cacheData
-      }
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        // File doesn't exist, create it with an empty object
-        await fsPromises.writeFile(filePath, JSON.stringify({ cacheData: {} }))
-      } else {
-        console.error('Error reading enforcement state file:', error)
+      if (newServices.length > 0) {
+        await storeServicesInRedis(redis, newServices)
+        return NextResponse.json(newServices)
       }
     }
 
-    // Apply enforcement state to services, remove the schedule.string key, and filter by time range
-    const processedServices = services
-      .map(({ schedule: { string, ...restSchedule }, ...restService }) => {
-        const serviceSetupId = restService.id.split('-')[0]
-        return {
-          ...restService,
-          schedule: restSchedule,
-          tech: {
-            ...restService.tech,
-            enforced: enforcementState[serviceSetupId] || false,
-          },
-        }
-      })
-      .filter(service => {
-        const serviceStart = dayjs(service.time.range[0])
-        const serviceEnd = dayjs(service.time.range[1])
-
-        // Handle services that cross midnight
-        const serviceEndAdjusted = serviceEnd.isBefore(serviceStart)
-          ? serviceEnd.add(1, 'day')
-          : serviceEnd
-
-        return (
-          (serviceStart.isBefore(endDate) &&
-            serviceEndAdjusted.isAfter(startDate)) ||
-          serviceStart.isSame(startDate) ||
-          serviceEndAdjusted.isSame(endDate)
-        )
-      })
-
-    return NextResponse.json(processedServices)
+    return NextResponse.json(services)
   } catch (error) {
     console.error('Error processing services:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', details: error.message },
+      { error: 'Failed to retrieve services', details: error.message },
       { status: 500 },
     )
   }
