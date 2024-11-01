@@ -10,20 +10,16 @@ export function kMeans({
   try {
     const startTime = performance.now()
     let k = Math.max(1, Math.ceil(points.length / maxPoints))
-    let bestClusters
-    let bestCentroids
-    let bestCost
-    let lowestCost = Number.POSITIVE_INFINITY
+    let bestClusters, bestCentroids, bestK, bestCost
+    let lowestCost = Infinity
     let kChangeCount = 0
     let totalIterations = 0
     let maxIterationsReached = false
-    let currentClusters
-    let currentCentroids
-    let currentCost
+    let currentClusters, currentCentroids, currentCost
 
     while (kChangeCount < MAX_K_CHANGES && totalIterations < MAX_ITERATIONS) {
       let iterations = 0
-      let previousCost = Number.POSITIVE_INFINITY
+      let previousCost = Infinity
 
       // Initialize centroids
       currentCentroids = Array.from({ length: k }, () => {
@@ -37,7 +33,7 @@ export function kMeans({
         // Assign points to clusters
         for (let i = 0; i < points.length; i++) {
           let nearestCentroidIndex = 0
-          let minDistance = Number.POSITIVE_INFINITY
+          let minDistance = Infinity
 
           for (let j = 0; j < k; j++) {
             const distance = Math.hypot(
@@ -69,11 +65,13 @@ export function kMeans({
         currentCost = 0
         for (let i = 0; i < k; i++) {
           for (const pointIndex of currentClusters[i]) {
-            currentCost +=
+            currentCost += Math.pow(
               Math.hypot(
                 currentCentroids[i][0] - points[pointIndex][0],
                 currentCentroids[i][1] - points[pointIndex][1],
-              ) ** 2
+              ),
+              2,
+            )
           }
         }
 
@@ -98,6 +96,7 @@ export function kMeans({
           lowestCost = currentCost
           bestClusters = currentClusters
           bestCentroids = currentCentroids
+          bestK = k
           bestCost = currentCost
         }
       }
@@ -136,17 +135,18 @@ export function kMeans({
     if (!bestClusters) {
       bestClusters = currentClusters
       bestCentroids = currentCentroids
+      bestK = k
       bestCost = currentCost
     }
 
     // Ensure that clusters are numbered from 0 to k-1
     const finalClusters = bestClusters.filter(cluster => cluster.length > 0)
     const clusterMapping = {}
-    for (const [index, cluster] of Object.entries(finalClusters)) {
-      for (const pointIndex of cluster) {
+    finalClusters.forEach((cluster, index) => {
+      cluster.forEach(pointIndex => {
         clusterMapping[pointIndex] = index
-      }
-    }
+      })
+    })
 
     return {
       clusters: points.map((_, index) => clusterMapping[index] ?? -1),

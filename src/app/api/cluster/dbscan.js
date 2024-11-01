@@ -53,10 +53,10 @@ export function DBSCAN({
       if (cluster.length >= minPoints) {
         clusters.push(cluster)
       } else {
-        for (const point of cluster) {
+        cluster.forEach(point => {
           noise.add(point)
           initialStatus.set(point, 'noise')
-        }
+        })
       }
     } else {
       noise.add(i)
@@ -66,26 +66,26 @@ export function DBSCAN({
 
   // Assign unclustered points to the nearest cluster if clusterUnclustered is true
   if (clusterUnclustered) {
-    for (const pointIndex of noise) {
+    Array.from(noise).forEach(pointIndex => {
       let nearestCluster = -1
-      let minDistance = Number.POSITIVE_INFINITY
+      let minDistance = Infinity
 
-      for (const [clusterIndex, cluster] of Object.entries(clusters)) {
-        for (const clusterPointIndex of cluster) {
+      clusters.forEach((cluster, clusterIndex) => {
+        cluster.forEach(clusterPointIndex => {
           const distance = distanceMatrix[pointIndex][clusterPointIndex]
           if (distance < minDistance) {
             minDistance = distance
             nearestCluster = clusterIndex
           }
-        }
-      }
+        })
+      })
 
       if (nearestCluster !== -1) {
         clusters[nearestCluster].push(pointIndex)
         noise.delete(pointIndex)
         // Note: We don't remove from initialNoise
       }
-    }
+    })
   }
 
   return { clusters, noise, initialStatus }

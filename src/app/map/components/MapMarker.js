@@ -138,7 +138,6 @@ const MapMarker = ({
     }, 50)
   }
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: external functions
   const eventHandlers = useMemo(
     () => ({
       mouseover: handleMouseEnter,
@@ -195,7 +194,7 @@ const MapMarker = ({
 // Helper function to darken a color
 function darkenColor(color, factor) {
   const hex = color.replace(/^#/, '')
-  const rgb = Number.parseInt(hex, 16)
+  const rgb = parseInt(hex, 16)
   const r = Math.floor((rgb >> 16) * (1 - factor))
   const g = Math.floor(((rgb >> 8) & 0x00ff) * (1 - factor))
   const b = Math.floor((rgb & 0x0000ff) * (1 - factor))

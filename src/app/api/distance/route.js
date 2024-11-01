@@ -1,7 +1,14 @@
-import { getRedisClient } from '@/app/utils/redis'
+import {
+  getRedisClient,
+  getLocations,
+  getCachedData,
+  setCachedData,
+} from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
 
-const EARTH_RADIUS_MILES = 3958.8
+const redis = getRedisClient()
+
+const EARTH_RADIUS_MILES = 3958.8 // Earth's radius in miles
 
 function degreesToRadians(degrees) {
   return degrees * (Math.PI / 180)
@@ -22,122 +29,129 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const fromId = searchParams.get('fromId')
-  const toId = searchParams.get('toId')
-  const pairs = JSON.parse(searchParams.get('pairs') || '[]')
-
-  if (!fromId && !toId && !pairs.length) {
-    return NextResponse.json(
-      { error: 'Missing required parameters' },
-      { status: 400 },
-    )
-  }
+  const idPairs = searchParams.getAll('id')
 
   try {
-    const redis = getRedisClient()
+    await getLocations()
 
-    // Handle single pair distance query
-    if (fromId && toId) {
-      // Get location details first for better error reporting
-      const [fromDetails, toDetails] = await Promise.all([
-        redis.hgetall(`location:${fromId}`),
-        redis.hgetall(`location:${toId}`),
-      ])
+    if (idPairs.length > 0) {
+      const results = await Promise.all(
+        idPairs.map(async pair => {
+          const [id1, id2] = pair.split(',')
+          const cacheKey = `distance:${id1},${id2}`
+          const cachedResult = getCachedData(cacheKey)
 
-      // Try Redis geodist first (fastest)
-      const redisDistance = await redis.geodist(
-        'locations',
-        fromId.toString(),
-        toId.toString(),
-        'mi',
+          if (cachedResult) {
+            return cachedResult
+          }
+
+          const [geopos1, company1] = await Promise.all([
+            redis.geopos('locations', id1),
+            redis.hget('company_names', id1),
+          ])
+
+          if (!geopos1[0]) {
+            return { error: `ID ${id1} not found` }
+          }
+
+          const [lon1, lat1] = geopos1[0]
+
+          if (!id2) {
+            const nearestLocations = await redis.georadius(
+              'locations',
+              lon1,
+              lat1,
+              100,
+              'mi',
+              'WITHDIST',
+              'COUNT',
+              6,
+              'ASC',
+            )
+
+            const nearestLocationDetails = await Promise.all(
+              nearestLocations.slice(1).map(async ([id, distance]) => {
+                const [geopos, company] = await Promise.all([
+                  redis.geopos('locations', id),
+                  redis.hget('company_names', id),
+                ])
+                const [lon, lat] = geopos[0]
+                return {
+                  id,
+                  distance: parseFloat(distance),
+                  company,
+                  location: {
+                    longitude: parseFloat(lon),
+                    latitude: parseFloat(lat),
+                  },
+                }
+              }),
+            )
+
+            const result = {
+              from: {
+                id: id1,
+                company: company1,
+                location: {
+                  longitude: parseFloat(lon1),
+                  latitude: parseFloat(lat1),
+                },
+              },
+              distances: nearestLocationDetails,
+            }
+            setCachedData(cacheKey, result)
+            return result
+          }
+
+          const [geopos2, company2, distance] = await Promise.all([
+            redis.geopos('locations', id2),
+            redis.hget('company_names', id2),
+            redis.geodist('locations', id1, id2, 'mi'),
+          ])
+
+          if (!geopos2[0]) {
+            return { error: `ID ${id2} not found` }
+          }
+
+          const [lon2, lat2] = geopos2[0]
+
+          const result = {
+            from: {
+              id: id1,
+              company: company1,
+              location: {
+                longitude: parseFloat(lon1),
+                latitude: parseFloat(lat1),
+              },
+            },
+            distance: [
+              {
+                id: id2,
+                distance: parseFloat(distance),
+                company: company2,
+                location: {
+                  longitude: parseFloat(lon2),
+                  latitude: parseFloat(lat2),
+                },
+              },
+            ],
+          }
+          setCachedData(cacheKey, result)
+          return result
+        }),
       )
 
-      if (redisDistance !== null) {
-        return NextResponse.json({
-          distance: Number.parseFloat(redisDistance),
-          source: 'redis',
-        })
-      }
-
-      // If Redis geodist fails, try getting coordinates from locations set
-      const [fromLoc, toLoc] = await Promise.all([
-        redis.geopos('locations', fromId),
-        redis.geopos('locations', toId),
-      ])
-
-      if (!fromLoc?.[0] || !toLoc?.[0]) {
-        console.error(
-          `Location data missing in Redis:
-          From Location:
-            ID: ${fromId}
-            Company: ${fromDetails?.companyName || 'Unknown'}
-            Address: ${fromDetails?.address || 'Unknown'}
-            Coordinates: ${fromLoc?.[0] ? 'Found' : 'Missing'}
-          To Location:
-            ID: ${toId}
-            Company: ${toDetails?.companyName || 'Unknown'}
-            Address: ${toDetails?.address || 'Unknown'}
-            Coordinates: ${toLoc?.[0] ? 'Found' : 'Missing'}`,
-        )
-        return NextResponse.json(
-          { error: 'Location data not found' },
-          { status: 404 },
-        )
-      }
-
-      const distance = calculateDistance(
-        fromLoc[0][1], // lat
-        fromLoc[0][0], // lon
-        toLoc[0][1], // lat
-        toLoc[0][0], // lon
-      )
-
-      return NextResponse.json({
-        distance,
-        source: 'calculated',
-      })
+      return NextResponse.json(results)
     }
 
-    // Handle multiple pairs
-    if (pairs.length) {
-      const pipeline = redis.pipeline()
-
-      // First get all locations to validate they exist
-      const allIds = [...new Set(pairs.flat())]
-      const locationPromises = allIds.map(id => redis.geopos('locations', id))
-      const locations = await Promise.all(locationPromises)
-
-      // Check if any locations are missing
-      const missingIds = allIds.filter((id, index) => !locations[index]?.[0])
-      if (missingIds.length > 0) {
-        console.error(`Missing locations for IDs: ${missingIds.join(', ')}`)
-        return NextResponse.json(
-          {
-            error: `Location data not found for IDs: ${missingIds.join(', ')}`,
-          },
-          { status: 404 },
-        )
-      }
-
-      // All locations exist, proceed with distance calculations
-      for (const [id1, id2] of pairs) {
-        pipeline.geodist('locations', id1, id2, 'mi')
-      }
-
-      const results = await pipeline.exec()
-      const distances = results.map(([err, result]) =>
-        err ? null : Number.parseFloat(result),
-      )
-
-      return NextResponse.json({
-        distances,
-        source: 'redis',
-      })
-    }
-  } catch (error) {
-    console.error('Error calculating distances:', error)
     return NextResponse.json(
-      { error: 'Failed to calculate distances', details: error.message },
+      { error: 'Invalid query parameters' },
+      { status: 400 },
+    )
+  } catch (error) {
+    console.error('Error processing distance request:', error)
+    return NextResponse.json(
+      { error: 'Internal Server Error', details: error.message },
       { status: 500 },
     )
   }

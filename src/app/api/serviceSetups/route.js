@@ -2,17 +2,40 @@
 import { capitalize } from '@/app/utils/capitalize'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
-import { getRedisClient } from '@/app/utils/redis'
 import { parseTimeRange } from '@/app/utils/timeRange'
 import sql from 'mssql/msnodesqlv8'
 import { NextResponse } from 'next/server'
+import path from 'path'
 
 const CACHE_FILE = 'serviceSetups.json'
+
+const ALLOWED_TECHS = [
+  'BELTRAN',
+  'BAEZ MALIK',
+  'BLAKAJ A.',
+  'CAPALDI J.',
+  'CAPPA T.',
+  'CHIN SAU',
+  'CORA JOSE',
+  'CRUZ N.',
+  'FERNANDEZ',
+  'GHANIM MO',
+  'GUITEREZ O',
+  'FORD J.',
+  'HARRIS',
+  'HUNTLEY E.',
+  'JOHNI',
+  'JONES H.',
+  'LOPEZ A.',
+  'MADERA M.',
+  'RIVERS',
+  'VASTA RICK',
+]
 
 sql.driver = 'FreeTDS'
 const config = {
   server: process.env.SQL_SERVER,
-  port: Number.parseInt(process.env.SQL_PORT),
+  port: parseInt(process.env.SQL_PORT),
   database: process.env.SQL_DATABASE,
   user: process.env.SQL_USERNAME,
   password: process.env.SQL_PASSWORD,
@@ -76,7 +99,7 @@ async function runQuery(pool, query) {
     console.log('Query executed successfully')
     return result.recordset
   } catch (err) {
-    console.error('Error executing query:', err)
+    console.error(`Error executing query:`, err)
     throw err
   }
 }
@@ -102,15 +125,7 @@ function transformServiceSetup(setup) {
   if (rangeStart === null && rangeEnd === null) {
     return null
   }
-
-  // Validate schedule string length
-  if (setup.ScheduleString?.length !== 420) {
-    console.warn(
-      `Invalid schedule string length for service ${setup.id}: ${setup.ScheduleString?.length}`,
-    )
-    return null
-  }
-
+  
   return {
     id: setup.id,
     location: {
@@ -156,74 +171,68 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const idParam = searchParams.get('id')
 
-  try {
-    const redis = getRedisClient()
+  // Always try to read from disk cache first
+  let serviceSetups = await readFromDiskCache({ file: CACHE_FILE })
 
-    // Try Redis first
-    const cachedSetups = await redis.get('serviceSetups')
-    if (cachedSetups) {
-      const setups = JSON.parse(cachedSetups)
-      if (idParam) {
-        const ids = idParam.split(',')
-        return NextResponse.json(
-          setups.filter(setup => ids.includes(setup.id.toString())),
-        )
-      }
-      return NextResponse.json(setups)
-    }
-
-    // If not in Redis, try disk cache
-    let serviceSetups = await readFromDiskCache({ file: CACHE_FILE })
-
-    // If not in disk cache, fetch from SQL
-    if (!serviceSetups) {
-      let pool
-      try {
-        console.log('Fetching service setups from database...')
-        pool = await sql.connect(config)
-        const rawSetups = await runQuery(pool, BASE_QUERY)
-
-        // Transform and filter
-        serviceSetups = rawSetups.map(transformServiceSetup).filter(Boolean)
-
-        // Store in both Redis and disk cache
-        await redis.setex('serviceSetups', 86400, JSON.stringify(serviceSetups)) // 1 day in Redis
-        await writeToDiskCache({ file: CACHE_FILE, data: serviceSetups })
-      } finally {
-        if (pool) await pool.close()
-      }
-    } else {
-      // If found in disk cache, also store in Redis
-      await redis.setex('serviceSetups', 86400, JSON.stringify(serviceSetups))
-    }
-
-    if (idParam) {
-      const ids = idParam.split(',')
-      return NextResponse.json(
-        serviceSetups.filter(setup => ids.includes(setup.id.toString())),
-      )
-    }
-    return NextResponse.json(serviceSetups)
-  } catch (error) {
-    console.error('Error:', error)
-
-    // If Redis/SQL fails, try disk cache as last resort
+  if (!serviceSetups) {
+    let pool
     try {
-      const diskCacheData = await readFromDiskCache({ file: CACHE_FILE })
-      if (diskCacheData) {
-        console.log('Falling back to disk cache')
-        if (idParam) {
-          const ids = idParam.split(',')
-          return NextResponse.json(
-            diskCacheData.filter(setup => ids.includes(setup.id.toString())),
-          )
-        }
-        return NextResponse.json(diskCacheData)
-      }
-    } catch (cacheError) {
-      console.error('Disk cache fallback failed:', cacheError)
-    }
+      console.log('Fetching service setups from database...')
+      pool = await sql.connect(config)
 
-    return NextResponse.json({ error: error.message }, { status: 500 })
+      serviceSetups = await runQuery(pool, BASE_QUERY)
+      console.log('Total service setups fetched:', serviceSetups.length)
+
+      // Transform all service setups immediately
+      serviceSetups = serviceSetups.map(transformServiceSetup)
+      console.log('Transformed setups:', serviceSetups.length)
+
+      // Write all fetched and transformed data to disk cache
+      await writeToDiskCache({ file: CACHE_FILE, data: serviceSetups })
+    } catch (error) {
+      console.error('Error fetching from database:', error)
+      return NextResponse.json(
+        {
+          error: 'Internal Server Error',
+          details: error.message,
+          stack: error.stack,
+        },
+        { status: 500 },
+      )
+    } finally {
+      if (pool) {
+        try {
+          await pool.close()
+          console.log('Database connection closed')
+        } catch (closeErr) {
+          console.error('Error closing database connection:', closeErr)
+        }
+      }
+    }
+  } else {
+    console.log('Using cached data, total setups:', serviceSetups.length)
   }
+
+  // Filter by ALLOWED_TECHS if necessary
+  if (ALLOWED_TECHS?.length > 0) {
+    serviceSetups = serviceSetups.filter(setup =>
+      ALLOWED_TECHS.includes(setup.tech.code),
+    )
+    console.log(
+      `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
+    )
+  }
+
+  // Filter by specific IDs if idParam is present
+  if (idParam) {
+    const ids = idParam.split(',')
+    serviceSetups = serviceSetups.filter(setup =>
+      ids.includes(setup.id.toString()),
+    )
+    console.log(
+      `Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`,
+    )
+  }
+
+  return NextResponse.json(serviceSetups)
 }

@@ -1,14 +1,13 @@
-import { performance } from 'node:perf_hooks'
-import { parentPort } from 'node:worker_threads'
-import { getRedisClient } from '../../utils/redis.js'
+import { performance } from 'perf_hooks'
+import { parentPort } from 'worker_threads'
 import { DBSCAN } from './dbscan.js'
 import { kMeans } from './kmeans.js'
-import { scheduleClusteredServices } from './scheduling.js'
 
-// Constants
+// Constants (moved from constants.js)
 const MAX_RADIUS_MILES = 5
 
-async function filterOutliers(points, distanceMatrix) {
+// Moved from outliers.js
+function filterOutliers(points, distanceMatrix) {
   const connectedPoints = []
   const outliers = []
 
@@ -30,58 +29,24 @@ async function filterOutliers(points, distanceMatrix) {
   return { connectedPoints, outliers }
 }
 
-async function updateRedisClusterInfo(services, clusteringInfo) {
-  const redis = getRedisClient()
-  const pipeline = redis.pipeline()
-
-  for (const service of services) {
-    pipeline.hset(
-      `service:${service.id}`,
-      'cluster',
-      service.cluster,
-      'clusterReason',
-      service.clusterReason || '',
-      'wasStatus',
-      service.wasStatus || '',
-      'sequenceNumber',
-      service.sequenceNumber || -1,
-      'time',
-      JSON.stringify(service.time),
-    )
-  }
-
-  // Store clustering info for analytics
-  pipeline.hset(
-    `clustering:${performance.now()}`,
-    'info',
-    JSON.stringify(clusteringInfo),
-  )
-
-  await pipeline.exec()
-}
-
 parentPort.on(
   'message',
-  async ({
+  ({
     services,
     distanceMatrix,
     minPoints,
     maxPoints,
     clusterUnclustered,
     algorithm = 'kmeans',
-    distanceBias = 50,
-    scheduleOptimization = true,
   }) => {
-    try {
-      const startTime = performance.now()
+    const startTime = performance.now()
 
-      // Extract points for clustering
+    try {
       const points = services.map(service => [
         service.location.latitude,
         service.location.longitude,
       ])
 
-      // Calculate distance statistics
       const flatDistances = distanceMatrix
         .flat()
         .filter(d => d !== null && d !== 0)
@@ -90,8 +55,7 @@ parentPort.on(
       const avgDistance =
         flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
 
-      // Filter outliers
-      const { connectedPoints, outliers } = await filterOutliers(
+      const { connectedPoints, outliers } = filterOutliers(
         points,
         distanceMatrix,
       )
@@ -177,11 +141,11 @@ parentPort.on(
           cost,
           maxIterationsReached,
           totalClusters: k,
-          centroids,
         }
+      } else {
+        throw new Error('Invalid clustering algorithm specified')
       }
 
-      // Calculate cluster distribution
       const clusterCounts = clusteredServices.reduce((acc, service) => {
         acc[service.cluster] = (acc[service.cluster] || 0) + 1
         return acc
@@ -196,41 +160,31 @@ parentPort.on(
         ),
       }
 
-      // Add performance timing
       const endTime = performance.now()
       const duration = endTime - startTime
-      clusteringInfo.performanceDuration = Number.parseInt(duration)
 
-      if (scheduleOptimization) {
-        const scheduledServices = await scheduleClusteredServices(
-          clusteredServices,
-          clusterUnclustered,
-          distanceBias,
-        )
-
-        // Update Redis with clustering and scheduling results
-        await updateRedisClusterInfo(scheduledServices, clusteringInfo)
-
-        parentPort.postMessage({ scheduledServices, clusteringInfo })
-      } else {
-        // Update Redis with just clustering results
-        await updateRedisClusterInfo(clusteredServices, clusteringInfo)
-
-        parentPort.postMessage({ clusteredServices, clusteringInfo })
+      clusteringInfo = {
+        ...clusteringInfo,
+        performanceDuration: parseInt(duration),
       }
+
+      parentPort.postMessage({
+        clusteredServices,
+        clusteringInfo,
+      })
     } catch (error) {
-      console.error('Error in clustering worker:', error)
+      console.error('Error in clustering worker:', error.message)
       parentPort.postMessage({
         error: error.message,
-        clusteringInfo: { algorithm },
+        clusteringInfo: {
+          algorithm,
+        },
       })
     }
   },
 )
 
-parentPort.on('terminate', async () => {
+parentPort.on('terminate', () => {
   console.log('Worker received terminate signal')
-  const redis = getRedisClient()
-  await redis.quit()
   process.exit(0)
 })

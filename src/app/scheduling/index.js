@@ -1,5 +1,6 @@
-import path from 'node:path'
-import { Worker } from 'node:worker_threads'
+// /src/app/scheduling/index.js
+import path from 'path'
+import { Worker } from 'worker_threads'
 import { printSummary } from './logging.js'
 
 export const MAX_SHIFT_HOURS = 8
@@ -37,9 +38,8 @@ export async function* scheduleServices(services) {
           data: { scheduledServices, unassignedServices },
         }
         break
-      }
-      if (message.type === 'progress') {
-        yield { type: 'progress', data: message.progress }
+      } else if (message.type === 'progress') {
+        yield { type: 'progress', data: message.data }
       }
     }
   } finally {
