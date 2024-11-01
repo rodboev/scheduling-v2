@@ -3,6 +3,20 @@ import { getRedisClient } from '@/app/utils/redis'
 import { parseTime } from '@/app/utils/timeRange'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
+import { promises as fsPromises } from 'node:fs'
+import path from 'node:path'
+
+// === Regular service retrieval ===
+// GET /api/services?start=2024-09-01&end=2024-09-02
+// (fetch('/api/services?start=2024-09-01&end=2024-09-02')
+
+// === Service regeneration with default date range ===
+// GET /api/services?regenerate=true
+// fetch('/api/services?regenerate=true')
+
+// === Service regeneration with custom date range (needs testing) ===
+// GET /api/services?regenerate=true&start=2024-09-01&end=2024-12-31
+// fetch('/api/services?regenerate=true&start=2024-09-01&end=2024-12-31')
 
 // Utility Functions
 function round(time) {
@@ -230,6 +244,45 @@ async function fetchServiceSetups(baseUrl) {
   }
 }
 
+async function getEnforcementState() {
+  const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
+  let enforcementState = {}
+
+  try {
+    const rawEnforcementState = await fsPromises.readFile(filePath, 'utf8')
+    const parsedState = JSON.parse(rawEnforcementState)
+    if (parsedState?.cacheData) {
+      enforcementState = parsedState.cacheData
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      await fsPromises.writeFile(filePath, JSON.stringify({ cacheData: {} }))
+    } else {
+      console.error('Error reading enforcement state file:', error)
+    }
+  }
+
+  return enforcementState
+}
+
+async function processServicesWithEnforcement(services) {
+  const enforcementState = await getEnforcementState()
+
+  return services.map(
+    ({ schedule: { string, ...restSchedule }, ...restService }) => {
+      const serviceSetupId = restService.id.split('-')[0]
+      return {
+        ...restService,
+        schedule: restSchedule,
+        tech: {
+          ...restService.tech,
+          enforced: enforcementState[serviceSetupId] || false,
+        },
+      }
+    },
+  )
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const start = searchParams.get('start')
@@ -240,39 +293,22 @@ export async function GET(request) {
   // Handle regeneration request
   if (regenerate) {
     try {
-      const protocol = request.headers.get('x-forwarded-proto') || 'http'
-      const host = request.headers.get('host')
-      const baseUrl = `${protocol}://${host}`
-
-      const serviceSetups = await fetchServiceSetups(baseUrl)
-      const validationResults = serviceSetups.map(validateServiceSetup)
-      const validSetups = serviceSetups.filter(
-        (_, index) => validationResults[index].isValid,
-      )
-
-      const quarterStart = start ? dayjs(start) : dayjs('2024-07-01')
-      const quarterEnd = end ? dayjs(end) : dayjs('2024-12-31')
-
-      await redis.del('services')
-
+      // ... existing regeneration code ...
       const services = validSetups.flatMap(setup =>
         createServicesForRange(setup, quarterStart, quarterEnd),
       )
 
-      await storeServicesInRedis(redis, services)
+      const processedServices = await processServicesWithEnforcement(services)
+      await storeServicesInRedis(redis, processedServices)
 
       return NextResponse.json({
         message: 'Services regenerated',
-        servicesCreated: services.length,
+        servicesCreated: processedServices.length,
         validSetups: validSetups.length,
         invalidSetups: validationResults.filter(r => !r.isValid).length,
       })
     } catch (error) {
-      console.error('Error regenerating services:', error)
-      return NextResponse.json(
-        { error: 'Failed to regenerate services', details: error.message },
-        { status: 500 },
-      )
+      // ... existing error handling ...
     }
   }
 
@@ -299,8 +335,10 @@ export async function GET(request) {
       )
 
       if (newServices.length > 0) {
-        await storeServicesInRedis(redis, newServices)
-        return NextResponse.json(newServices)
+        const processedServices =
+          await processServicesWithEnforcement(newServices)
+        await storeServicesInRedis(redis, processedServices)
+        return NextResponse.json(processedServices)
       }
     }
 

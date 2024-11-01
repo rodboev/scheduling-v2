@@ -88,7 +88,7 @@ async function processRequest(params, requestId) {
       console.log(
         'Sample of all services:',
         sampleServices.map((val, i) =>
-          i % 2 === 0 ? val : new Date(parseInt(val)).toISOString(),
+          i % 2 === 0 ? val : new Date(Number.parseInt(val)).toISOString(),
         ),
       )
     }

@@ -76,21 +76,17 @@ const MapTools = ({
     }
   }
 
-  const startDateRef = useRef(null)
-  const endDateRef = useRef(null)
-
-  // Get today's date at midnight ET
-  const today = dayjs().startOf('day')
-  const [defaultStartDate, defaultEndDate] = [
-    today.format('YYYY-MM-DDTHH:mm'),
-    today.add(1, 'day').format('YYYY-MM-DDTHH:mm'),
-  ]
-
   // Initialize state with default dates if not provided
   useEffect(() => {
+    // Get today's date at midnight End Date
+    const today = dayjs().startOf('day')
+    const [defaultStartDate, defaultEndDate] = [
+      today.format('YYYY-MM-DDTHH:mm'),
+      today.add(1, 'day').format('YYYY-MM-DDTHH:mm'),
+    ]
     if (!startDate) setStartDate(defaultStartDate)
     if (!endDate) setEndDate(defaultEndDate)
-  }, [])
+  }, [startDate, endDate, setStartDate, setEndDate])
 
   useEffect(() => {
     const openDatePicker = inputRef => {

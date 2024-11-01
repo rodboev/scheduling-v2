@@ -120,7 +120,7 @@ function tryScheduleInShift({ service, shift, techId }) {
   )
 
   while (startTime <= latestPossibleStart) {
-    let endTime = addMinutes(startTime, serviceDuration)
+    const endTime = addMinutes(startTime, serviceDuration)
 
     // Ensure the service doesn't extend beyond MAX_SHIFT_HOURS
     if (endTime > addHours(shiftStart, MAX_SHIFT_HOURS)) {
@@ -185,7 +185,7 @@ export function scheduleEnforcedService({ service, techSchedules }) {
   const endTime = addMinutes(startTime, serviceDuration)
 
   let targetShift
-  for (let shift of techSchedules[techId].shifts) {
+  for (const shift of techSchedules[techId].shifts) {
     if (startTime >= shift.shiftStart && endTime <= shift.shiftEnd) {
       targetShift = shift
       break

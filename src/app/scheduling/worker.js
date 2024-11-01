@@ -1,4 +1,4 @@
-import { parentPort, workerData } from 'worker_threads'
+import { parentPort, workerData } from 'node:worker_threads'
 import { scheduleService, scheduleEnforcedService } from './schedulingLogic.js'
 import {
   filterInvalidServices,
@@ -48,8 +48,9 @@ async function runScheduling() {
 
   console.timeEnd('Total scheduling time')
 
-  console.log(`Scheduling completed`)
-  console.log(`Total services processed: ${processedCount}`)
+  console.log(
+    `Scheduling completed. Total services processed: ${processedCount}`,
+  )
   console.log(
     `Scheduled services: ${processedCount - unassignedServices.length}`,
   )

@@ -10,12 +10,16 @@ export function kMeans({
   try {
     const startTime = performance.now()
     let k = Math.max(1, Math.ceil(points.length / maxPoints))
-    let bestClusters, bestCentroids, bestK, bestCost
+    let bestClusters
+    let bestCentroids
+    let bestCost
     let lowestCost = Number.POSITIVE_INFINITY
     let kChangeCount = 0
     let totalIterations = 0
     let maxIterationsReached = false
-    let currentClusters, currentCentroids, currentCost
+    let currentClusters
+    let currentCentroids
+    let currentCost
 
     while (kChangeCount < MAX_K_CHANGES && totalIterations < MAX_ITERATIONS) {
       let iterations = 0
@@ -65,13 +69,11 @@ export function kMeans({
         currentCost = 0
         for (let i = 0; i < k; i++) {
           for (const pointIndex of currentClusters[i]) {
-            currentCost += 
+            currentCost +=
               Math.hypot(
                 currentCentroids[i][0] - points[pointIndex][0],
                 currentCentroids[i][1] - points[pointIndex][1],
-              ) ** 
-              2
-            
+              ) ** 2
           }
         }
 
@@ -96,7 +98,6 @@ export function kMeans({
           lowestCost = currentCost
           bestClusters = currentClusters
           bestCentroids = currentCentroids
-          bestK = k
           bestCost = currentCost
         }
       }
@@ -135,18 +136,17 @@ export function kMeans({
     if (!bestClusters) {
       bestClusters = currentClusters
       bestCentroids = currentCentroids
-      bestK = k
       bestCost = currentCost
     }
 
     // Ensure that clusters are numbered from 0 to k-1
     const finalClusters = bestClusters.filter(cluster => cluster.length > 0)
     const clusterMapping = {}
-    finalClusters.forEach((cluster, index) => {
-      cluster.forEach(pointIndex => {
+    for (const [index, cluster] of Object.entries(finalClusters)) {
+      for (const pointIndex of cluster) {
         clusterMapping[pointIndex] = index
-      })
-    })
+      }
+    }
 
     return {
       clusters: points.map((_, index) => clusterMapping[index] ?? -1),

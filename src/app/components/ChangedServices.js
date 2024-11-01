@@ -12,14 +12,17 @@ export default function ChangedServices({ services }) {
     <div className="w-64 border-r p-4">
       <h2 className="mb-4 text-lg font-bold">Changed Services</h2>
       <ul>
-        {services.map((service, index) => (
+        {services.map(service => (
           <li
-            key={index}
+            key={service.id} // Assuming each service has a unique id
             className="mb-2"
           >
             <Popover>
               <PopoverTrigger asChild>
-                <button className="text-left text-blue-600 hover:underline">
+                <button
+                  className="text-left text-blue-600 hover:underline"
+                  type="button"
+                >
                   {service.service.title}
                 </button>
               </PopoverTrigger>

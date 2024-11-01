@@ -1,5 +1,5 @@
-import path from 'path'
-import { Worker } from 'worker_threads'
+import path from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { printSummary } from './logging.js'
 
 export const MAX_SHIFT_HOURS = 8
@@ -37,7 +37,8 @@ export async function* scheduleServices(services) {
           data: { scheduledServices, unassignedServices },
         }
         break
-      } else if (message.type === 'progress') {
+      }
+      if (message.type === 'progress') {
         yield { type: 'progress', data: message.progress }
       }
     }

@@ -12,7 +12,7 @@ const CACHE_FILE = 'serviceSetups.json'
 sql.driver = 'FreeTDS'
 const config = {
   server: process.env.SQL_SERVER,
-  port: parseInt(process.env.SQL_PORT),
+  port: Number.parseInt(process.env.SQL_PORT),
   database: process.env.SQL_DATABASE,
   user: process.env.SQL_USERNAME,
   password: process.env.SQL_PASSWORD,
@@ -76,7 +76,7 @@ async function runQuery(pool, query) {
     console.log('Query executed successfully')
     return result.recordset
   } catch (err) {
-    console.error(`Error executing query:`, err)
+    console.error('Error executing query:', err)
     throw err
   }
 }
