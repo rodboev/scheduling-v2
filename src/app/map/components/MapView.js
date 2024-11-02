@@ -1,13 +1,31 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { scheduleServices } from '@/app/api/cluster/scheduling'
+import MapMarker from '@/app/map/components/MapMarker'
+import MapPopup from '@/app/map/components/MapPopup'
+import MapTools from '@/app/map/components/MapTools'
+import { getDistance } from '@/app/map/utils/distance'
+import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
+import debounce from 'lodash/debounce'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
-import MapMarker from './MapMarker'
-import MapPopup from './MapPopup'
-import MapTools from './MapTools'
 
+/**
+ * MapView Component
+ * Handles the main map display, clustering, and scheduling logic
+ * - Displays services as markers on the map
+ * - Groups services into clusters based on location and time
+ * - Schedules services within clusters based on time/distance priority
+ */
+
+/**
+ * MapEventHandler Component
+ * Handles map interaction events
+ * - Closes active popups on map click
+ * - Logs map center coordinates on movement
+ */
 function MapEventHandler({ setActivePopup }) {
   const map = useMap()
 
@@ -39,27 +57,61 @@ function MapEventHandler({ setActivePopup }) {
   return null
 }
 
-const Map = () => {
+const MapView = () => {
   const [clusteredServices, setClusteredServices] = useState([])
   const [clusteringInfo, setClusteringInfo] = useState(null)
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
-  const [minPoints, setMinPoints] = useState(2)
-  const [maxPoints, setMaxPoints] = useState(12)
+  const [minPoints, setMinPoints] = useState(8) // Default min points
+  const [maxPoints, setMaxPoints] = useState(16) // Default max points
+
+  // UI state
   const [activePopup, setActivePopup] = useState(null)
-  const [startDate, setStartDate] = useState('2024-09-02T01:00:00.000Z')
-  const [endDate, setEndDate] = useState(() => {
-    // Initialize endDate to be 10 hours after startDate
-    const end = new Date(startDate)
-    end.setHours(end.getHours() + 10)
-    return end.toISOString()
-  })
-  const center = [40.687, -73.965]
+  const [startDate, setStartDate] = useState('2024-09-03T02:30:00.000Z')
+  const [endDate, setEndDate] = useState('2024-09-03T12:30:00.000Z')
+  const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
   const [algorithm, setAlgorithm] = useState('kmeans')
+  const [distanceBias, setDistanceBias] = useState(50)
+  const [isRescheduling, setIsRescheduling] = useState(false)
+  const [isOptimizing, setIsOptimizing] = useState(false)
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
     console.log(`Updating service ${serviceId} enforcement to ${checked}`)
     // Implement the logic to update service enforcement
+  }, [])
+
+  const addDistanceInfo = useCallback(async services => {
+    const servicesWithDistance = [...services]
+
+    // Group services by cluster
+    const clusters = servicesWithDistance.reduce((acc, service) => {
+      if (service.cluster >= 0) {
+        if (!acc[service.cluster]) acc[service.cluster] = []
+        acc[service.cluster].push(service)
+      }
+      return acc
+    }, {})
+
+    // Add sequence numbers and distances within each cluster
+    for (const clusterServices of Object.values(clusters)) {
+      const sortedCluster = clusterServices.sort(
+        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
+      )
+
+      for (let i = 0; i < sortedCluster.length; i++) {
+        const currentService = sortedCluster[i]
+        currentService.sequenceNumber = i + 1 // Add sequence number
+
+        if (i > 0) {
+          const previousService = sortedCluster[i - 1]
+          const distance = await getDistance(currentService, previousService)
+          currentService.distanceFromPrevious = distance
+          currentService.previousCompany = previousService.company
+        }
+      }
+    }
+
+    return servicesWithDistance
   }, [])
 
   const fetchClusteredServices = useCallback(async () => {
@@ -74,22 +126,34 @@ const Map = () => {
           algorithm,
         },
       })
+
       if (response.data.error) {
         console.error('Error fetching clustered services:', response.data.error)
-        // Don't update state if there's an error
-      } else {
-        setClusteredServices(response.data.clusteredServices)
-        setClusteringInfo(response.data.clusteringInfo)
+        return
       }
+
+      const servicesWithDistance = await addDistanceInfo(
+        response.data.clusteredServices,
+      )
+      setClusteredServices(servicesWithDistance)
+      setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
       console.error('Error fetching clustered services:', error)
-      // Don't update state if there's an error
     }
-  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm])
+  }, [
+    startDate,
+    endDate,
+    clusterUnclustered,
+    minPoints,
+    maxPoints,
+    algorithm,
+    addDistanceInfo,
+  ])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    fetchClusteredServices()
-  }, [fetchClusteredServices])
+    fetchClusteredServices(true)
+  }, [])
 
   const handleMapClick = useCallback(() => {
     if (activePopup) {
@@ -116,6 +180,55 @@ const Map = () => {
     setEndDate(end.toISOString())
   }, [startDate])
 
+  function handlePointsChangeComplete() {
+    fetchClusteredServices()
+  }
+
+  const optimizeSchedule = useCallback(
+    async (services, distanceBias) => {
+      setIsOptimizing(true)
+      try {
+        // Create a distance matrix for the services
+        const distanceMatrix = []
+        for (let i = 0; i < services.length; i++) {
+          distanceMatrix[i] = []
+          for (let j = 0; j < services.length; j++) {
+            if (i === j) {
+              distanceMatrix[i][j] = 0
+            } else {
+              distanceMatrix[i][j] = await getDistance(services[i], services[j])
+            }
+          }
+        }
+
+        // Schedule services using the distance matrix
+        const optimizedServices = await scheduleServices(
+          services,
+          clusterUnclustered,
+          distanceBias,
+          minPoints,
+          maxPoints,
+          distanceMatrix,
+        )
+
+        setClusteredServices(optimizedServices)
+      } catch (error) {
+        console.error('Error optimizing schedule:', error)
+      } finally {
+        setIsOptimizing(false)
+      }
+    },
+    [clusterUnclustered, minPoints, maxPoints],
+  )
+
+  // Update the optimization change handler
+  const handleOptimizationChange = useCallback(
+    async newBias => {
+      await optimizeSchedule(clusteredServices, newBias)
+    },
+    [clusteredServices, optimizeSchedule],
+  )
+
   return (
     <div className="relative h-screen w-screen">
       <MapTools
@@ -125,6 +238,7 @@ const Map = () => {
         setMinPoints={setMinPoints}
         maxPoints={maxPoints}
         setMaxPoints={setMaxPoints}
+        onPointsChangeComplete={handlePointsChangeComplete}
         clusterUnclustered={clusterUnclustered}
         setClusterUnclustered={setClusterUnclustered}
         startDate={startDate}
@@ -132,6 +246,10 @@ const Map = () => {
         endDate={endDate}
         setEndDate={setEndDate}
         handleNextDay={handleNextDay}
+        distanceBias={distanceBias}
+        setDistanceBias={setDistanceBias}
+        isOptimizing={isOptimizing}
+        onOptimizationChange={handleOptimizationChange}
       />
       <MapContainer
         center={center}
@@ -190,4 +308,4 @@ const Map = () => {
   )
 }
 
-export default Map
+export default MapView

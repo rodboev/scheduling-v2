@@ -15,7 +15,7 @@ export async function createDistanceMatrix(services) {
   // Validate services
   if (!Array.isArray(services) || services.length === 0) {
     console.warn(
-      `Invalid services array: expected non-empty array, got ${Array.isArray(services) ? 'empty array' : typeof services}`
+      `Invalid services array: expected non-empty array, got ${Array.isArray(services) ? 'empty array' : typeof services}`,
     )
     return []
   }
@@ -55,7 +55,7 @@ export async function getDistanceBetweenServices(fromService, toService) {
   if (!fromService?.location?.id || !toService?.location?.id) {
     console.warn(
       'Missing location id for service:',
-      !fromService?.location?.id ? fromService?.id : toService?.id
+      !fromService?.location?.id ? fromService?.id : toService?.id,
     )
     return null
   }

@@ -4,13 +4,59 @@ import React from 'react'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
-import { Car } from 'lucide-react'
+import { Car, Clock } from 'lucide-react'
 import { Popup } from 'react-leaflet'
 
-const MapPopup = ({ service, updateServiceEnforcement }) => {
+const MapPopup = ({ service }) => {
+  function getClusterLabel(cluster, reason) {
+    if (cluster >= 0) return `${cluster}`
+    return `${cluster} (${reason || 'unclustered'})`
+  }
+
+  // Format time display based on available data
+  function getTimeDisplay() {
+    console.log(
+      'visited',
+      service.time.visited,
+      'start',
+      service.time.start,
+      'end',
+      service.time.end,
+    )
+    if (service.time?.visited) {
+      const start = dayjs(service.time.visited)
+      const end = start.add(service.time.duration, 'minutes')
+      return (
+        <div className="mb-2 flex items-center gap-x-1 font-semibold text-blue-600">
+          <Clock className="h-4 w-4" />
+          <span>
+            {start.format('M/D h:mm A')} - {end.format('h:mm A')}
+          </span>
+        </div>
+      )
+    }
+
+    if (service.start && service.end) {
+      return (
+        <div className="mb-2 flex items-center gap-x-1 font-semibold text-blue-600">
+          <Clock className="h-4 w-4" />
+          <span>
+            {dayjs(service.start).format('M/D h:mm A')} -{' '}
+            {dayjs(service.end).format('h:mm A')}
+          </span>
+        </div>
+      )
+    }
+
+    return null
+  }
+
   return (
     <Popup>
       <div className="w-full max-w-sm text-sm leading-relaxed">
+        {/* Time Display */}
+        {getTimeDisplay()}
+
         <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
           <a
             href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
@@ -23,19 +69,18 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
           </a>
         </h3>
 
+        {/* Distance from previous point */}
         {service.distanceFromPrevious && (
           <div className="mb-2">
             <div className="flex items-center gap-x-1">
-              <span>
-                <Car />
-              </span>
+              <Car className="h-4 w-4" />
               <span className="whitespace-nowrap font-bold">
-                {service.distanceFromPrevious?.toFixed(2)} mi
+                {service.distanceFromPrevious.toFixed(2)} mi
               </span>
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                from {service?.previousCompany}
+                from {service.previousCompany}
               </div>
             )}
           </div>
@@ -47,26 +92,19 @@ const MapPopup = ({ service, updateServiceEnforcement }) => {
           {service.location.address2}
         </div>
 
-        {service.start && service.end && (
-          <div className="whitespace-nowrap">
-            {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
-            {dayjs(service.end).format('M/D')} {formatTime(service.end)}
-          </div>
-        )}
-
         <div className="whitespace-nowrap">
           Preferred Time: {dayjs(service.time.preferred).format('h:mma')}
         </div>
         <div>Duration: {service.time.duration} min</div>
         <div>
-          Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
+          Time Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
           {dayjs(service.time.range[0]).format('h:mma')} -{' '}
           {dayjs(service.time.range[1]).format('h:mma')}
         </div>
 
         {service.cluster !== undefined && (
           <div className="mt-3 font-bold">
-            Cluster: {service.cluster}
+            Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
             {service.wasStatus && service.cluster !== service.wasStatus
               ? ` (was ${service.wasStatus})`
               : ''}

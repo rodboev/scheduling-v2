@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google'
 
 const inter = Inter({ subsets: ['latin'] })
 
-// Dynamically import the Map component with ssr disabled
-const Map = dynamic(() => import('./components/Map'), {
+// Dynamically import the MapView component with ssr disabled
+const MapView = dynamic(() => import('./components/MapView'), {
   ssr: false,
   loading: () => <p className="mt-8 text-center text-xl">Loading map...</p>,
 })
@@ -14,8 +14,9 @@ const Map = dynamic(() => import('./components/Map'), {
 const MapPage = () => {
   return (
     <div className={`h-screen w-screen ${inter.className}`}>
-      <Map />
+      <MapView />
     </div>
   )
 }
+
 export default MapPage

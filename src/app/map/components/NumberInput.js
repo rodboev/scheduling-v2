@@ -1,77 +1,54 @@
-import React from 'react'
+'use client'
 
-const NumberInput = ({ value, onChange, min, max }) => {
-  const handleIncrement = () => {
-    if (max === undefined || value < max) {
-      onChange(value + 1)
-    }
+import { useState, useEffect } from 'react'
+
+function NumberInput({
+  id,
+  value,
+  onChange,
+  onChangeComplete,
+  min,
+  max,
+  disabled = false,
+}) {
+  // Remove local state and just use the parent value
+  // This prevents any potential state mismatches
+
+  function handleChange(newValue) {
+    // Clamp value between min and max
+    const clampedValue = Math.min(Math.max(newValue, min), max)
+
+    // Update parent state
+    onChange(clampedValue)
+
+    // Notify of completion
+    onChangeComplete()
   }
-  const handleDecrement = () => {
-    if (value > min) {
-      onChange(value - 1)
-    }
-  }
+
   return (
-    <div className="relative -left-2 flex">
-      <div className="flex">
-        <button
-          className="flex items-center justify-center rounded-full p-2 hover:bg-muted"
-          onClick={handleDecrement}
-        >
-          <MinusIcon className="h-4 w-4" />
-        </button>
-        <div className="flex cursor-default items-center justify-center px-2 text-center">
-          {value}
-        </div>
-      </div>
-      <div className="flex">
-        <button
-          className="flex items-center justify-center rounded-full p-2 hover:bg-muted"
-          onClick={handleIncrement}
-        >
-          <PlusIcon className="h-4 w-4" />
-        </button>
-      </div>
+    <div className="flex items-center rounded border">
+      <button
+        type="button"
+        onClick={() => handleChange(value - 1)}
+        disabled={disabled || value <= min}
+        className="select-none px-3 py-2 hover:bg-gray-100 disabled:opacity-50
+          disabled:hover:bg-transparent"
+        aria-label="Decrease"
+      >
+        -
+      </button>
+      <span className="flex-1 select-none text-center">{value}</span>
+      <button
+        type="button"
+        onClick={() => handleChange(value + 1)}
+        disabled={disabled || value >= max}
+        className="select-none px-3 py-2 hover:bg-gray-100 disabled:opacity-50
+          disabled:hover:bg-transparent"
+        aria-label="Increase"
+      >
+        +
+      </button>
     </div>
-  )
-}
-
-function MinusIcon(props) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-    </svg>
-  )
-}
-
-function PlusIcon(props) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
   )
 }
 
