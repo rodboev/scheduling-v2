@@ -1,17 +1,11 @@
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { parseTimeRange, parseTime } from '@/app/utils/timeRange'
+import { parseTimeRange, parseTime, round } from '@/app/utils/timeRange'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 import { promises as fsPromises } from 'node:fs'
 import path from 'node:path'
 
-function round(time) {
-  if (!time) return null
-  const minutes = time.minute()
-  const roundedMinutes = Math.round(minutes / 15) * 15
-  return time.minute(roundedMinutes).second(0).millisecond(0)
-}
-
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const isProduction = process.env.NODE_ENV === 'production'
 
 function createServicesForRange(setup, startDate, endDate) {
@@ -70,7 +64,7 @@ function shouldServiceOccur(scheduleString, date) {
 async function fetchServiceSetups() {
   try {
     const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923,20700,480,12271,18923,5143,20513,20730
+      `${BASE_URL}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923,20700,480,12271,18923,5143,20513,20730
     )
     const serviceSetups = response.data
     console.log('Fetched service setups:', serviceSetups.length)
