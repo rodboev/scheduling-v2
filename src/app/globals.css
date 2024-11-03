@@ -24,6 +24,9 @@
 .rbc-calendar .rbc-current-time-indicator {
   @apply bg-teal/50;
 }
+.rbc-calendar .rbc-day-slot .rbc-event {
+  @apply border-teal;
+}
 
 @layer base {
   :root {

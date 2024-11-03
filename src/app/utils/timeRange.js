@@ -1,5 +1,4 @@
 // src/app/utils/timeRange.js
-
 import {
   dayjsInstance as dayjs,
   secondsSinceMidnight,
@@ -20,75 +19,78 @@ export function formatTime(input) {
 
   if (minutes === 0) {
     return `${hours}${ampm}`
-  } else {
-    return `${hours}:${minutes.toString().padStart(2, '0')}${ampm}`
   }
+  return `${hours}:${minutes.toString().padStart(2, '0')}${ampm}`
 }
 
 export function formatTimeRange(start, end) {
-  const startTime = typeof start === 'number' ? dateFromSecondsSinceMidnight(start) : dayjs(start)
-  const endTime = typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
+  const startTime =
+    typeof start === 'number'
+      ? dateFromSecondsSinceMidnight(start)
+      : dayjs(start)
+  const endTime =
+    typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
 
   const startFormatted = formatTime(startTime)
   const endFormatted = formatTime(endTime)
 
   if (startTime.format('a') === endTime.format('a')) {
     return `${startFormatted.slice(0, -2)}-${endFormatted}`
-  } else {
-    return `${startFormatted}-${endFormatted}`
   }
+  return `${startFormatted}-${endFormatted}`
 }
 
 export function parseTime(timeStr, defaultPeriod = null) {
-  timeStr = timeStr.trim().toUpperCase()
+  let time = timeStr.trim().toUpperCase()
 
   // Identify and handle AM/PM suffixes first
   let period = defaultPeriod
-  if (timeStr.includes('P') && !timeStr.includes('PM')) {
-    timeStr = timeStr.replace('P', ' PM')
+  if (time.includes('P') && !time.includes('PM')) {
+    time = time.replace('P', ' PM')
   }
-  if (timeStr.includes('A') && !timeStr.includes('AM')) {
-    timeStr = timeStr.replace('A', ' AM')
+  if (time.includes('A') && !time.includes('AM')) {
+    time = time.replace('A', ' AM')
   }
 
-  if (timeStr.endsWith('PM')) {
+  if (time.endsWith('PM')) {
     period = 'PM'
-    timeStr = timeStr.slice(0, -2)
-  } else if (timeStr.endsWith('AM')) {
+    time = time.slice(0, -2)
+  } else if (time.endsWith('AM')) {
     period = 'AM'
-    timeStr = timeStr.slice(0, -2)
+    time = time.slice(0, -2)
   }
 
   // Remove all non-numeric characters now that period is extracted
-  timeStr = timeStr.replace(/[^0-9]/g, '')
+  time = time.replace(/[^0-9]/g, '')
 
-  let hours, minutes
-  if (timeStr.length === 3) {
+  let hours
+  let minutes
+  if (time.length === 3) {
     // e.g., '745' -> '7:45'
-    hours = parseInt(timeStr.slice(0, 1), 10)
-    minutes = parseInt(timeStr.slice(1), 10)
-  } else if (timeStr.length === 4) {
+    hours = Number.parseInt(time.slice(0, 1), 10)
+    minutes = Number.parseInt(time.slice(1), 10)
+  } else if (time.length === 4) {
     // e.g., '1045' -> '10:45'
-    hours = parseInt(timeStr.slice(0, 2), 10)
-    minutes = parseInt(timeStr.slice(2), 10)
+    hours = Number.parseInt(time.slice(0, 2), 10)
+    minutes = Number.parseInt(time.slice(2), 10)
   } else {
-    hours = parseInt(timeStr, 10)
+    hours = Number.parseInt(time, 10)
     minutes = 0
   }
 
-  if (isNaN(hours) || isNaN(minutes)) {
-    // console.error(`Invalid time format: '${timeStr}'`)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    // console.error(`Invalid time format: '${time}'`)
     return null
   }
 
   // Adjust hours for AM/PM
   if (hours === 12) hours = 0 // Midnight or noon should be 0 in 24-hour format
-  if (period === 'PM' && hours != 12) hours += 12
+  if (period === 'PM' && hours !== 12) hours += 12
 
   const totalSeconds = hours * 3600 + minutes * 60
 
   if (totalSeconds >= 86400) {
-    // console.error(`Invalid time '${timeStr}' calculated to ${totalSeconds}: exceeds 24 hours.`)
+    // console.error(`Invalid time '${time}' calculated to ${totalSeconds}: exceeds 24 hours.`)
     return null
   }
 
@@ -113,10 +115,10 @@ export const parseTimeRange = memoize((timeRangeStr, duration = 30) => {
       endTime %= 86400 // Wrap around if it exceeds 24 hours
     }
     return [startTime, endTime]
-  } else {
-    // Time range input
-    return parseTimeRangeInterval(timeRangeStr)
   }
+
+  // Time range input
+  return parseTimeRangeInterval(timeRangeStr)
 })
 
 export const memoizedParseTimeRange = parseTimeRange
@@ -139,7 +141,7 @@ export function parseTimeRangeInterval(timeRangeStr) {
     return [null, null]
   }
 
-  const parts = timeRangeStr.split('-').map((part) => part.trim())
+  const parts = timeRangeStr.split('-').map(part => part.trim())
 
   if (parts.length !== 2) {
     return [null, null]
@@ -150,11 +152,16 @@ export function parseTimeRangeInterval(timeRangeStr) {
   // Determine if the time strings contain period indicators
   const startHasPeriod =
     startStr.toUpperCase().includes('A') || startStr.toUpperCase().includes('P')
-  const endHasPeriod = endStr.toUpperCase().includes('A') || endStr.toUpperCase().includes('P')
+  const endHasPeriod =
+    endStr.toUpperCase().includes('A') || endStr.toUpperCase().includes('P')
 
   // If the end time has a period and the start time does not, use the end time's period for the start time
-  let defaultPeriod =
-    !startHasPeriod && endHasPeriod ? (endStr.toUpperCase().includes('P') ? 'PM' : 'AM') : 'AM'
+  const defaultPeriod =
+    !startHasPeriod && endHasPeriod
+      ? endStr.toUpperCase().includes('P')
+        ? 'PM'
+        : 'AM'
+      : 'AM'
 
   // Parse start and end times with the determined default period
   let startTime = parseTime(startStr, defaultPeriod)
@@ -181,11 +188,21 @@ export function parseTimeRangeInterval(timeRangeStr) {
       !startStr.toUpperCase().includes('PM')
     ) {
       startTime = parseTime(startStr, 'PM')
-    } else if (endStr.toUpperCase().includes('P') && !startStr.toUpperCase().includes('PM')) {
+    } else if (
+      endStr.toUpperCase().includes('P') &&
+      !startStr.toUpperCase().includes('PM')
+    ) {
       startTime = parseTime(startStr, 'AM')
     }
     endTime += 24 * 60 * 60 // Add 24 hours in seconds
   }
 
   return [startTime, endTime]
+}
+
+export function round(time) {
+  if (!time) return null
+  const minutes = time.minute()
+  const roundedMinutes = Math.round(minutes / 15) * 15
+  return time.minute(roundedMinutes).second(0).millisecond(0)
 }

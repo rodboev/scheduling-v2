@@ -1,7 +1,8 @@
-import { performance } from 'perf_hooks'
-import { parentPort } from 'worker_threads'
+import { performance } from 'node:perf_hooks'
+import { parentPort } from 'node:worker_threads'
 import { DBSCAN } from './dbscan.js'
 import { kMeans } from './kmeans.js'
+import { scheduleServices } from './scheduling.js'
 
 // Constants (moved from constants.js)
 const MAX_RADIUS_MILES = 5
@@ -31,7 +32,7 @@ function filterOutliers(points, distanceMatrix) {
 
 parentPort.on(
   'message',
-  ({
+  async ({
     services,
     distanceMatrix,
     minPoints,
@@ -160,12 +161,35 @@ parentPort.on(
         ),
       }
 
+      // After clustering, schedule services within each cluster
+      const scheduledServices = await scheduleServices(
+        clusteredServices,
+        distanceMatrix,
+      )
+
+      // Update clusteredServices with scheduled times
+      clusteredServices = scheduledServices.map(service => {
+        if (service.cluster >= 0) {
+          return {
+            ...service,
+            start: service.start || service.time.preferred,
+            end:
+              service.end ||
+              new Date(
+                new Date(service.start || service.time.preferred).getTime() +
+                  service.time.duration * 60000,
+              ).toISOString(),
+          }
+        }
+        return service
+      })
+
       const endTime = performance.now()
       const duration = endTime - startTime
 
       clusteringInfo = {
         ...clusteringInfo,
-        performanceDuration: parseInt(duration),
+        performanceDuration: Number.parseInt(duration),
       }
 
       parentPort.postMessage({
@@ -173,7 +197,7 @@ parentPort.on(
         clusteringInfo,
       })
     } catch (error) {
-      console.error('Error in clustering worker:', error.message)
+      console.error('Error in clustering worker:', error)
       parentPort.postMessage({
         error: error.message,
         clusteringInfo: {

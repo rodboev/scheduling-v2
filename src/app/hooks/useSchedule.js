@@ -41,10 +41,10 @@ export function useSchedule(currentViewRange) {
   )
 
   const debouncedSetProgress = useCallback(
-    debounce((value) => {
+    debounce(value => {
       setProgress(value)
     }, PROGRESS_UPDATE_INTERVAL),
-    []
+    [],
   )
 
   const processDataBatch = useCallback(startIndex => {
@@ -87,7 +87,8 @@ export function useSchedule(currentViewRange) {
           const bIsGeneric = b.id.startsWith('Tech ')
           if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
           return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) - Number.parseInt(b.id.split(' ')[1], 10)
+            ? Number.parseInt(a.id.split(' ')[1], 10) -
+                Number.parseInt(b.id.split(' ')[1], 10)
             : a.id.localeCompare(b.id)
         })
 

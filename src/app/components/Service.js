@@ -9,7 +9,7 @@ import {
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
-import { Car } from 'lucide-react'
+import { Car, Clock } from 'lucide-react'
 
 export default function Service({ service, updateServiceEnforcement }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -83,22 +83,39 @@ export default function Service({ service, updateServiceEnforcement }) {
           </a>
         </h3>
 
+        {/* Format time display based on available data */}
+        {service?.start && service?.end && (
+          <div className="my-2 flex items-center gap-x-2 font-semibold">
+            <Clock
+              strokeWidth={2.5}
+              className="h-4 w-4"
+            />
+            <span className="leading-none">
+              {dayjs(service.start).format('M/D')} {formatTime(service.start)}-
+              {formatTime(service.end)}
+            </span>
+          </div>
+        )}
+
+        {/* Distance from previous point */}
         {service.distanceFromPrevious && (
-          <p className="mb-2">
-            <div className="flex items-center gap-x-1">
-              <span>
-                <Car />
-              </span>
-              <span className="whitespace-nowrap font-bold">
-                {service.distanceFromPrevious?.toFixed(2)} mi
+          <div className="mb-2">
+            <div className="flex items-center gap-x-2">
+              <Car
+                size={32}
+                strokeWidth={2.5}
+                className="h-4 w-4"
+              />
+              <span className="whitespace-nowrap font-semibold">
+                {service.distanceFromPrevious.toFixed(2)} mi
               </span>
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                from {service?.previousCompany}
+                from {service.previousCompany}
               </div>
             )}
-          </p>
+          </div>
         )}
 
         <p className="mb-2">

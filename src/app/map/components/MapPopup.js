@@ -13,50 +13,9 @@ const MapPopup = ({ service }) => {
     return `${cluster} (${reason || 'unclustered'})`
   }
 
-  // Format time display based on available data
-  function getTimeDisplay() {
-    console.log(
-      'visited',
-      service.time.visited,
-      'start',
-      service.time.start,
-      'end',
-      service.time.end,
-    )
-    if (service.time?.visited) {
-      const start = dayjs(service.time.visited)
-      const end = start.add(service.time.duration, 'minutes')
-      return (
-        <div className="mb-2 flex items-center gap-x-1 font-semibold text-blue-600">
-          <Clock className="h-4 w-4" />
-          <span>
-            {start.format('M/D h:mm A')} - {end.format('h:mm A')}
-          </span>
-        </div>
-      )
-    }
-
-    if (service.start && service.end) {
-      return (
-        <div className="mb-2 flex items-center gap-x-1 font-semibold text-blue-600">
-          <Clock className="h-4 w-4" />
-          <span>
-            {dayjs(service.start).format('M/D h:mm A')} -{' '}
-            {dayjs(service.end).format('h:mm A')}
-          </span>
-        </div>
-      )
-    }
-
-    return null
-  }
-
   return (
     <Popup>
       <div className="w-full max-w-sm text-sm leading-relaxed">
-        {/* Time Display */}
-        {getTimeDisplay()}
-
         <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
           <a
             href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
@@ -69,12 +28,30 @@ const MapPopup = ({ service }) => {
           </a>
         </h3>
 
+        {/* Format time display based on available data */}
+        {service?.start && service?.end && (
+          <div className="my-2 flex items-center gap-x-2 font-semibold">
+            <Clock
+              strokeWidth={2.5}
+              className="h-4 w-4"
+            />
+            <span className="leading-none">
+              {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
+              {formatTime(service.end)}
+            </span>
+          </div>
+        )}
+
         {/* Distance from previous point */}
         {service.distanceFromPrevious && (
           <div className="mb-2">
-            <div className="flex items-center gap-x-1">
-              <Car className="h-4 w-4" />
-              <span className="whitespace-nowrap font-bold">
+            <div className="flex items-center gap-x-2">
+              <Car
+                size={32}
+                strokeWidth={2.5}
+                className="h-4 w-4"
+              />
+              <span className="whitespace-nowrap font-semibold">
                 {service.distanceFromPrevious.toFixed(2)} mi
               </span>
             </div>

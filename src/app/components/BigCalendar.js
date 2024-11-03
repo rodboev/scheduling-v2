@@ -71,9 +71,6 @@ export default function BigCalendar() {
           schedulingProgress={schedulingProgress}
         />
       )}
-      <div className="w-64 border-r">
-        <UnassignedServices services={filteredUnassignedServices} />
-      </div>
       <div className="flex flex-grow flex-col overflow-auto">
         <Header>
           <EnforceSwitch
