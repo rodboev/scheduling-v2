@@ -10,7 +10,7 @@ const LOG_MATRIX = false
 let currentWorker = null
 let currentAbortController = null
 let currentRequestId = 0
-const WORKER_TIMEOUT = 10000
+const WORKER_TIMEOUT = 4000
 
 async function processRequest(params, requestId) {
   if (currentWorker) {
@@ -22,101 +22,88 @@ async function processRequest(params, requestId) {
   currentRequestId = requestId
   currentAbortController = new AbortController()
 
+  let services = []
   try {
-    const services = await fetchServices(params)
-    if (!services?.length) {
-      console.warn('No services found')
-      return { error: 'No services found' }
-    }
-
-    const distanceMatrix = await createDistanceMatrix(services)
-    if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
-      console.warn('Invalid distance matrix')
-      return { error: 'Invalid distance matrix' }
-    }
-
-    currentWorker = new Worker(
-      path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
+    const response = await axios.get(
+      `http://localhost:${process.env.PORT}/api/services`,
+      {
+        params: { start: params.start, end: params.end },
+      },
     )
+    services = response.data.filter(
+      service =>
+        service.time.range[0] !== null && service.time.range[1] !== null,
+    )
+  } catch (error) {
+    console.error(`Error fetching services for request ${requestId}:`, error)
+    throw error
+  }
 
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(async () => {
-        if (currentRequestId === requestId) {
-          console.log(
-            `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
-          )
-          await terminateWorker()
-          resolve({
-            error: 'Worker timeout - clustering operation took too long',
-          })
-        }
-      }, WORKER_TIMEOUT)
+  const distanceMatrix = await createDistanceMatrix(services)
+  if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
+    console.warn(`Invalid distance matrix for request ${requestId}`)
+    return { clusteredServices: services, clusteringInfo: {} }
+  }
 
-      currentWorker.on('message', async result => {
-        if (currentRequestId === requestId) {
-          console.log(`Received result for request ${requestId}`)
-          clearTimeout(timeoutId)
-          await terminateWorker()
-          resolve(result)
-        }
-      })
+  currentWorker = new Worker(
+    path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
+  )
 
-      currentWorker.on('error', async error => {
-        if (currentRequestId === requestId) {
-          console.error(`Worker error for request ${requestId}:`, error)
-          clearTimeout(timeoutId)
-          await terminateWorker()
-          resolve({ error: `Worker error: ${error.message}` })
-        }
-      })
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(async () => {
+      if (currentRequestId === requestId) {
+        console.log(
+          `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
+        )
+        await terminateWorker()
+        resolve({ error: 'Worker timeout' })
+      }
+    }, WORKER_TIMEOUT)
 
-      currentWorker.on('exit', code => {
-        if (code !== 0) {
-          console.error(`Worker stopped with exit code ${code}`)
-        }
-      })
-
-      currentAbortController.signal.addEventListener('abort', async () => {
-        if (currentRequestId === requestId) {
-          console.log(`Request ${requestId} aborted`)
-          clearTimeout(timeoutId)
-          await terminateWorker()
-          reject(new Error('Worker aborted'))
-        }
-      })
-
-      try {
-        currentWorker.postMessage({
-          services,
-          distanceMatrix,
-          minPoints: params.minPoints,
-          maxPoints: params.maxPoints,
-          clusterUnclustered: params.clusterUnclustered,
-          algorithm: params.algorithm,
-        })
-      } catch (error) {
-        console.error('Error posting message to worker:', error)
+    currentWorker.on('message', async result => {
+      if (currentRequestId === requestId) {
+        console.log(`Received result for request ${requestId}`)
         clearTimeout(timeoutId)
-        terminateWorker()
-        resolve({ error: 'Failed to start clustering operation' })
+        await terminateWorker()
+        resolve(result)
       }
     })
-  } catch (error) {
-    console.error('Error in processRequest:', error)
-    return { error: error.message }
-  }
+
+    currentWorker.on('error', async error => {
+      if (currentRequestId === requestId) {
+        console.error(`Worker error for request ${requestId}:`, error)
+        clearTimeout(timeoutId)
+        await terminateWorker()
+        resolve({ error: error.message })
+      }
+    })
+
+    currentAbortController.signal.addEventListener('abort', async () => {
+      if (currentRequestId === requestId) {
+        console.log(`Request ${requestId} aborted`)
+        clearTimeout(timeoutId)
+        await terminateWorker()
+        reject(new Error('Worker aborted'))
+      }
+    })
+
+    currentWorker.postMessage({
+      services,
+      distanceMatrix,
+      minPoints: params.minPoints,
+      maxPoints: params.maxPoints,
+      clusterUnclustered: params.clusterUnclustered,
+      algorithm: params.algorithm,
+    })
+  })
 }
 
 async function terminateWorker() {
   if (currentWorker) {
-    try {
-      await new Promise(resolve => {
-        currentWorker.once('exit', resolve)
-        currentWorker.terminate()
-      })
-    } catch (error) {
-      console.error('Error terminating worker:', error)
-    }
+    await new Promise(resolve => {
+      currentWorker.once('exit', resolve)
+      currentWorker.terminate()
+    })
     currentWorker = null
   }
   currentAbortController = null
@@ -152,7 +139,26 @@ export async function GET(request) {
   }
 
   try {
-    const result = await processRequest(params, requestId)
+    const services = await fetchServices(params)
+    if (!services?.length) {
+      return NextResponse.json(
+        { error: 'No services found for date range' },
+        { status: 404 },
+      )
+    }
+
+    const distanceMatrix = await createDistanceMatrix(services)
+    if (!distanceMatrix?.length) {
+      return NextResponse.json(
+        { error: 'Failed to create distance matrix' },
+        { status: 500 },
+      )
+    }
+
+    const result = await processRequest(
+      { ...params, services, distanceMatrix },
+      requestId,
+    )
 
     if (currentRequestId !== requestId) {
       console.log(`Request ${requestId} superseded by a newer request`)
@@ -169,6 +175,7 @@ export async function GET(request) {
 
     const { clusteredServices, clusteringInfo } = result
 
+    // Include clusteringInfo in the response
     const responseData = {
       clusteredServices,
       clusteringInfo,

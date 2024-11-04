@@ -10,7 +10,6 @@ import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
-import debounce from 'lodash/debounce'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 
 /**
@@ -107,8 +106,8 @@ const MapView = () => {
         )
       }
 
-      // Split into chunks of 200 pairs
-      const chunkedPairs = chunk(pairs, 200)
+      // Split into chunks of 500 pairs
+      const chunkedPairs = chunk(pairs, 500)
 
       // Fetch distances for all pairs in the cluster
       const distanceResults = []
@@ -231,8 +230,8 @@ const MapView = () => {
           }
         }
 
-        // Split pairs into chunks of 200 to avoid too large URLs
-        const chunkedPairs = chunk(pairs, 200)
+        // Split pairs into chunks of 500 to avoid too large URLs
+        const chunkedPairs = chunk(pairs, 500)
         const distanceMatrix = Array(services.length)
           .fill()
           .map(() => Array(services.length).fill(0))

@@ -7,7 +7,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 // Helper function to get distances in batches
 async function getDistances(pairs) {
   try {
-    const chunkedPairs = chunk(pairs, 200)
+    const chunkedPairs = chunk(pairs, 500)
     const allResults = []
 
     for (const pairChunk of chunkedPairs) {
