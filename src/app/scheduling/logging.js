@@ -4,23 +4,22 @@ import {
   formatTime,
   calculateDuration,
 } from '../utils/dateHelpers.js'
-import { findGaps, canFitInGap } from '../utils/gaps.js'
 
 const SHOW_ONLY_TECH_1_SHIFT_1 = 0 // Toggle to show only Tech 1 Shift 1 when set to 1
 
 export function printSummary({ techSchedules, unassignedServices }) {
   console.log('Schedule Summary:\n')
 
-  const techSummaries = []
+  let techSummaries = []
   let totalHours = 0
   let techCount = 0
 
-  for (const [techId, schedule] of Object.entries(techSchedules)) {
+  Object.entries(techSchedules).forEach(([techId, schedule], techIndex) => {
     if (
       SHOW_ONLY_TECH_1_SHIFT_1 &&
       (techIndex !== 0 || !schedule.shifts || schedule.shifts.length === 0)
     ) {
-      continue
+      return // Skip other techs when toggle is enabled
     }
 
     if (schedule.shifts && schedule.shifts.length > 0) {
@@ -29,9 +28,9 @@ export function printSummary({ techSchedules, unassignedServices }) {
 
       let techTotalHours = 0
 
-      for (const [shiftIndex, shift] of schedule.shifts.entries()) {
+      schedule.shifts.forEach((shift, shiftIndex) => {
         if (SHOW_ONLY_TECH_1_SHIFT_1 && shiftIndex !== 0) {
-          continue
+          return // Skip other shifts when toggle is enabled
         }
 
         const shiftStart = new Date(shift.shiftStart)
@@ -46,11 +45,12 @@ export function printSummary({ techSchedules, unassignedServices }) {
         console.log(`Shift ${shiftIndex + 1} (${shiftTimeRange}):`)
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
+          // Sort services by their assigned index to ensure correct order
           const sortedServices = [...shift.services].sort(
             (a, b) => a.index - b.index,
           )
 
-          for (const service of sortedServices) {
+          sortedServices.forEach((service, serviceIndex) => {
             const startTime = new Date(service.start)
             const endTime = new Date(service.end)
             const date = formatDate(startTime)
@@ -62,23 +62,17 @@ export function printSummary({ techSchedules, unassignedServices }) {
                     formatTime(new Date(service.time.range[0])),
                     formatTime(new Date(service.time.range[1])),
                   ].join(' - ')
-                : ''
+                : 'Invalid'
 
             const distance = service?.distanceFromPrevious?.toFixed(2)
             const distanceStr = distance
-              ? `(${distance}mi from ${service.previousCompany})`
-              : ''
-
-            const lat = service.location.latitude.toFixed(2)
-            const long = service.location.longitude.toFixed(2)
-
-            const shiftDate = formatDate(shiftStart)
-            const serviceDate = date !== shiftDate ? `${date}, ` : ''
+              ? `(${distance} mi from ${service.previousCompany})`
+              : `(distance missing)`
 
             console.log(
-              `${service.index ? `[${service.index}] ` : ''}${serviceDate}${start}-${end}, ${service.company} (${lat}, ${long}) (range: ${timeRange}) ${distanceStr}`.trim(),
+              `- [${service.index}] ${date}, ${start}-${end}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${timeRange}) ${distanceStr}`,
             )
-          }
+          })
 
           const firstService = sortedServices[0]
           const lastService = sortedServices[sortedServices.length - 1]
@@ -92,63 +86,51 @@ export function printSummary({ techSchedules, unassignedServices }) {
           console.log('No services scheduled in this shift.')
         }
 
-        const gaps = findGaps({
-          shift,
-          from: shiftStart,
-          to: shiftEnd,
-          minimumGap: 15,
-        })
-
+        // Find and print gaps
+        const gaps = findScheduleGaps(shift, shiftStart, shiftEnd)
         if (gaps.length > 0) {
           console.log('Gaps in this shift:')
-          for (const [index, gap] of gaps.entries()) {
+          gaps.forEach((gap, index) => {
             const gapStart = formatShiftTime(gap.start)
             const gapEnd = formatShiftTime(gap.end)
+            const gapDuration = calculateDuration(gap.start, gap.end)
             console.log(
-              `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${formatHours(gap.duration)} hours)`,
+              `  Gap ${index + 1}: ${gapStart} - ${gapEnd} (${formatHours(gapDuration)} hours)`,
             )
-          }
+          })
         } else {
           console.log('No gaps found in this shift.')
         }
 
         console.log('')
-      }
+      })
 
       techSummaries.push(techTotalHours)
       totalHours += techTotalHours
     }
-  }
+  })
 
   if (!SHOW_ONLY_TECH_1_SHIFT_1) {
+    // Print unassigned services
     if (unassignedServices.length > 0) {
       console.log('Unassigned services:')
-      for (const service of unassignedServices) {
-        const serviceDate = new Date(service.date)
+      unassignedServices.forEach(service => {
+        const date = formatDate(new Date(service.date))
         const timeRange =
           service.time.range[0] && service.time.range[1]
             ? [
                 formatTime(new Date(service.time.range[0])),
                 formatTime(new Date(service.time.range[1])),
               ].join(' - ')
-            : 'ANY'
-
-        const preferredTime = service.time.preferred
-          ? formatTime(new Date(service.time.preferred))
-          : 'none'
-
-        const lat = service.location.latitude.toFixed(2)
-        const long = service.location.longitude.toFixed(2)
-        const date = formatDate(serviceDate)
-
+            : 'Invalid time range'
         console.log(
-          `${date}, ${timeRange}, ${service.company} (${lat}, ${long}) (preferred: ${preferredTime}) (id: ${service.id})`.trim(),
+          `- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`,
         )
-      }
-      console.log(`\nTotal unassigned services: ${unassignedServices.length}`)
+      })
       console.log('')
     }
 
+    // Print total hours summary
     const averageHours = totalHours / techCount
     const formattedTechHours = techSummaries.map(formatHours).join(', ')
     console.log(
@@ -157,6 +139,33 @@ export function printSummary({ techSchedules, unassignedServices }) {
   }
 }
 
+// Helper function to format hours
 function formatHours(hours) {
   return Number.isInteger(hours) ? hours.toString() : hours.toFixed(2)
+}
+
+// Placeholder for findScheduleGaps function
+function findScheduleGaps(shift, shiftStart, shiftEnd) {
+  const gaps = []
+  const sortedServices = [...shift.services].sort(
+    (a, b) => new Date(a.start) - new Date(b.start),
+  )
+
+  let previousEnd = shiftStart
+  sortedServices.forEach(service => {
+    const serviceStart = new Date(service.start)
+    if (serviceStart > previousEnd) {
+      gaps.push({ start: previousEnd, end: serviceStart })
+    }
+    const serviceEnd = new Date(service.end)
+    if (serviceEnd > previousEnd) {
+      previousEnd = serviceEnd
+    }
+  })
+
+  if (previousEnd < shiftEnd) {
+    gaps.push({ start: previousEnd, end: shiftEnd })
+  }
+
+  return gaps
 }

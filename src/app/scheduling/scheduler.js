@@ -1,6 +1,5 @@
 // /src/app/scheduling/scheduler.js
 import { addMinutes, addHours, max, min } from '../utils/dateHelpers.js'
-import { findGaps, canFitInGap } from '../utils/gaps.js'
 import { MAX_SHIFT_HOURS, MIN_REST_HOURS } from './index.js'
 import { findBestPosition, updateDistances } from './optimize.js'
 import {
@@ -21,16 +20,6 @@ export async function scheduleService({
   techSchedules,
   remainingServices,
 }) {
-  // Early validation
-  if (!service.time?.range?.[0] || !service.time?.range?.[1]) {
-    console.log(
-      'Invalid time range for service:',
-      service.id,
-      service.time?.range,
-    )
-    return { scheduled: false, reason: 'Invalid time range' }
-  }
-
   const sortedTechs = Object.keys(techSchedules).sort(
     (a, b) => techSchedules[b].shifts.length - techSchedules[a].shifts.length,
   )
@@ -140,24 +129,7 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
   const shiftStart = new Date(shift.shiftStart)
   const shiftEnd = new Date(shift.shiftEnd)
 
-  // Pre-calculate all existing service time ranges once
-  const existingServiceRanges = shift.services.map(existingService => ({
-    start: new Date(existingService.start),
-    end: new Date(existingService.end),
-  }))
-
-  // Pre-calculate total shift minutes
-  const currentShiftMinutes = shift.services.reduce(
-    (acc, srv) => acc + srv.time.duration,
-    0,
-  )
-
-  // Early exit if shift would exceed max hours
-  if (currentShiftMinutes + serviceDuration > MAX_SHIFT_HOURS * 60) {
-    return { scheduled: false }
-  }
-
-  const startTime = max(shiftStart, rangeStart)
+  let startTime = max(shiftStart, rangeStart)
   const latestPossibleStart = min(
     shiftEnd,
     rangeEnd,
@@ -167,32 +139,25 @@ async function tryScheduleInShift({ service, shift, techId, techSchedules }) {
     latestPossibleStart.getMinutes() - serviceDuration,
   )
 
-  // Find all possible gaps first
-  const gaps = findGaps({
-    shift: { ...shift, services: existingServiceRanges },
-    from: startTime,
-    to: latestPossibleStart,
-  })
+  while (startTime <= latestPossibleStart) {
+    const endTime = addMinutes(startTime, serviceDuration)
 
-  // Try to schedule in each gap
-  for (const gap of gaps) {
-    if (gap.end - gap.start >= serviceDuration * 60 * 1000) {
-      // Convert minutes to milliseconds
-      const scheduledService = {
-        ...service,
-        start: gap.start,
-        end: addMinutes(gap.start, serviceDuration),
-      }
+    if (
+      endTime <= rangeEnd &&
+      (await canScheduleAtTime(shift, startTime, endTime, service))
+    ) {
+      const scheduledService = { ...service, start: startTime, end: endTime }
 
+      // Insert the service into the shift's services
       shift.services.push(scheduledService)
+
+      // Update distances for the shift
       await updateDistances(shift.services)
-
-      if (scheduledService.end > shift.shiftEnd) {
-        shift.shiftEnd = scheduledService.end
-      }
-
+      if (endTime > shift.shiftEnd) shift.shiftEnd = endTime
       return { scheduled: true }
     }
+
+    startTime = addMinutes(startTime, 15)
   }
 
   return { scheduled: false }

@@ -90,52 +90,6 @@ export default function BigCalendar() {
 
   const resourceAccessor = useCallback(resource => resource.title, [])
 
-  // Memoize the calendar props to prevent unnecessary re-renders
-  const calendarProps = useMemo(
-    () => ({
-      localizer,
-      dayLayoutAlgorithm: 'no-overlap',
-      events: assignedServices,
-      resources,
-      resourceIdAccessor: 'id',
-      resourceTitleAccessor: resourceAccessor,
-      defaultView: Views.DAY,
-      view,
-      date,
-      views: ['day', 'week', 'month'],
-      step: 15,
-      timeslots: 4,
-      toolbar: true,
-      formats: {
-        timeGutterFormat: 'h:mm A',
-        eventTimeRangeFormat: ({ start, end }) =>
-          `${dayjs(start).format('h:mm A')} - ${dayjs(end).format('h:mm A')}`,
-      },
-      components: {
-        ...calendarComponents,
-        timeSlotWrapper: ({ children }) => (
-          <div className="rbc-time-slot">{children}</div>
-        ),
-      },
-      onSelectEvent: handleSelectEvent,
-      length: 7,
-      draggableAccessor: () => false,
-      resizable: false,
-      min: MIN_TIME,
-      max: MAX_TIME,
-      scrollToTime: dayjs().startOf('day').add(6, 'hour').toDate(), // Scroll to 6 AM
-    }),
-    [
-      assignedServices,
-      resources,
-      view,
-      date,
-      calendarComponents,
-      resourceAccessor,
-      handleSelectEvent,
-    ],
-  )
-
   return (
     <div className="flex h-screen">
       {isScheduling && (
@@ -157,7 +111,33 @@ export default function BigCalendar() {
           <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
         <div className="flex-grow p-4">
-          <Calendar {...calendarProps} />
+          <Calendar
+            localizer={localizer}
+            dayLayoutAlgorithm="no-overlap"
+            events={assignedServices}
+            resources={resources}
+            resourceIdAccessor="id"
+            resourceTitleAccessor={resourceAccessor}
+            defaultView={Views.DAY}
+            view={view}
+            onView={handleView}
+            date={date}
+            onNavigate={handleNavigate}
+            views={['day', 'week', 'month']}
+            step={15}
+            timeslots={4}
+            onRangeChange={handleRangeChange}
+            toolbar={true}
+            formats={{
+              eventTimeRangeFormat: () => null,
+            }}
+            draggableAccessor={() => false}
+            resizable={false}
+            min={MIN_TIME}
+            max={MAX_TIME}
+            components={calendarComponents}
+            onSelectEvent={handleSelectEvent}
+          />
         </div>
       </div>
     </div>

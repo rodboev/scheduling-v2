@@ -7,14 +7,12 @@ import {
   sortServices,
 } from './servicePrep.js'
 
-const PROGRESS_CHUNK = 0.01 // Only send progress updates every 1%
-
 async function runScheduling() {
   try {
     const { services } = workerData
-    let lastProgressSent = 0
 
     console.log(`Total services received: ${services.length}`)
+
     console.time('Total scheduling time')
 
     const invalidServices = filterInvalidServices(services)
@@ -47,70 +45,39 @@ async function runScheduling() {
         }
 
         if (result.scheduled) {
-          const scheduledService = {
-            ...service,
-            start: new Date(service.start).toISOString(),
-            end: new Date(service.end).toISOString(),
-            allDay: false,
-          }
-          shift.services.push(scheduledService)
+          // No need to log each scheduled service
         } else {
-          unassignedReasons[result.reason] =
-            (unassignedReasons[result.reason] || 0) + 1
+          unassignedReasons[result.reason] = (unassignedReasons[result.reason] || 0) + 1
           unassignedServices.push({ ...service, reason: result.reason })
         }
 
         processedCount++
         const progress = processedCount / servicesToSchedule.length
-
-        // Only send progress updates at 1% intervals
-        if (progress - lastProgressSent >= PROGRESS_CHUNK) {
-          parentPort.postMessage({ type: 'progress', data: progress })
-          lastProgressSent = progress
-        }
+        parentPort.postMessage({ type: 'progress', data: progress })
       } catch (error) {
         console.error(`Error scheduling service ${service.id}:`, error)
-        unassignedServices.push({
-          ...service,
-          reason: `Scheduling error: ${error.message}`,
-        })
+        unassignedServices.push({ ...service, reason: `Scheduling error: ${error.message}` })
       }
     }
 
     console.timeEnd('Total scheduling time')
+
     console.log('Scheduling completed')
     console.log(`Total services processed: ${processedCount}`)
     console.log('Tech schedules:', Object.keys(techSchedules).length)
-
     for (const [techId, schedule] of Object.entries(techSchedules)) {
-      console.log(
-        `  ${techId}: ${schedule.shifts.reduce((sum, shift) => sum + shift.services.length, 0)} services`,
-      )
+      console.log(`  ${techId}: ${schedule.shifts.reduce((sum, shift) => sum + shift.services.length, 0)} services`)
     }
-
     console.log('Unassigned services summary:')
     for (const [reason, count] of Object.entries(unassignedReasons)) {
       console.log(`${count} services unassigned. Reason: ${reason}`)
     }
-
-    // Convert techSchedules to assignedServices array
-    const assignedServices = Object.entries(techSchedules).flatMap(
-      ([techId, schedule]) =>
-        schedule.shifts.flatMap(shift =>
-          shift.services.map(service => ({
-            ...service,
-            resourceId: techId,
-            start: new Date(service.start).toISOString(),
-            end: new Date(service.end).toISOString(),
-            allDay: false,
-          })),
-        ),
-    )
+    console.log(`Invalid services: ${invalidServices.length}`)
 
     parentPort.postMessage({
-      type: 'complete',
+      type: 'result',
       data: {
-        assignedServices,
+        techSchedules,
         unassignedServices: unassignedServices.concat(invalidServices),
       },
     })
@@ -119,19 +86,18 @@ async function runScheduling() {
     parentPort.postMessage({
       type: 'error',
       error: error.message,
+      stack: error.stack,
     })
+  } finally {
+    await closeRedisConnection()
   }
 }
 
-// Move Redis cleanup outside the main scheduling function
-runScheduling()
-  .catch(error => {
-    console.error('Error in worker:', error)
-    parentPort.postMessage({
-      type: 'error',
-      error: error.message,
-    })
+runScheduling().catch(error => {
+  console.error('Error in worker:', error)
+  parentPort.postMessage({
+    type: 'error',
+    error: error.message,
+    stack: error.stack,
   })
-  .finally(async () => {
-    await closeRedisConnection()
-  })
+})

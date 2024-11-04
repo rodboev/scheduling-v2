@@ -6,39 +6,6 @@
 .rbc-time-header .rbc-row-segment .rbc-event-content {
   white-space: normal;
 }
-
-/* Add performance optimizations */
-.rbc-calendar {
-  transform: translate3d(0, 0, 0);
-  will-change: transform;
-  contain: layout style paint;
-  content-visibility: auto;
-  contain-intrinsic-size: 1000px;
-}
-
-.rbc-time-content {
-  contain: strict;
-  content-visibility: auto;
-  contain-intrinsic-size: 1000px;
-}
-
-.rbc-events-container {
-  contain: strict;
-  content-visibility: auto;
-}
-
-.rbc-event {
-  contain: content;
-  will-change: transform;
-}
-
-/* Reduce paint operations */
-.rbc-time-slot {
-  contain: strict;
-  content-visibility: auto;
-}
-
-/* Keep existing calendar styles */
 .rbc-calendar .rbc-background-event,
 .rbc-calendar .rbc-event {
   @apply w-fit border border-solid border-teal bg-teal/85;
@@ -153,32 +120,4 @@ div.leaflet-container {
 }
 div.leaflet-container a {
   color: inherit;
-}
-
-/* Add these styles */
-.rbc-timeslot-group {
-  min-height: 40px;
-}
-
-.rbc-time-slot {
-  min-height: 10px;
-}
-
-.rbc-time-header-content {
-  font-weight: 600;
-}
-
-.rbc-time-gutter {
-  font-size: 0.875rem;
-}
-
-.rbc-event {
-  padding: 2px 4px !important;
-  font-size: 0.875rem;
-  line-height: 1.25;
-}
-
-.rbc-time-header-content .rbc-header {
-  font-weight: 600;
-  padding: 4px;
 }
