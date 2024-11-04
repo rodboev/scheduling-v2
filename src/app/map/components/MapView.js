@@ -113,7 +113,10 @@ const MapView = () => {
 
     // Fetch distances for all pairs in one go
     const distanceResults = []
-    for (const pairChunk of chunkedPairs) {
+    for (const [index, pairChunk] of chunkedPairs.entries()) {
+      console.log(
+        `Fetching distances batch ${index + 1}/${chunkedPairs.length}`,
+      )
       const response = await axios.get('/api/distance', {
         params: {
           id: pairChunk,
@@ -391,7 +394,8 @@ const MapView = () => {
               return acc
             },
             { markers: [], validMarkers: 0 },
-          ).markers}
+          ).markers
+        }
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
