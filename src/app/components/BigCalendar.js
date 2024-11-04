@@ -12,13 +12,29 @@ import { useSchedule } from '@/app/hooks/useSchedule'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views, dayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
-import { AutoSizer, List } from 'react-virtualized'
+import AutoSizer from 'react-virtualized-auto-sizer'
+import { FixedSizeList as List } from 'react-window'
 
 const localizer = dayjsLocalizer(dayjs)
 const UPDATE_INTERVAL = 100 // 100ms between UI updates
 
 const MIN_TIME = new Date(2024, 0, 1, 0, 0, 0) // 12:00 AM
 const MAX_TIME = new Date(2024, 0, 1, 23, 59, 59) // 11:59 PM
+
+// Virtual renderer for events
+function VirtualEventRow({ index, style, data }) {
+  const { events, EventComponent, updateServiceEnforcement } = data
+  const event = events[index]
+
+  return (
+    <div style={style}>
+      <Service
+        service={event}
+        updateServiceEnforcement={updateServiceEnforcement}
+      />
+    </div>
+  )
+}
 
 export default function BigCalendar() {
   const defaultDate = new Date(2024, 8, 2)
@@ -76,11 +92,39 @@ export default function BigCalendar() {
     [updateServiceEnforcement],
   )
 
+  const virtualizedEvents = useCallback(
+    ({ events }) => {
+      return (
+        <AutoSizer>
+          {({ height, width }) => (
+            <List
+              height={height}
+              width={width}
+              itemCount={events.length}
+              itemSize={50} // Adjust this value based on your event height
+              itemData={{
+                events,
+                EventComponent: eventComponent,
+                updateServiceEnforcement,
+              }}
+            >
+              {VirtualEventRow}
+            </List>
+          )}
+        </AutoSizer>
+      )
+    },
+    [eventComponent, updateServiceEnforcement],
+  )
+
   const calendarComponents = useMemo(
     () => ({
       event: eventComponent,
+      agenda: {
+        event: virtualizedEvents,
+      },
     }),
-    [eventComponent],
+    [eventComponent, virtualizedEvents],
   )
 
   // Add click capture handler
@@ -113,46 +157,56 @@ export default function BigCalendar() {
           className="flex-grow p-4"
           onClickCapture={handleClickCapture}
         >
-          <Calendar
-            localizer={localizer}
-            dayLayoutAlgorithm="no-overlap"
-            events={assignedServices}
-            resources={resources}
-            resourceIdAccessor="id"
-            defaultView={Views.DAY}
-            view={view}
-            onView={handleView}
-            date={date}
-            onNavigate={handleNavigate}
-            views={['day', 'week', 'month']}
-            step={15}
-            timeslots={4}
-            onRangeChange={handleRangeChange}
-            toolbar={true}
-            formats={{
-              eventTimeRangeFormat: () => null,
-            }}
-            draggableAccessor={() => false}
-            resizable={false}
-            min={MIN_TIME}
-            max={MAX_TIME}
-            components={calendarComponents}
-            selectable={false}
-            onSelectEvent={null}
-            onSelectSlot={null}
-            onClick={null}
-            onDoubleClick={null}
-            onKeyPressEvent={null}
-            onDragStart={null}
-            onDragOver={null}
-            onDrop={null}
-            eventPropGetter={() => ({
-              style: { cursor: 'pointer' },
-            })}
-            slotPropGetter={() => ({
-              style: { cursor: 'default' },
-            })}
-          />
+          <AutoSizer>
+            {({ height, width }) => (
+              <div style={{ height, width }}>
+                <Calendar
+                  localizer={localizer}
+                  dayLayoutAlgorithm="no-overlap"
+                  events={assignedServices}
+                  resources={resources}
+                  resourceIdAccessor="id"
+                  defaultView={Views.DAY}
+                  view={view}
+                  onView={handleView}
+                  date={date}
+                  onNavigate={handleNavigate}
+                  views={['day', 'week', 'month']}
+                  step={15}
+                  timeslots={4}
+                  onRangeChange={handleRangeChange}
+                  toolbar={true}
+                  formats={{
+                    eventTimeRangeFormat: () => null,
+                  }}
+                  draggableAccessor={() => false}
+                  resizable={false}
+                  min={MIN_TIME}
+                  max={MAX_TIME}
+                  components={calendarComponents}
+                  selectable={false}
+                  onSelectEvent={null}
+                  onSelectSlot={null}
+                  onClick={null}
+                  onDoubleClick={null}
+                  onKeyPressEvent={null}
+                  onDragStart={null}
+                  onDragOver={null}
+                  onDrop={null}
+                  eventPropGetter={() => ({
+                    style: { cursor: 'pointer' },
+                  })}
+                  slotPropGetter={() => ({
+                    style: { cursor: 'default' },
+                  })}
+                  length={7}
+                  onShowMore={(events, date) =>
+                    console.log('show more', events, date)
+                  }
+                />
+              </div>
+            )}
+          </AutoSizer>
         </div>
       </div>
     </div>
