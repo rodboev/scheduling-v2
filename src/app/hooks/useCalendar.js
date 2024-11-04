@@ -10,21 +10,22 @@ export function useCalendar(defaultDate = new Date()) {
     if (view === Views.DAY) {
       return createDateRange(date, date)
     }
-    else if (view === Views.WEEK) {
+
+    if (view === Views.WEEK) {
       return createDateRange(
         dayjs(date).startOf('week').toDate(),
         dayjs(date).endOf('week').toDate(),
       )
     }
-    else if (view === Views.MONTH) {
+
+    if (view === Views.MONTH) {
       return createDateRange(
         dayjs(date).startOf('month').toDate(),
         dayjs(date).endOf('month').toDate(),
       )
     }
-    else {
-      return createDateRange(date, date)
-    }
+
+    return createDateRange(date, date)
   })
 
   const handleView = useCallback(newView => {

@@ -1,35 +1,30 @@
+import { getDefaultDateRange } from '@/app/utils/dates'
 import axios from 'axios'
 import { NextResponse } from 'next/server'
 import { scheduleServices } from '../../scheduling/index.js'
 
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+const MIN_PROGRESS_INCREMENT = 0.01 // 1% minimum increment
+const PROGRESS_UPDATE_INTERVAL = 100 // 100ms minimum between updates
+
 async function fetchServices(start, end) {
   try {
-    const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/services`,
-      {
-        params: { start, end },
-      },
-    )
+    const response = await axios.get(`${BASE_URL}/api/services`, {
+      params: { start, end },
+    })
+    console.log(`Fetched ${response.data.length} services from API`)
     return response.data
   } catch (error) {
     console.error('Error fetching services:', error)
-    throw error
+    throw new Error(`Failed to fetch services: ${error.message}`)
   }
 }
 
 export async function GET(request) {
-  console.log('Schedule API route called')
-
   const { searchParams } = new URL(request.url)
-  const start = searchParams.get('start')
-  const end = searchParams.get('end')
-
-  if (!start || !end) {
-    return NextResponse.json(
-      { error: 'Start and end dates are required' },
-      { status: 400 },
-    )
-  }
+  const defaultRange = getDefaultDateRange()
+  const start = searchParams.get('start') || defaultRange.start
+  const end = searchParams.get('end') || defaultRange.end
 
   const encoder = new TextEncoder()
 
@@ -39,60 +34,69 @@ export async function GET(request) {
 
     const stream = new ReadableStream({
       async start(controller) {
-        try {
-          console.log('Scheduling services...')
+        let lastProgress = 0
+        let lastUpdateTime = Date.now()
 
-          for await (const result of scheduleServices(services)) {
-            if (result.type === 'progress') {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: 'progress', data: result.data })}\n\n`,
-                ),
-              )
-            } else if (result.type === 'result') {
-              const { scheduledServices, unassignedServices } = result.data
-              console.log(`Scheduled services: ${scheduledServices.length}`)
+        for await (const result of scheduleServices(services)) {
+          if (result.type === 'progress') {
+            const currentTime = Date.now()
+            const timeDiff = currentTime - lastUpdateTime
+            const progressDiff = result.data - lastProgress
 
-              // Group unassigned services by reason
-              const unassignedGroups = unassignedServices.reduce(
-                (acc, service) => {
-                  acc[service.reason] = (acc[service.reason] || 0) + 1
-                  return acc
-                },
-                {},
-              )
-
-              // Create summary messages for unassigned services
-              const unassignedSummaries = Object.entries(unassignedGroups).map(
-                ([reason, count]) =>
-                  `${count} services unassigned. Reason: ${reason}`,
-              )
-
-              console.log('Unassigned services summary:')
-              for (const summary of unassignedSummaries) {
-                console.log(summary)
-              }
-
+            // Only send progress if enough time has passed AND progress is significant
+            if (
+              timeDiff >= PROGRESS_UPDATE_INTERVAL &&
+              progressDiff >= MIN_PROGRESS_INCREMENT
+            ) {
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
-                    type: 'result',
-                    scheduledServices,
-                    unassignedServices: unassignedSummaries,
+                    type: 'progress',
+                    data: Math.floor(result.data * 100) / 100,
                   })}\n\n`,
                 ),
               )
+              lastProgress = result.data
+              lastUpdateTime = currentTime
             }
+          } else if (result.type === 'complete') {
+            const { assignedServices, unassignedServices, resources } =
+              result.data
+            console.log(`Scheduled services: ${assignedServices.length}`)
+
+            // Group unassigned services by reason
+            const unassignedGroups = unassignedServices.reduce(
+              (acc, service) => {
+                acc[service.reason] = (acc[service.reason] || 0) + 1
+                return acc
+              },
+              {},
+            )
+
+            // Create summary messages for unassigned services
+            const unassignedSummaries = Object.entries(unassignedGroups).map(
+              ([reason, count]) =>
+                `${count} services unassigned. Reason: ${reason}`,
+            )
+
+            console.log('Unassigned services summary:')
+            for (const summary of unassignedSummaries) {
+              console.log(summary)
+            }
+
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'complete',
+                  data: {
+                    assignedServices,
+                    unassignedServices: unassignedSummaries,
+                    resources,
+                  },
+                })}\n\n`,
+              ),
+            )
           }
-        } catch (error) {
-          console.error('Error in schedule route:', error)
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: 'error', error: error.message, stack: error.stack })}\n\n`,
-            ),
-          )
-        } finally {
-          controller.close()
         }
       },
     })

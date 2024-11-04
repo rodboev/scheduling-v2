@@ -41,6 +41,8 @@ export function formatTimeRange(start, end) {
 }
 
 export function parseTime(timeStr, defaultPeriod = null) {
+  if (!timeStr || typeof timeStr !== 'string') return null
+
   let time = timeStr.trim().toUpperCase()
 
   // Identify and handle AM/PM suffixes first
@@ -97,9 +99,13 @@ export function parseTime(timeStr, defaultPeriod = null) {
   return totalSeconds
 }
 
-export const parseTimeRange = memoize((timeRangeStr, duration = 30) => {
+export function parseTimeRange(timeRangeStr, duration = 30) {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
     return [null, null]
+  }
+
+  if (timeRangeStr.trim().toUpperCase() === 'ANY') {
+    return [0, 86400] // 24 hours
   }
 
   const parts = timeRangeStr.split('-')
@@ -119,24 +125,9 @@ export const parseTimeRange = memoize((timeRangeStr, duration = 30) => {
 
   // Time range input
   return parseTimeRangeInterval(timeRangeStr)
-})
-
-export const memoizedParseTimeRange = parseTimeRange
-
-function memoize(fn) {
-  const cache = new Map()
-  return function (...args) {
-    const key = JSON.stringify(args)
-    if (cache.has(key)) {
-      return cache.get(key)
-    }
-    const result = fn.apply(this, args)
-    cache.set(key, result)
-    return result
-  }
 }
 
-export function parseTimeRangeInterval(timeRangeStr) {
+export const parseTimeRangeInterval = memoize(timeRangeStr => {
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
     return [null, null]
   }
@@ -198,6 +189,21 @@ export function parseTimeRangeInterval(timeRangeStr) {
   }
 
   return [startTime, endTime]
+})
+
+export const memoizedParseTimeRange = parseTimeRange
+
+function memoize(fn) {
+  const cache = new Map()
+  return function (...args) {
+    const key = JSON.stringify(args)
+    if (cache.has(key)) {
+      return cache.get(key)
+    }
+    const result = fn.apply(this, args)
+    cache.set(key, result)
+    return result
+  }
 }
 
 export function round(time) {

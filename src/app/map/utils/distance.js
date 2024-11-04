@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 
 export async function getDistance(fromService, toService) {
   if (!fromService?.location?.id || !toService?.location?.id) {
@@ -55,6 +55,19 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c
 }
 
-export function calculateTravelTime(distance) {
-  return (distance / 20) * 60 // Returns travel time in minutes at 20mph
+export function calculateTravelTime(lat1, lon1, lat2, lon2) {
+  const R = 3959 // Earth's radius in miles
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  const distance = R * c
+
+  // Assuming 20mph average speed
+  return (distance / 20) * 60 // Returns travel time in minutes
 }

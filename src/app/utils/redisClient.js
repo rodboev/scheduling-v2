@@ -1,6 +1,6 @@
+import axios from 'axios'
 import Redis from 'ioredis'
 import NodeCache from 'node-cache'
-import axios from 'axios'
 
 let redis
 const memoryCache = new NodeCache({ stdTTL: 3600 }) // Cache for 1 hour
@@ -15,7 +15,7 @@ export function getRedisClient() {
     console.log(`Connecting to Redis: ${redisUrl.replace(/\/\/.*@/, '//')}`) // Hide credentials in logs
 
     const options = {
-      retryStrategy: (times) => {
+      retryStrategy: times => {
         if (times > 3) {
           console.error(`Redis connection failed after ${times} attempts`)
           return null // Stop retrying after 3 attempts
@@ -25,7 +25,7 @@ export function getRedisClient() {
       connectTimeout: 10000, // 10 seconds
       maxRetriesPerRequest: 3,
       enableReadyCheck: false,
-      tls: redisUrl.includes('redislabs.com') 
+      tls: redisUrl.includes('redislabs.com')
         ? { rejectUnauthorized: false }
         : undefined,
     }
@@ -45,9 +45,14 @@ export function getRedisClient() {
 
 export async function closeRedisConnection() {
   if (redis) {
-    await redis.quit()
-    redis = null
-    console.log('Redis connection closed')
+    try {
+      await redis.quit()
+    } catch (error) {
+      console.error('Error closing Redis connection:', error)
+    } finally {
+      redis = null
+      console.log('Redis connection closed')
+    }
   }
 }
 
@@ -60,7 +65,9 @@ export async function getDistances(pairs) {
   }
 
   const results = await pipeline.exec()
-  return results.map(([err, result]) => (err ? null : Number.parseFloat(result)))
+  return results.map(([err, result]) =>
+    err ? null : Number.parseFloat(result),
+  )
 }
 
 export async function getLocationInfo(ids) {

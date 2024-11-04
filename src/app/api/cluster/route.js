@@ -1,3 +1,4 @@
+import { getDefaultDateRange } from '@/app/utils/dates'
 import { createDistanceMatrix } from '@/app/utils/distance'
 import { getCachedData, setCachedData } from '@/app/utils/redisClient'
 import axios from 'axios'
@@ -111,9 +112,11 @@ async function terminateWorker() {
 export async function GET(request) {
   const requestId = ++currentRequestId
   const { searchParams } = new URL(request.url)
+  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
+
   const params = {
-    start: searchParams.get('start'),
-    end: searchParams.get('end'),
+    start: searchParams.get('start') || defaultStart,
+    end: searchParams.get('end') || defaultEnd,
     clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
     minPoints: Number.parseInt(searchParams.get('minPoints'), 10) || 2,
     maxPoints: Number.parseInt(searchParams.get('maxPoints'), 10) || 10,
@@ -190,12 +193,14 @@ export async function GET(request) {
 }
 
 async function fetchServices(params) {
+  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
+
   const response = await axios.get(
-    `http://localhost:${process.env.PORT}/api/services`,
+    `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
     {
       params: {
-        start: params.start,
-        end: params.end,
+        start: params.start || defaultStart,
+        end: params.end || defaultEnd,
       },
     },
   )

@@ -1,15 +1,27 @@
 // /src/app/scheduling/index.js
-import path from 'path'
-import { Worker } from 'worker_threads'
+import path from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { printSummary } from './logging.js'
 
 export const MAX_SHIFT_HOURS = 8
 export const MIN_REST_HOURS = 15
 export const MAX_SHIFT_GAP = MIN_REST_HOURS
 
-export async function* scheduleServices(services) {
-  const workerPath = path.resolve(process.cwd(), 'src/app/scheduling/worker.js')
-  const worker = new Worker(workerPath, { workerData: { services } })
+export async function* scheduleServices(services, dateRange) {
+  if (!services?.length) {
+    throw new Error('No services provided for scheduling')
+  }
+
+  const workerPath = path.join(
+    process.cwd(),
+    'src',
+    'app',
+    'scheduling',
+    'worker.js',
+  )
+  const worker = new Worker(workerPath, {
+    workerData: { services, dateRange },
+  })
 
   try {
     while (true) {
@@ -17,6 +29,11 @@ export async function* scheduleServices(services) {
         worker.once('message', resolve)
         worker.once('error', reject)
       })
+
+      if (message.type === 'progress') {
+        yield { type: 'progress', data: message.data }
+        continue
+      }
 
       if (message.type === 'result') {
         const { techSchedules, unassignedServices } = message.data
@@ -34,12 +51,17 @@ export async function* scheduleServices(services) {
         )
 
         yield {
-          type: 'result',
-          data: { scheduledServices, unassignedServices },
+          type: 'complete',
+          data: {
+            assignedServices: scheduledServices,
+            unassignedServices,
+            resources: Object.keys(techSchedules).map(id => ({
+              id,
+              title: id,
+            })),
+          },
         }
         break
-      } else if (message.type === 'progress') {
-        yield { type: 'progress', data: message.data }
       }
     }
   } finally {

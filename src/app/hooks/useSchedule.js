@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
-const BATCH_SIZE = 100 // Adjust this value based on performance
+const BATCH_SIZE = 250 // Increased batch size
+const RENDER_DELAY = 16 // ~60fps
 const PROGRESS_UPDATE_INTERVAL = 10 // Update progress every 10ms
 
 function debounce(func, wait, immediate = false) {
@@ -48,59 +49,73 @@ export function useSchedule(currentViewRange) {
   )
 
   const processDataBatch = useCallback(startIndex => {
-    const { scheduledServices, unassignedServices } = dataRef.current
-    const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
+    if (!dataRef.current?.data) return
 
-    const newAssignedServices = scheduledServices
-      .slice(startIndex, endIndex)
-      .map(service => ({
-        ...service,
-        start: new Date(service.start),
-        end: new Date(service.end),
-      }))
+    const { assignedServices, unassignedServices } = dataRef.current.data
+    if (!Array.isArray(assignedServices)) {
+      console.error('Invalid assigned services data:', assignedServices)
+      setLoading(false)
+      setStatus('Error: Invalid data format')
+      return
+    }
 
-    setResult(prevResult => ({
-      ...prevResult,
-      assignedServices: [
-        ...prevResult.assignedServices,
-        ...newAssignedServices,
-      ],
-    }))
+    const endIndex = Math.min(startIndex + BATCH_SIZE, assignedServices.length)
 
-    if (endIndex < scheduledServices.length) {
-      setTimeout(() => processDataBatch(endIndex), 0)
-    } else {
-      // Process unassigned services and resources
-      const filteredUnassignedServices = unassignedServices.map(service => ({
-        ...service,
-        start: new Date(service.start),
-        end: new Date(service.end),
-      }))
+    // Process in larger chunks but render less frequently
+    requestAnimationFrame(() => {
+      const newAssignedServices = assignedServices
+        .slice(startIndex, endIndex)
+        .map(service => {
+          const start = new Date(service.start)
+          const end = new Date(service.end)
 
-      const techSet = new Set(
-        scheduledServices.map(service => service.resourceId),
-      )
-      const resources = Array.from(techSet)
-        .map(techId => ({ id: techId, title: techId }))
-        .sort((a, b) => {
-          const aIsGeneric = a.id.startsWith('Tech ')
-          const bIsGeneric = b.id.startsWith('Tech ')
-          if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
-          return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) -
-                Number.parseInt(b.id.split(' ')[1], 10)
-            : a.id.localeCompare(b.id)
+          // Ensure valid dates
+          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            console.error('Invalid date for service:', service.id)
+            return null
+          }
+
+          return {
+            ...service,
+            start,
+            end,
+            title: service.company,
+            allDay: false,
+          }
         })
+        .filter(Boolean)
 
       setResult(prevResult => ({
         ...prevResult,
-        filteredUnassignedServices,
-        resources,
+        assignedServices: [
+          ...prevResult.assignedServices,
+          ...newAssignedServices,
+        ],
       }))
 
-      setLoading(false)
-      setStatus('')
-    }
+      if (endIndex < assignedServices.length) {
+        setTimeout(() => processDataBatch(endIndex), RENDER_DELAY)
+      } else {
+        // Process unassigned services and resources
+        const filteredUnassignedServices = unassignedServices || []
+
+        const techSet = new Set(
+          assignedServices.map(service => service.resourceId),
+        )
+        const resources = Array.from(techSet)
+          .map(techId => ({ id: techId, title: techId }))
+          .sort((a, b) => a.id.localeCompare(b.id))
+
+        setResult(prevResult => ({
+          ...prevResult,
+          filteredUnassignedServices,
+          resources,
+        }))
+
+        setLoading(false)
+        setStatus('')
+      }
+    })
   }, [])
 
   const fetchSchedule = useCallback(async () => {
@@ -118,14 +133,14 @@ export function useSchedule(currentViewRange) {
       if (data.type === 'progress') {
         const newProgress = data.data
         progressRef.current = newProgress
+        setLoading(true)
         if (newProgress === 0 || newProgress === 1) {
-          // Immediately update for first and last progress
           setProgress(newProgress)
         } else {
           debouncedSetProgress(newProgress)
         }
         setStatus('Scheduling...')
-      } else if (data.type === 'result') {
+      } else if (data.type === 'complete') {
         eventSource.close()
         dataRef.current = data
         setStatus('Rendering...')

@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { calculateTravelTime } from '../../map/utils/distance.js'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 
 // Helper function to get distance using API
 async function getDistance(fromService, toService) {

@@ -1,33 +1,9 @@
+import { findGaps } from '@/app/utils/gaps'
 import dayjs from 'dayjs'
 import { calculateHaversineDistance, calculateTravelTime } from './distance'
 
 function formatTimeRange(start, end) {
   return `${dayjs(start).format('M/D, h:mm a')}-${dayjs(end).format('h:mm a')}`
-}
-
-function findGaps(services) {
-  const gaps = []
-  const sortedServices = [...services].sort(
-    (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
-  )
-
-  for (let i = 0; i < sortedServices.length - 1; i++) {
-    const currentEnd =
-      new Date(sortedServices[i].time.visited).getTime() +
-      sortedServices[i].time.duration * 60000
-    const nextStart = new Date(sortedServices[i + 1].time.visited).getTime()
-
-    const gapDuration = (nextStart - currentEnd) / (60 * 60 * 1000) // hours
-    if (gapDuration > 0.25) {
-      // Only log gaps longer than 15 minutes
-      gaps.push({
-        start: new Date(currentEnd),
-        end: new Date(nextStart),
-        duration: gapDuration,
-      })
-    }
-  }
-  return gaps
 }
 
 function calculateDistance(from, to) {
@@ -219,7 +195,7 @@ export function logSchedule(services) {
 
         log += `- ${formatTimeRange(visitStart, visitEnd)}, ${service.company} `
         log += `(${service.location.latitude}, ${service.location.longitude}) `
-        log += `(range: ${dayjs(timeRange[0]).format('h:mm a')} - ${dayjs(timeRange[1]).format('h:mm a')})${metrics}\n`
+        log += `(range: ${dayjs(timeRange[0]).format('h:mm a')}-${dayjs(timeRange[1]).format('h:mm a')})${metrics}\n`
       }
 
       // Add cluster statistics
@@ -230,14 +206,7 @@ export function logSchedule(services) {
       log += `  Average Time Gap: ${clusterStats.avgTimeGap.toFixed(0)} min\n`
       log += `Cluster duration: ${clusterStats.duration.toFixed(2)} hours\n`
 
-      const gaps = findGaps(subCluster)
-      if (gaps.length > 0) {
-        log += 'Gaps in this cluster:\n'
-        for (const [index, gap] of gaps.entries()) {
-          log += `  Gap ${index + 1}: ${dayjs(gap.start).format('M/D h:mm a')} - `
-          log += `${dayjs(gap.end).format('h:mm a')} (${gap.duration.toFixed(2)} hours)\n`
-        }
-      }
+      logScheduleGaps(subCluster, clusterStart, clusterEnd)
     })
   }
 
@@ -275,7 +244,7 @@ export function logSchedule(services) {
         const timeRange = service.time.range.map(t => new Date(t))
         log += `- ${service.company} `
         log += `(${service.location.latitude}, ${service.location.longitude}) `
-        log += `(range: ${dayjs(timeRange[0]).format('M/D h:mm a')} - `
+        log += `(range: ${dayjs(timeRange[0]).format('M/D h:mm a')}-`
         log += `${dayjs(timeRange[1]).format('h:mm a')}) `
         log += `[${service.time.duration} min]\n`
       }
@@ -284,4 +253,24 @@ export function logSchedule(services) {
 
   console.log(log)
   return log
+}
+
+function logScheduleGaps(shift, shiftStart, shiftEnd) {
+  const gaps = findGaps({
+    shift,
+    from: shiftStart,
+    to: shiftEnd,
+    minimumGap: 15, // 15 minutes minimum gap
+  })
+
+  if (gaps.length > 0) {
+    console.log('Gaps in this shift:')
+    for (const [index, gap] of gaps.entries()) {
+      console.log(
+        `  Gap ${index + 1}: ${formatTimeRange(gap.start, gap.end)} (${gap.duration.toFixed(2)} hours)`,
+      )
+    }
+  } else {
+    console.log('No gaps found in this shift.')
+  }
 }

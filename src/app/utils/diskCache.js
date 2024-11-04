@@ -1,6 +1,6 @@
 // src/app/utils/diskCache.js
-import fs from 'fs/promises'
-import path from 'path'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
 const CACHE_VALIDITY_HOURS = 24 * 30
 
@@ -8,13 +8,11 @@ function formatCacheAge(ageInHours) {
   const hours = Math.floor(ageInHours)
   const minutes = Math.round((ageInHours - hours) * 60)
 
-  if (hours === 0) {
-    return `${minutes} min`
-  } else if (minutes === 0) {
-    return `${hours} hr`
-  } else {
-    return `${hours} hr ${minutes} min`
-  }
+  return hours === 0
+    ? `${minutes} min`
+    : minutes === 0
+      ? `${hours} hr`
+      : `${hours} hr ${minutes} min`
 }
 
 export async function readFromDiskCache({
@@ -34,7 +32,7 @@ export async function readFromDiskCache({
     const now = Date.now()
     const cacheTimestamp = new Date(timestamp).getTime()
 
-    if (isNaN(cacheTimestamp)) {
+    if (Number.isNaN(cacheTimestamp)) {
       console.log('Invalid cache timestamp')
       return null
     }
@@ -45,10 +43,10 @@ export async function readFromDiskCache({
     if (cacheAgeHours < cacheAgeAcceptable) {
       console.log(`Using valid cache, age: ${formattedAge}`)
       return cacheData
-    } else {
-      console.log(`Cache expired, age: ${formattedAge}`)
-      return null
     }
+
+    console.log(`Cache expired, age: ${formattedAge}`)
+    return null
   } catch (error) {
     if (error.code === 'ENOENT') {
       console.log('Cache file not found')

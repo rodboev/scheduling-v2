@@ -1,5 +1,6 @@
 // /src/app/scheduling/shifts.js
 import { addHours, max, min } from '../utils/dateHelpers.js'
+import { findGaps } from '../utils/gaps.js'
 import { MIN_REST_HOURS, MAX_SHIFT_GAP, MAX_SHIFT_HOURS } from './index.js'
 
 export function flattenServices(techSchedules) {
@@ -73,37 +74,6 @@ export function createNewShiftWithConsistentStartTime({
     shiftEnd: addHours(newShiftStart, MAX_SHIFT_HOURS),
     services: [],
   }
-}
-
-export function findGaps({ shift, from, to }) {
-  const gaps = []
-  let currentTime = new Date(from)
-  const endTime = new Date(to)
-
-  shift.services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  for (const service of shift.services) {
-    const serviceStart = new Date(service.start)
-    const serviceEnd = new Date(service.end)
-
-    if (serviceStart > currentTime) {
-      gaps.push({
-        start: currentTime,
-        end: serviceStart,
-      })
-    }
-
-    currentTime = serviceEnd > currentTime ? serviceEnd : currentTime
-  }
-
-  if (endTime > currentTime) {
-    gaps.push({
-      start: currentTime,
-      end: endTime,
-    })
-  }
-
-  return gaps
 }
 
 export function countShiftsInWeek(techSchedule, weekStart) {

@@ -1,13 +1,13 @@
 // src/app/utils/dayjs.js
 import dayjs from 'dayjs'
-import dayOfYear from 'dayjs/plugin/dayOfYear'
-import duration from 'dayjs/plugin/duration'
-import isBetween from 'dayjs/plugin/isBetween'
-import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
-import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
-import minMax from 'dayjs/plugin/minMax'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
+import dayOfYear from 'dayjs/plugin/dayOfYear.js'
+import duration from 'dayjs/plugin/duration.js'
+import isBetween from 'dayjs/plugin/isBetween.js'
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter.js'
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore.js'
+import minMax from 'dayjs/plugin/minMax.js'
+import timezone from 'dayjs/plugin/timezone.js'
+import utc from 'dayjs/plugin/utc.js'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)

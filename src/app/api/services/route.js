@@ -1,3 +1,4 @@
+import { getDefaultDateRange } from '@/app/utils/dates'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { parseTimeRange, parseTime, round } from '@/app/utils/timeRange'
 import axios from 'axios'
@@ -32,7 +33,6 @@ function createServicesForRange(setup, startDate, endDate) {
       )
       const duration = Math.round(setup.time.duration / 15) * 15
 
-      if (!isProduction) delete setup.comments
       services.push({
         ...setup,
         id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
@@ -57,35 +57,26 @@ function createServicesForRange(setup, startDate, endDate) {
 function shouldServiceOccur(scheduleString, date) {
   const dayOfYear = date.dayOfYear()
   const scheduleIndex = dayOfYear
-  const shouldOccur = scheduleString[scheduleIndex] === '1'
-  return shouldOccur
+  return scheduleString[scheduleIndex] === '1'
 }
 
 async function fetchServiceSetups() {
   try {
-    const response = await axios.get(
-      `${BASE_URL}/api/serviceSetups`, // ?id=14275,20356,19432,11903,12035,18762,3723,15359,20923,20700,480,12271,18923,5143,20513,20730
-    )
-    const serviceSetups = response.data
-    console.log('Fetched service setups:', serviceSetups.length)
-    return serviceSetups
+    const response = await axios.get(`${BASE_URL}/api/serviceSetups`)
+    console.log('Fetched service setups:', response.data.length)
+    return response.data
   } catch (error) {
     console.error('Error fetching service setups:', error)
-    throw error // Rethrow the error to be handled by the caller
+    throw error
   }
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const start = searchParams.get('start')
-  const end = searchParams.get('end')
+  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
 
-  if (!start || !end) {
-    return NextResponse.json(
-      { error: 'Start and end dates are required' },
-      { status: 400 },
-    )
-  }
+  const start = searchParams.get('start') || defaultStart
+  const end = searchParams.get('end') || defaultEnd
 
   const startDate = dayjs(start)
   const endDate = dayjs(end)
@@ -95,14 +86,10 @@ export async function GET(request) {
 
     // Generate services for the date range
     const services = serviceSetups.flatMap(setup =>
-      createServicesForRange(
-        setup,
-        startDate.startOf('day'),
-        endDate.endOf('day'),
-      ),
+      createServicesForRange(setup, startDate, endDate),
     )
 
-    // Read or create enforcement state file
+    // Read enforcement state
     const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
     let enforcementState = {}
 
@@ -114,48 +101,26 @@ export async function GET(request) {
       }
     } catch (error) {
       if (error.code === 'ENOENT') {
-        // File doesn't exist, create it with an empty object
         await fsPromises.writeFile(filePath, JSON.stringify({ cacheData: {} }))
       } else {
-        console.error('Error reading enforcement state file:', error)
+        console.error('Error reading enforcement state:', error)
       }
     }
 
-    // Apply enforcement state to services, remove the schedule.string key, and filter by time range
-    const processedServices = services
-      .map(({ schedule: { string, ...restSchedule }, ...restService }) => {
-        const serviceSetupId = restService.id.split('-')[0]
-        return {
-          ...restService,
-          schedule: restSchedule,
-          tech: {
-            ...restService.tech,
-            enforced: enforcementState[serviceSetupId] || false,
-          },
-        }
-      })
-      .filter(service => {
-        const serviceStart = dayjs(service.time.range[0])
-        const serviceEnd = dayjs(service.time.range[1])
+    // Apply enforcement state
+    const servicesWithEnforcement = services.map(service => ({
+      ...service,
+      tech: {
+        ...service.tech,
+        enforced: enforcementState[service.id.split('-')[0]] || false,
+      },
+    }))
 
-        // Handle services that cross midnight
-        const serviceEndAdjusted = serviceEnd.isBefore(serviceStart)
-          ? serviceEnd.add(1, 'day')
-          : serviceEnd
-
-        return (
-          (serviceStart.isBefore(endDate) &&
-            serviceEndAdjusted.isAfter(startDate)) ||
-          serviceStart.isSame(startDate) ||
-          serviceEndAdjusted.isSame(endDate)
-        )
-      })
-
-    return NextResponse.json(processedServices)
+    return NextResponse.json(servicesWithEnforcement)
   } catch (error) {
-    console.error('Error processing services:', error)
+    console.error('Error generating services:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', details: error.message },
+      { error: 'Failed to generate services' },
       { status: 500 },
     )
   }

@@ -1,27 +1,23 @@
+import { dayjsInstance as dayjs } from './dayjs.js'
+
 export function formatDate(date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`
+  return dayjs(date).format('M/D')
 }
 
 export function formatTime(date) {
-  return date
-    .toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-    .toLowerCase()
+  return dayjs(date).format('h:mma')
 }
 
 export function calculateDuration(start, end) {
-  return (end - start) / (1000 * 60 * 60)
+  return dayjs(end).diff(dayjs(start), 'hour', true)
 }
 
 export function addMinutes(date, minutes) {
-  return new Date(date.getTime() + minutes * 60000)
+  return dayjs(date).add(minutes, 'minute').toDate()
 }
 
 export function addHours(date, hours) {
-  return new Date(date.getTime() + hours * 3600000)
+  return dayjs(date).add(hours, 'hour').toDate()
 }
 
 export function max(...dates) {

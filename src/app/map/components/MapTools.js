@@ -2,12 +2,13 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { Slider } from '@/app/components/ui/slider'
+import { getDefaultDateRange } from '@/app/utils/dates'
 import dayjs from 'dayjs'
 import NumberInput from './NumberInput'
 
 /**
  * MapTools provides the control panel for clustering and scheduling parameters
- * - Algorithm selection (K-means vs DBSCAN)
+ * - `Algorithm` selection (K-means vs DBSCAN)
  * - Cluster size constraints
  * - Date range selection
  * - Distance vs time optimization
@@ -79,14 +80,9 @@ const MapTools = ({
 
   // Initialize state with default dates if not provided
   useEffect(() => {
-    // Get today's date at midnight End Date
-    const today = dayjs().startOf('day')
-    const [defaultStartDate, defaultEndDate] = [
-      today.format('YYYY-MM-DDTHH:mm'),
-      today.add(1, 'day').format('YYYY-MM-DDTHH:mm'),
-    ]
-    if (!startDate) setStartDate(defaultStartDate)
-    if (!endDate) setEndDate(defaultEndDate)
+    const { start, end } = getDefaultDateRange()
+    if (!startDate) setStartDate(start)
+    if (!endDate) setEndDate(end)
   }, [startDate, endDate, setStartDate, setEndDate])
 
   const startDateRef = useRef(null)
@@ -172,8 +168,8 @@ const MapTools = ({
   }, [distanceBias])
 
   return (
-    <div className="absolute right-4 top-4 z-[1000] rounded bg-white p-4 shadow">
-      {/* Algorithm Selection:
+    <div className="h-30 absolute right-4 top-4 z-[1000] overflow-hidden rounded bg-white p-4 shadow">
+      {/* Algorithm Selection:b      b xc 
           - K-means: Focuses on geographic clustering
           - DBSCAN: Better handles noise points and irregular clusters */}
       <div className="mb-4">
@@ -187,8 +183,9 @@ const MapTools = ({
           id="algorithm"
           value={algorithm}
           onChange={e => setAlgorithm(e.target.value)}
-          className="h-full w-full overflow-hidden rounded border"
+          className="w-full rounded border"
           multiple="multiple"
+          selected="selected"
           size="1"
           height="100%"
         >
@@ -198,12 +195,12 @@ const MapTools = ({
           >
             K-means
           </option>
-          <option
+          {/* <option
             value="dbscan"
             className="p-2"
           >
             DBSCAN
-          </option>
+          </option> */}
         </select>
       </div>
 
