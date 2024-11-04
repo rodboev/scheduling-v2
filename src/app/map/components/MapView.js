@@ -157,9 +157,7 @@ const MapView = () => {
 
   const fetchClusteredServices = useCallback(async () => {
     try {
-      // Add base URL if needed
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
-      const response = await axios.get(`${baseUrl}/api/cluster`, {
+      const response = await axios.get('/api/cluster', {
         params: {
           start: startDate,
           end: endDate,
