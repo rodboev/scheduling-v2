@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { chunk } from 'lodash'
+import { chunk } from '../../map/utils/array.js'
 import { calculateTravelTime } from '../../map/utils/distance.js'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
