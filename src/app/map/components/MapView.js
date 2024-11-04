@@ -157,7 +157,9 @@ const MapView = () => {
 
   const fetchClusteredServices = useCallback(async () => {
     try {
-      const response = await axios.get('/api/cluster', {
+      // Add base URL if needed
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+      const response = await axios.get(`${baseUrl}/api/cluster`, {
         params: {
           start: startDate,
           end: endDate,
@@ -180,6 +182,11 @@ const MapView = () => {
       setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
       console.error('Error fetching clustered services:', error)
+      // Log more details about the error
+      if (error.response) {
+        console.error('Error response:', error.response.data)
+        console.error('Error status:', error.response.status)
+      }
     }
   }, [
     startDate,
@@ -203,22 +210,12 @@ const MapView = () => {
     }
   }, [activePopup])
 
-  // Add new function to handle advancing dates
+  // Update the handleNextDay function to trigger a fetch
   const handleNextDay = useCallback(() => {
     const nextStart = new Date(startDate)
     nextStart.setDate(nextStart.getDate() + 1)
-    const nextEnd = new Date(nextStart)
-    nextEnd.setHours(nextEnd.getHours() + 10)
-
     setStartDate(nextStart.toISOString())
-    setEndDate(nextEnd.toISOString())
-  }, [startDate])
-
-  // Update useEffect to recalculate endDate when startDate changes
-  useEffect(() => {
-    const end = new Date(startDate)
-    end.setHours(end.getHours() + 10)
-    setEndDate(end.toISOString())
+    // We don't need to set endDate here since the useEffect in MapTools will handle that
   }, [startDate])
 
   function handlePointsChangeComplete() {
@@ -299,6 +296,14 @@ const MapView = () => {
     },
     [clusteredServices, optimizeSchedule],
   )
+
+  // Add useEffect to fetch services when dates change
+  useEffect(() => {
+    if (startDate && endDate) {
+      console.log('Fetching services for date range:', { startDate, endDate })
+      fetchClusteredServices()
+    }
+  }, [startDate, endDate, fetchClusteredServices])
 
   return (
     <div className="relative h-screen w-screen">

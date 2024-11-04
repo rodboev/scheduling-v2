@@ -59,22 +59,15 @@ const MapTools = ({
 
   const handleDateChange = (e, setter, isStartDate) => {
     const newDate = new Date(e.target.value)
-    const otherDate = isStartDate ? new Date(endDate) : new Date(startDate)
-    const minTimeDiff = 8 * 60 * 60 * 1000 // 8 hours in milliseconds
 
     if (isStartDate) {
       setter(newDate.toISOString())
-      if (newDate > otherDate || otherDate - newDate < minTimeDiff) {
-        const newEndDate = new Date(newDate.getTime() + minTimeDiff)
-        setEndDate(newEndDate.toISOString())
-      }
+      // Set end date to 10 hours after start date
+      const newEndDate = new Date(newDate)
+      newEndDate.setHours(newEndDate.getHours() + 10)
+      setEndDate(newEndDate.toISOString())
     } else {
-      if (newDate < otherDate) {
-        const newEndDate = new Date(otherDate.getTime() + minTimeDiff)
-        setter(newEndDate.toISOString())
-      } else {
-        setter(newDate.toISOString())
-      }
+      setter(newDate.toISOString())
     }
   }
 
@@ -166,6 +159,13 @@ const MapTools = ({
   useEffect(() => {
     setLocalDistanceBias(distanceBias)
   }, [distanceBias])
+
+  // Add useEffect to maintain 10-hour window when startDate changes
+  useEffect(() => {
+    const endDateTime = new Date(startDate)
+    endDateTime.setHours(endDateTime.getHours() + 10)
+    setEndDate(endDateTime.toISOString())
+  }, [startDate, setEndDate])
 
   return (
     <div className="h-30 absolute right-4 top-4 z-[1000] overflow-hidden rounded bg-white p-4 shadow">

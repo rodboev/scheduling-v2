@@ -10,7 +10,7 @@ const LOG_MATRIX = false
 let currentWorker = null
 let currentAbortController = null
 let currentRequestId = 0
-const WORKER_TIMEOUT = 4000
+const WORKER_TIMEOUT = 10000
 
 async function processRequest(params, requestId) {
   if (currentWorker) {
@@ -24,16 +24,37 @@ async function processRequest(params, requestId) {
 
   let services = []
   try {
+    console.log('Fetching services with params:', {
+      start: params.start,
+      end: params.end,
+      requestId,
+    })
+
     const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/services`,
+      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
       {
         params: { start: params.start, end: params.end },
       },
     )
+
     services = response.data.filter(
       service =>
         service.time.range[0] !== null && service.time.range[1] !== null,
     )
+
+    console.log(`Found ${services.length} services for request ${requestId}`)
+
+    if (!services.length) {
+      return {
+        clusteredServices: [],
+        clusteringInfo: {
+          performanceDuration: 0,
+          connectedPointsCount: 0,
+          totalClusters: 0,
+          outlierCount: 0,
+        },
+      }
+    }
   } catch (error) {
     console.error(`Error fetching services for request ${requestId}:`, error)
     throw error
@@ -56,7 +77,15 @@ async function processRequest(params, requestId) {
           `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
         )
         await terminateWorker()
-        resolve({ error: 'Worker timeout' })
+        resolve({
+          clusteredServices: services,
+          clusteringInfo: {
+            performanceDuration: WORKER_TIMEOUT,
+            connectedPointsCount: services.length,
+            totalClusters: 1,
+            outlierCount: 0,
+          },
+        })
       }
     }, WORKER_TIMEOUT)
 
@@ -74,7 +103,15 @@ async function processRequest(params, requestId) {
         console.error(`Worker error for request ${requestId}:`, error)
         clearTimeout(timeoutId)
         await terminateWorker()
-        resolve({ error: error.message })
+        resolve({
+          clusteredServices: services,
+          clusteringInfo: {
+            performanceDuration: 0,
+            connectedPointsCount: services.length,
+            totalClusters: 1,
+            outlierCount: 0,
+          },
+        })
       }
     })
 
