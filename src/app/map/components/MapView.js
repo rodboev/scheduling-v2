@@ -63,6 +63,7 @@ const MapView = () => {
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
   const [minPoints, setMinPoints] = useState(8) // Default min points
   const [maxPoints, setMaxPoints] = useState(14) // Default max points
+  const [isLoading, setIsLoading] = useState(true) // Add isLoading state
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
@@ -157,6 +158,7 @@ const MapView = () => {
 
   const fetchClusteredServices = useCallback(async () => {
     try {
+      setIsLoading(true)
       // Validate dates
       const start = new Date(startDate)
       const end = new Date(endDate)
@@ -204,6 +206,8 @@ const MapView = () => {
       // Reset state on error
       setClusteredServices([])
       setClusteringInfo(null)
+    } finally {
+      setIsLoading(false)
     }
   }, [
     startDate,
@@ -361,7 +365,7 @@ const MapView = () => {
           url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
           attribution="" // Remove attribution
         />
-        {
+        {!isLoading &&
           clusteredServices.reduce(
             (acc, service, i) => {
               const index =
@@ -387,8 +391,7 @@ const MapView = () => {
               return acc
             },
             { markers: [], validMarkers: 0 },
-          ).markers
-        }
+          ).markers}
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
