@@ -6,7 +6,6 @@ import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
 import ProgressBar from '@/app/components/ProgressBar'
 import Service from '@/app/components/Service'
-import UnassignedServices from '@/app/components/UnassignedServices'
 import { Button } from '@/app/components/ui/button'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useSchedule } from '@/app/hooks/useSchedule'
@@ -64,12 +63,15 @@ export default function BigCalendar() {
     refetchSchedule()
   }, [refetchSchedule])
 
+  // Create an absolutely empty event component
   const eventComponent = useCallback(
     props => (
-      <Service
-        service={props.event}
-        updateServiceEnforcement={updateServiceEnforcement}
-      />
+      <div className="select-none">
+        <Service
+          service={props.event}
+          updateServiceEnforcement={updateServiceEnforcement}
+        />
+      </div>
     ),
     [updateServiceEnforcement],
   )
@@ -81,14 +83,11 @@ export default function BigCalendar() {
     [eventComponent],
   )
 
-  // Memoize the event handlers to prevent recreating on every render
-  const handleSelectEvent = useCallback(event => {
-    // Add any event selection logic here
-    // For now, just prevent default behavior that might cause freezing
-    return false
+  // Add click capture handler
+  const handleClickCapture = useCallback(e => {
+    e.stopPropagation()
+    e.preventDefault()
   }, [])
-
-  const resourceAccessor = useCallback(resource => resource.title, [])
 
   return (
     <div className="flex h-screen">
@@ -110,14 +109,16 @@ export default function BigCalendar() {
           <Logo />
           <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
-        <div className="flex-grow p-4">
+        <div
+          className="flex-grow p-4"
+          onClickCapture={handleClickCapture}
+        >
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"
             events={assignedServices}
             resources={resources}
             resourceIdAccessor="id"
-            resourceTitleAccessor={resourceAccessor}
             defaultView={Views.DAY}
             view={view}
             onView={handleView}
@@ -136,7 +137,21 @@ export default function BigCalendar() {
             min={MIN_TIME}
             max={MAX_TIME}
             components={calendarComponents}
-            onSelectEvent={handleSelectEvent}
+            selectable={false}
+            onSelectEvent={null}
+            onSelectSlot={null}
+            onClick={null}
+            onDoubleClick={null}
+            onKeyPressEvent={null}
+            onDragStart={null}
+            onDragOver={null}
+            onDrop={null}
+            eventPropGetter={() => ({
+              style: { cursor: 'pointer' },
+            })}
+            slotPropGetter={() => ({
+              style: { cursor: 'default' },
+            })}
           />
         </div>
       </div>

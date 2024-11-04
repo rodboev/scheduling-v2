@@ -121,3 +121,16 @@ div.leaflet-container {
 div.leaflet-container a {
   color: inherit;
 }
+
+/* Add these styles at the end of your globals.css file */
+.rbc-time-view {
+  --time-slot-height: 37.5px;
+}
+
+.rbc-timeslot-group {
+  min-height: var(--time-slot-height) !important;
+}
+
+.rbc-time-slot {
+  min-height: calc(var(--time-slot-height) / 2) !important;
+}
