@@ -92,36 +92,43 @@ const MapView = () => {
       return acc
     }, {})
 
-    // Process each cluster
+    // Collect ALL pairs across ALL clusters first
+    const allPairs = []
     for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
       )
 
       // Create pairs for all sequential services in the cluster
-      const pairs = []
       for (let i = 1; i < sortedCluster.length; i++) {
-        pairs.push(
+        allPairs.push(
           `${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`,
         )
       }
+    }
 
-      // Split into chunks of 500 pairs
-      const chunkedPairs = chunk(pairs, 500)
+    // Split ALL pairs into chunks of 1000
+    const chunkedPairs = chunk(allPairs, 1000)
 
-      // Fetch distances for all pairs in the cluster
-      const distanceResults = []
-      for (const pairChunk of chunkedPairs) {
-        const response = await axios.get('/api/distance', {
-          params: {
-            id: pairChunk,
-          },
-          paramsSerializer: params => {
-            return params.id.map(pair => `id=${pair}`).join('&')
-          },
-        })
-        distanceResults.push(...response.data)
-      }
+    // Fetch distances for all pairs in one go
+    const distanceResults = []
+    for (const pairChunk of chunkedPairs) {
+      const response = await axios.get('/api/distance', {
+        params: {
+          id: pairChunk,
+        },
+        paramsSerializer: params => {
+          return params.id.map(pair => `id=${pair}`).join('&')
+        },
+      })
+      distanceResults.push(...response.data)
+    }
+
+    // Now process each cluster with the complete distance results
+    for (const clusterServices of Object.values(clusters)) {
+      const sortedCluster = clusterServices.sort(
+        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
+      )
 
       // Add sequence numbers and distances to services
       for (let i = 0; i < sortedCluster.length; i++) {
