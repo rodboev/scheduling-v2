@@ -15,19 +15,18 @@ const COLORS = {
   green: '#72b026',
   darkgreen: '#728224',
   blue: '#38aadd',
+  darkblue: '#1d63b5',
   purple: '#9c2bcb',
-  darkpurple: '#5b396b',
   cadetblue: '#436978',
   lightred: '#eb7f7f',
-  beige: '#ead7c6',
   lightgreen: '#a4c65f',
   lightblue: '#6fbbd3',
   pink: '#df8dc3',
+  yellow: '#ffff00',
   white: '#ffffff',
   lightgray: '#d3d3d3',
   gray: '#808080',
   darkgray: '#404040',
-  yellow: '#ffff00',
   black: '#000000',
 }
 
@@ -47,10 +46,8 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
 
   function getMarkerIcon(cluster) {
     const colorKeys = Object.keys(COLORS)
-    const color =
-      cluster < 0
-        ? COLORS.darkgray
-        : COLORS[colorKeys[cluster % colorKeys.length]]
+    const colorIndex = Math.abs(cluster) % colorKeys.length
+    const color = cluster < 0 ? COLORS.darkgray : COLORS[colorKeys[colorIndex]]
     const icon = cluster < 0 ? faCircleExclamation : faMapMarker
     const strokeColor = darkenColor(color, 0.25)
     const viewBoxWidth = icon.icon[0] + 32
