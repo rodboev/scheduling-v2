@@ -147,101 +147,148 @@ async function terminateWorker() {
 }
 
 export async function GET(request) {
-  const requestId = ++currentRequestId
-  const { searchParams } = new URL(request.url)
-  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
-
-  const params = {
-    start: searchParams.get('start') || defaultStart,
-    end: searchParams.get('end') || defaultEnd,
-    clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
-    minPoints: Number.parseInt(searchParams.get('minPoints'), 10) || 2,
-    maxPoints: Number.parseInt(searchParams.get('maxPoints'), 10) || 10,
-    algorithm: searchParams.get('algorithm') || 'kmeans',
-  }
-
-  if (!params.start || !params.end) {
-    console.log(`Request ${requestId} missing start or end date`)
-    return NextResponse.json(
-      { error: 'Missing start or end date' },
-      { status: 400 },
-    )
-  }
-
-  const cacheKey = `clusteredServices:${JSON.stringify(params)}`
-  const cachedData = getCachedData(cacheKey)
-
-  if (cachedData) {
-    return NextResponse.json(cachedData)
-  }
-
   try {
-    const services = await fetchServices(params)
+    const { searchParams } = new URL(request.url)
+    const params = {
+      start: searchParams.get('start'),
+      end: searchParams.get('end'),
+      minPoints: parseInt(searchParams.get('minPoints')) || 8,
+      maxPoints: parseInt(searchParams.get('maxPoints')) || 14,
+      clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
+      algorithm: searchParams.get('algorithm') || 'kmeans',
+    }
+
+    // Validate date parameters
+    if (!params.start || !params.end) {
+      return new Response(
+        JSON.stringify({
+          error: 'Missing date parameters',
+          clusteredServices: [],
+          clusteringInfo: null,
+        }),
+        { status: 400 },
+      )
+    }
+
+    // Fetch services
+    let services = []
+    try {
+      services = await fetchServices(params)
+    } catch (error) {
+      console.error('Error fetching services:', error)
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to fetch services',
+          clusteredServices: [],
+          clusteringInfo: null,
+        }),
+        { status: 500 },
+      )
+    }
+
+    // If no services found, return empty result
     if (!services?.length) {
-      return NextResponse.json(
-        { error: 'No services found for date range' },
-        { status: 404 },
+      return new Response(
+        JSON.stringify({
+          clusteredServices: [],
+          clusteringInfo: {
+            performanceDuration: 0,
+            connectedPointsCount: 0,
+            totalClusters: 0,
+            outlierCount: 0,
+            algorithm: params.algorithm,
+          },
+        }),
+        { status: 200 },
       )
     }
 
     const distanceMatrix = await createDistanceMatrix(services)
     if (!distanceMatrix?.length) {
-      return NextResponse.json(
-        { error: 'Failed to create distance matrix' },
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to create distance matrix',
+          clusteredServices: [],
+          clusteringInfo: null,
+        }),
         { status: 500 },
       )
     }
 
-    const result = await processRequest(
-      { ...params, services, distanceMatrix },
-      requestId,
-    )
-
-    if (currentRequestId !== requestId) {
-      console.log(`Request ${requestId} superseded by a newer request`)
-      return NextResponse.json({ error: 'Request superseded' }, { status: 409 })
-    }
-
-    if (result.error) {
-      console.error(
-        `Error in cluster API for request ${requestId}:`,
-        result.error,
+    const requestId = ++currentRequestId
+    try {
+      const result = await processRequest(
+        { ...params, services, distanceMatrix },
+        requestId,
       )
-      return NextResponse.json({ error: result.error }, { status: 500 })
+
+      if (currentRequestId !== requestId) {
+        return new Response(
+          JSON.stringify({
+            error: 'Request superseded',
+            clusteredServices: [],
+            clusteringInfo: null,
+          }),
+          { status: 409 },
+        )
+      }
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+    } catch (error) {
+      console.error('Processing error:', error)
+      return new Response(
+        JSON.stringify({
+          error: 'Processing failed',
+          clusteredServices: [],
+          clusteringInfo: null,
+        }),
+        { status: 500 },
+      )
     }
-
-    const { clusteredServices, clusteringInfo } = result
-
-    // Include clusteringInfo in the response
-    const responseData = {
-      clusteredServices,
-      clusteringInfo,
-    }
-
-    setCachedData(cacheKey, responseData)
-    return NextResponse.json(responseData)
   } catch (error) {
-    console.error('Error in cluster API:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: error.message },
+    console.error('Clustering API error:', error)
+    return new Response(
+      JSON.stringify({
+        error: 'Internal Server Error',
+        details: error.message,
+        clusteredServices: [],
+        clusteringInfo: null,
+      }),
       { status: 500 },
     )
   }
 }
 
 async function fetchServices(params) {
-  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
-
-  const response = await axios.get(
-    `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
-    {
-      params: {
-        start: params.start || defaultStart,
-        end: params.end || defaultEnd,
+  try {
+    const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
+    const response = await axios.get(
+      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
+      {
+        params: {
+          start: params.start || defaultStart,
+          end: params.end || defaultEnd,
+        },
       },
-    },
-  )
-  return response.data.filter(
-    service => service.time.range[0] !== null && service.time.range[1] !== null,
-  )
+    )
+
+    if (!response.data) {
+      console.error('No data returned from services API')
+      return []
+    }
+
+    return response.data.filter(
+      service =>
+        service?.time?.range?.[0] !== null &&
+        service?.time?.range?.[1] !== null,
+    )
+  } catch (error) {
+    console.error('Error fetching services:', error)
+    throw error
+  }
 }

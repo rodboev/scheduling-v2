@@ -62,7 +62,7 @@ const MapView = () => {
   const [clusteringInfo, setClusteringInfo] = useState(null)
   const [clusterUnclustered, setClusterUnclustered] = useState(true)
   const [minPoints, setMinPoints] = useState(8) // Default min points
-  const [maxPoints, setMaxPoints] = useState(16) // Default max points
+  const [maxPoints, setMaxPoints] = useState(14) // Default max points
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
@@ -157,6 +157,19 @@ const MapView = () => {
 
   const fetchClusteredServices = useCallback(async () => {
     try {
+      // Validate dates
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        console.error('Invalid date range')
+        return
+      }
+
+      // Add loading state
+      setClusteredServices([])
+      setClusteringInfo(null)
+
       const response = await axios.get('/api/cluster', {
         params: {
           start: startDate,
@@ -168,8 +181,13 @@ const MapView = () => {
         },
       })
 
-      if (response.data.error) {
-        console.error('Error fetching clustered services:', response.data.error)
+      if (!response.data?.clusteredServices) {
+        console.error('Invalid response format:', response.data)
+        return
+      }
+
+      if (response.data.clusteredServices.length === 0) {
+        console.log('No services found for the specified date range')
         return
       }
 
@@ -180,11 +198,12 @@ const MapView = () => {
       setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
       console.error('Error fetching clustered services:', error)
-      // Log more details about the error
       if (error.response) {
-        console.error('Error response:', error.response.data)
-        console.error('Error status:', error.response.status)
+        console.error('Server error:', error.response.data)
       }
+      // Reset state on error
+      setClusteredServices([])
+      setClusteringInfo(null)
     }
   }, [
     startDate,
@@ -208,13 +227,17 @@ const MapView = () => {
     }
   }, [activePopup])
 
-  // Update the handleNextDay function to trigger a fetch
+  // Update the handleNextDay function to properly handle both start and end dates
   const handleNextDay = useCallback(() => {
     const nextStart = new Date(startDate)
     nextStart.setDate(nextStart.getDate() + 1)
+
+    const nextEnd = new Date(endDate)
+    nextEnd.setDate(nextEnd.getDate() + 1)
+
     setStartDate(nextStart.toISOString())
-    // We don't need to set endDate here since the useEffect in MapTools will handle that
-  }, [startDate])
+    setEndDate(nextEnd.toISOString())
+  }, [startDate, endDate])
 
   function handlePointsChangeComplete() {
     fetchClusteredServices()
