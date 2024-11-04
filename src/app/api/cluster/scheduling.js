@@ -1,27 +1,31 @@
 import axios from 'axios'
+import { chunk } from 'lodash'
 import { calculateTravelTime } from '../../map/utils/distance.js'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 
-// Helper function to get distance using API
-async function getDistance(fromService, toService) {
+// Helper function to get distances in batches
+async function getDistances(pairs) {
   try {
-    const response = await axios.get(`${BASE_URL}/api/distance`, {
-      params: {
-        fromId: fromService.location.id.toString(),
-        toId: toService.location.id.toString(),
-      },
-    })
-    return response.data.distance
+    const chunkedPairs = chunk(pairs, 200)
+    const allResults = []
+
+    for (const pairChunk of chunkedPairs) {
+      const response = await axios.get(`${BASE_URL}/api/distance`, {
+        params: {
+          id: pairChunk,
+        },
+        paramsSerializer: params => {
+          return params.id.map(pair => `id=${pair}`).join('&')
+        },
+      })
+      allResults.push(...response.data)
+    }
+
+    return allResults
   } catch (error) {
-    console.error('Failed to get distance from API:', error)
-    // Fallback to Haversine
-    return calculateTravelTime(
-      fromService.location.latitude,
-      fromService.location.longitude,
-      toService.location.latitude,
-      toService.location.longitude,
-    )
+    console.error('Failed to get distances from API:', error)
+    return null
   }
 }
 
@@ -57,15 +61,45 @@ export async function scheduleServices(
         currentService.time.duration * 60000,
     ).toISOString()
 
-    // Schedule remaining services
+    // Create pairs for all sequential services in the cluster
+    const pairs = []
+    for (let i = 1; i < clusterServices.length; i++) {
+      const prevService = clusterServices[i - 1]
+      currentService = clusterServices[i]
+      pairs.push(`${prevService.location.id},${currentService.location.id}`)
+    }
+
+    // Get all distances at once
+    const distanceResults = await getDistances(pairs)
+
+    // Schedule remaining services using the fetched distances
     for (let i = 1; i < clusterServices.length; i++) {
       const prevService = clusterServices[i - 1]
       currentService = clusterServices[i]
 
+      // Find the distance result for this pair
+      const pairResult = distanceResults?.find(
+        result =>
+          result.from.id ===
+          `${prevService.location.id},${currentService.location.id}`,
+      )
+
+      // Calculate travel time
+      let travelTime
+      if (pairResult?.distance?.[0]?.distance) {
+        travelTime = pairResult.distance[0].distance
+      } else {
+        // Fallback to Haversine
+        travelTime = calculateTravelTime(
+          prevService.location.latitude,
+          prevService.location.longitude,
+          currentService.location.latitude,
+          currentService.location.longitude,
+        )
+      }
+
       // Calculate earliest possible start time
       const prevEndTime = new Date(prevService.end)
-
-      const travelTime = await getDistance(prevService, currentService)
       const earliestStart = new Date(prevEndTime)
       earliestStart.setMinutes(earliestStart.getMinutes() + travelTime)
 

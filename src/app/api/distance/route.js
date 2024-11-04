@@ -31,7 +31,9 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const fromId = searchParams.get('fromId')
   const toId = searchParams.get('toId')
-  const idPairs = searchParams.getAll('id')
+  const idPairs = Array.from(searchParams.entries())
+    .filter(([key]) => key === 'id')
+    .map(([_, value]) => value)
 
   try {
     await getLocations()
@@ -102,7 +104,7 @@ export async function GET(request) {
         idPairs.map(async pair => {
           const [id1, id2] = pair.split(',')
           const cacheKey = `distance:${id1},${id2}`
-          const cachedResult = getCachedData(cacheKey)
+          const cachedResult = await getCachedData(cacheKey)
 
           if (cachedResult) return cachedResult
 
@@ -115,55 +117,6 @@ export async function GET(request) {
 
           const [lon1, lat1] = geopos1[0]
 
-          // Handle nearest locations request
-          if (!id2) {
-            const nearestLocations = await redis.georadius(
-              'locations',
-              lon1,
-              lat1,
-              100,
-              'mi',
-              'WITHDIST',
-              'COUNT',
-              6,
-              'ASC',
-            )
-
-            const nearestLocationDetails = await Promise.all(
-              nearestLocations.slice(1).map(async ([id, distance]) => {
-                const [geopos, company] = await Promise.all([
-                  redis.geopos('locations', id),
-                  redis.hget('company_names', id),
-                ])
-                const [lon, lat] = geopos[0]
-                return {
-                  id,
-                  distance: Number.parseFloat(distance),
-                  company,
-                  location: {
-                    longitude: Number.parseFloat(lon),
-                    latitude: Number.parseFloat(lat),
-                  },
-                }
-              }),
-            )
-
-            const result = {
-              from: {
-                id: id1,
-                company: company1,
-                location: {
-                  longitude: Number.parseFloat(lon1),
-                  latitude: Number.parseFloat(lat1),
-                },
-              },
-              distances: nearestLocationDetails,
-            }
-            setCachedData(cacheKey, result)
-            return result
-          }
-
-          // Handle specific distance request
           const [geopos2, company2, distance] = await Promise.all([
             redis.geopos('locations', id2),
             redis.hget('company_names', id2),
@@ -176,7 +129,7 @@ export async function GET(request) {
 
           const result = {
             from: {
-              id: id1,
+              id: pair,
               company: company1,
               location: {
                 longitude: Number.parseFloat(lon1),
@@ -195,6 +148,7 @@ export async function GET(request) {
               },
             ],
           }
+
           setCachedData(cacheKey, result)
           return result
         }),

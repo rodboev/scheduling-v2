@@ -9,6 +9,7 @@ import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
+import { chunk } from 'lodash'
 import debounce from 'lodash/debounce'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 
@@ -92,21 +93,55 @@ const MapView = () => {
       return acc
     }, {})
 
-    // Add sequence numbers and distances within each cluster
+    // Process each cluster
     for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
       )
 
+      // Create pairs for all sequential services in the cluster
+      const pairs = []
+      for (let i = 1; i < sortedCluster.length; i++) {
+        pairs.push(
+          `${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`,
+        )
+      }
+
+      // Split into chunks of 200 pairs
+      const chunkedPairs = chunk(pairs, 200)
+
+      // Fetch distances for all pairs in the cluster
+      const distanceResults = []
+      for (const pairChunk of chunkedPairs) {
+        const response = await axios.get('/api/distance', {
+          params: {
+            id: pairChunk,
+          },
+          paramsSerializer: params => {
+            return params.id.map(pair => `id=${pair}`).join('&')
+          },
+        })
+        distanceResults.push(...response.data)
+      }
+
+      // Add sequence numbers and distances to services
       for (let i = 0; i < sortedCluster.length; i++) {
         const currentService = sortedCluster[i]
-        currentService.sequenceNumber = i + 1 // Add sequence number
+        currentService.sequenceNumber = i + 1
 
         if (i > 0) {
           const previousService = sortedCluster[i - 1]
-          const distance = await getDistance(currentService, previousService)
-          currentService.distanceFromPrevious = distance
-          currentService.previousCompany = previousService.company
+          const pairResult = distanceResults.find(
+            result =>
+              result.from.id ===
+              `${previousService.location.id},${currentService.location.id}`,
+          )
+
+          if (pairResult?.distance?.[0]?.distance) {
+            currentService.distanceFromPrevious =
+              pairResult.distance[0].distance
+            currentService.previousCompany = previousService.company
+          }
         }
       }
     }
@@ -188,15 +223,45 @@ const MapView = () => {
     async (services, distanceBias) => {
       setIsOptimizing(true)
       try {
-        // Create a distance matrix for the services
-        const distanceMatrix = []
+        // Create pairs of service IDs for batch processing
+        const pairs = []
         for (let i = 0; i < services.length; i++) {
-          distanceMatrix[i] = []
-          for (let j = 0; j < services.length; j++) {
-            if (i === j) {
-              distanceMatrix[i][j] = 0
-            } else {
-              distanceMatrix[i][j] = await getDistance(services[i], services[j])
+          for (let j = i + 1; j < services.length; j++) {
+            pairs.push(`${services[i].location.id},${services[j].location.id}`)
+          }
+        }
+
+        // Split pairs into chunks of 200 to avoid too large URLs
+        const chunkedPairs = chunk(pairs, 200)
+        const distanceMatrix = Array(services.length)
+          .fill()
+          .map(() => Array(services.length).fill(0))
+
+        // Fetch distances in batches
+        for (const pairChunk of chunkedPairs) {
+          const response = await axios.get('/api/distance', {
+            params: {
+              id: pairChunk,
+            },
+            paramsSerializer: params => {
+              return params.id.map(pair => `id=${pair}`).join('&')
+            },
+          })
+
+          // Populate the distance matrix with results
+          for (const result of response.data) {
+            const [fromId, toId] = result.from.id.split(',')
+            const fromIndex = services.findIndex(
+              s => s.location.id.toString() === fromId,
+            )
+            const toIndex = services.findIndex(
+              s => s.location.id.toString() === toId,
+            )
+
+            if (result.distance?.[0]?.distance) {
+              const distance = result.distance[0].distance
+              distanceMatrix[fromIndex][toIndex] = distance
+              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
             }
           }
         }
