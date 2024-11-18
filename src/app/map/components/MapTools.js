@@ -32,6 +32,8 @@ const MapTools = ({
   setDistanceBias,
   isOptimizing,
   onOptimizationChange,
+  singleCluster,
+  setSingleCluster,
 }) => {
   /**
    * Date handling utilities
@@ -169,6 +171,19 @@ const MapTools = ({
 
   return (
     <div className="h-30 absolute right-4 top-4 z-[1000] overflow-hidden rounded bg-white p-4 shadow">
+      <div className="mb-4 flex items-center">
+        <input
+          type="checkbox"
+          id="singleCluster"
+          checked={singleCluster}
+          onChange={(e) => setSingleCluster(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300"
+        />
+        <label htmlFor="singleCluster" className="ml-2 text-sm font-bold">
+          Single 8-hour cluster
+        </label>
+      </div>
+
       {/* Algorithm Selection:b      b xc 
           - K-means: Focuses on geographic clustering
           - DBSCAN: Better handles noise points and irregular clusters */}

@@ -5,6 +5,7 @@ import axios from 'axios'
 import { NextResponse } from 'next/server'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { scheduleServices } from './scheduling'
 
 const LOG_MATRIX = false
 let currentWorker = null
@@ -21,118 +22,45 @@ async function processRequest(params, requestId) {
 
   currentRequestId = requestId
   currentAbortController = new AbortController()
+  const startTime = Date.now()
 
-  let services = []
   try {
-    console.log('Fetching services with params:', {
-      start: params.start,
-      end: params.end,
-      requestId,
-    })
-
-    const response = await axios.get(
-      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
-      {
-        params: { start: params.start, end: params.end },
-      },
-    )
-
-    services = response.data.filter(
-      service =>
-        service.time.range[0] !== null && service.time.range[1] !== null,
-    )
-
-    console.log(`Found ${services.length} services for request ${requestId}`)
-
+    const services = await fetchServices(params)
+    
     if (!services.length) {
       return {
-        clusteredServices: [],
+        clusters: [],
         clusteringInfo: {
-          performanceDuration: 0,
-          connectedPointsCount: 0,
           totalClusters: 0,
-          outlierCount: 0,
-        },
+          totalServices: 0,
+          averageServicesPerCluster: 0,
+          distanceBias: params.distanceBias
+        }
+      }
+    }
+
+    const distanceMatrix = await createDistanceMatrix(services)
+    if (!distanceMatrix?.length) {
+      throw new Error('Failed to create distance matrix')
+    }
+
+    const result = scheduleServices(services, distanceMatrix, {
+      distanceBias: params.distanceBias,
+      singleCluster: params.singleCluster
+    })
+    
+    return {
+      ...result,
+      clusteringInfo: {
+        ...result.clusteringInfo,
+        performanceDuration: Date.now() - startTime,
+        algorithm: 'distance-optimized-scheduling'
       }
     }
   } catch (error) {
-    console.error(`Error fetching services for request ${requestId}:`, error)
+    console.error(`Error processing request ${requestId}:`, error)
     throw error
   }
-
-  const distanceMatrix = await createDistanceMatrix(services)
-  if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
-    console.warn(`Invalid distance matrix for request ${requestId}`)
-    return { clusteredServices: services, clusteringInfo: {} }
-  }
-
-  currentWorker = new Worker(
-    path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
-  )
-
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(async () => {
-      if (currentRequestId === requestId) {
-        console.log(
-          `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
-        )
-        await terminateWorker()
-        resolve({
-          clusteredServices: services,
-          clusteringInfo: {
-            performanceDuration: WORKER_TIMEOUT,
-            connectedPointsCount: services.length,
-            totalClusters: 1,
-            outlierCount: 0,
-          },
-        })
-      }
-    }, WORKER_TIMEOUT)
-
-    currentWorker.on('message', async result => {
-      if (currentRequestId === requestId) {
-        console.log(`Received result for request ${requestId}`)
-        clearTimeout(timeoutId)
-        await terminateWorker()
-        resolve(result)
-      }
-    })
-
-    currentWorker.on('error', async error => {
-      if (currentRequestId === requestId) {
-        console.error(`Worker error for request ${requestId}:`, error)
-        clearTimeout(timeoutId)
-        await terminateWorker()
-        resolve({
-          clusteredServices: services,
-          clusteringInfo: {
-            performanceDuration: 0,
-            connectedPointsCount: services.length,
-            totalClusters: 1,
-            outlierCount: 0,
-          },
-        })
-      }
-    })
-
-    currentAbortController.signal.addEventListener('abort', async () => {
-      if (currentRequestId === requestId) {
-        console.log(`Request ${requestId} aborted`)
-        clearTimeout(timeoutId)
-        await terminateWorker()
-        reject(new Error('Worker aborted'))
-      }
-    })
-
-    currentWorker.postMessage({
-      services,
-      distanceMatrix,
-      minPoints: params.minPoints,
-      maxPoints: params.maxPoints,
-      clusterUnclustered: params.clusterUnclustered,
-      algorithm: params.algorithm,
-    })
-  })
 }
 
 async function terminateWorker() {
@@ -156,6 +84,8 @@ export async function GET(request) {
       maxPoints: parseInt(searchParams.get('maxPoints')) || 14,
       clusterUnclustered: searchParams.get('clusterUnclustered') === 'true',
       algorithm: searchParams.get('algorithm') || 'kmeans',
+      distanceBias: parseInt(searchParams.get('distanceBias')) || 50,
+      singleCluster: searchParams.get('singleCluster') === 'true',
     }
 
     // Validate date parameters

@@ -75,6 +75,7 @@ const MapView = () => {
   const [distanceBias, setDistanceBias] = useState(50)
   const [isRescheduling, setIsRescheduling] = useState(false)
   const [isOptimizing, setIsOptimizing] = useState(false)
+  const [singleCluster, setSingleCluster] = useState(false)
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
     console.log(`Updating service ${serviceId} enforcement to ${checked}`)
@@ -171,7 +172,6 @@ const MapView = () => {
         return
       }
 
-      // Add loading state
       setClusteredServices([])
       setClusteringInfo(null)
 
@@ -183,6 +183,7 @@ const MapView = () => {
           minPoints,
           maxPoints,
           algorithm,
+          singleCluster,
         },
       })
 
@@ -219,6 +220,7 @@ const MapView = () => {
     minPoints,
     maxPoints,
     algorithm,
+    singleCluster,
     addDistanceInfo,
   ])
 
@@ -251,73 +253,42 @@ const MapView = () => {
   }
 
   const optimizeSchedule = useCallback(
-    async (services, distanceBias) => {
+    async (services, newDistanceBias) => {
       setIsOptimizing(true)
       try {
-        // Create pairs of service IDs for batch processing
-        const pairs = []
-        for (let i = 0; i < services.length; i++) {
-          for (let j = i + 1; j < services.length; j++) {
-            pairs.push(`${services[i].location.id},${services[j].location.id}`)
-          }
+        const response = await axios.get('/api/cluster', {
+          params: {
+            start: startDate,
+            end: endDate,
+            clusterUnclustered,
+            minPoints,
+            maxPoints,
+            algorithm: 'scheduling',
+            distanceBias: newDistanceBias
+          },
+        })
+
+        if (!response.data?.clusteredServices) {
+          console.error('Invalid response format:', response.data)
+          return
         }
 
-        // Split pairs into chunks of 500 to avoid too large URLs
-        const chunkedPairs = chunk(pairs, 500)
-        const distanceMatrix = Array(services.length)
-          .fill()
-          .map(() => Array(services.length).fill(0))
-
-        // Fetch distances in batches
-        for (const pairChunk of chunkedPairs) {
-          const response = await axios.get('/api/distance', {
-            params: {
-              id: pairChunk,
-            },
-            paramsSerializer: params => {
-              return params.id.map(pair => `id=${pair}`).join('&')
-            },
-          })
-
-          // Populate the distance matrix with results
-          for (const result of response.data) {
-            const [fromId, toId] = result.from.id.split(',')
-            const fromIndex = services.findIndex(
-              s => s.location.id.toString() === fromId,
-            )
-            const toIndex = services.findIndex(
-              s => s.location.id.toString() === toId,
-            )
-
-            if (result.distance?.[0]?.distance) {
-              const distance = result.distance[0].distance
-              distanceMatrix[fromIndex][toIndex] = distance
-              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
-            }
-          }
-        }
-
-        // Schedule services using the distance matrix
-        const optimizedServices = await scheduleServices(
-          services,
-          clusterUnclustered,
-          distanceBias,
-          minPoints,
-          maxPoints,
-          distanceMatrix,
+        const servicesWithDistance = await addDistanceInfo(
+          response.data.clusteredServices,
         )
-
-        setClusteredServices(optimizedServices)
+        setClusteredServices(servicesWithDistance)
+        setClusteringInfo(response.data.clusteringInfo)
+        setDistanceBias(newDistanceBias)
       } catch (error) {
         console.error('Error optimizing schedule:', error)
       } finally {
         setIsOptimizing(false)
       }
     },
-    [clusterUnclustered, minPoints, maxPoints],
+    [startDate, endDate, clusterUnclustered, minPoints, maxPoints, addDistanceInfo],
   )
 
-  // Update the optimization change handler
+  // Update the handleOptimizationChange function
   const handleOptimizationChange = useCallback(
     async newBias => {
       await optimizeSchedule(clusteredServices, newBias)
@@ -354,6 +325,8 @@ const MapView = () => {
         setDistanceBias={setDistanceBias}
         isOptimizing={isOptimizing}
         onOptimizationChange={handleOptimizationChange}
+        singleCluster={singleCluster}
+        setSingleCluster={setSingleCluster}
       />
       <MapContainer
         center={center}
@@ -369,33 +342,21 @@ const MapView = () => {
           attribution="" // Remove attribution
         />
         {!isLoading &&
-          clusteredServices.reduce(
-            (acc, service, i) => {
-              const index =
-                service.cluster >= 0 ? acc.validMarkers + 1 : undefined
-              acc.markers.push(
-                <MapMarker
-                  key={service.id}
-                  service={service}
-                  markerRefs={markerRefs}
-                  activePopup={activePopup}
-                  setActivePopup={setActivePopup}
-                  index={index}
-                >
-                  <MapPopup
-                    service={service}
-                    updateServiceEnforcement={updateServiceEnforcement}
-                  />
-                </MapMarker>,
-              )
-              if (service.cluster >= 0) {
-                acc.validMarkers += 1
-              }
-              return acc
-            },
-            { markers: [], validMarkers: 0 },
-          ).markers
-        }
+          clusteredServices.map((service, i) => (
+            <MapMarker
+              key={service.id}
+              service={service}
+              markerRefs={markerRefs}
+              activePopup={activePopup}
+              setActivePopup={setActivePopup}
+              index={service.sequenceNumber}
+            >
+              <MapPopup
+                service={service}
+                updateServiceEnforcement={updateServiceEnforcement}
+              />
+            </MapMarker>
+          ))}
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
