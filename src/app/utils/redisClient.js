@@ -59,15 +59,44 @@ export async function closeRedisConnection() {
 export async function getDistances(pairs) {
   const client = getRedisClient()
   const pipeline = client.pipeline()
+  const cacheResults = []
+  const uncachedPairs = []
+  const uncachedIndices = []
 
-  for (const [id1, id2] of pairs) {
-    pipeline.geodist('locations', id1, id2, 'mi')
+  // Check cache first
+  for (let i = 0; i < pairs.length; i++) {
+    const [id1, id2] = pairs[i]
+    const cacheKey = `distance:${id1},${id2}`
+    const cachedResult = getCachedData(cacheKey)
+    
+    if (cachedResult) {
+      cacheResults[i] = cachedResult
+    } else {
+      uncachedPairs.push(pairs[i])
+      uncachedIndices.push(i)
+      pipeline.geodist('locations', id1, id2, 'mi')
+    }
   }
 
-  const results = await pipeline.exec()
-  return results.map(([err, result]) =>
-    err ? null : Number.parseFloat(result),
-  )
+  // Only make Redis call if there are uncached values
+  if (uncachedPairs.length > 0) {
+    const results = await pipeline.exec()
+    
+    // Process results and update cache
+    results.forEach(([err, result], index) => {
+      const actualIndex = uncachedIndices[index]
+      const [id1, id2] = uncachedPairs[index]
+      const distance = err ? null : Number.parseFloat(result)
+      
+      cacheResults[actualIndex] = distance
+      
+      if (distance !== null) {
+        setCachedData(`distance:${id1},${id2}`, distance)
+      }
+    })
+  }
+
+  return cacheResults
 }
 
 export async function getLocationInfo(ids) {

@@ -75,7 +75,6 @@ const MapView = () => {
   const [distanceBias, setDistanceBias] = useState(50)
   const [isRescheduling, setIsRescheduling] = useState(false)
   const [isOptimizing, setIsOptimizing] = useState(false)
-  const [singleCluster, setSingleCluster] = useState(false)
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
     console.log(`Updating service ${serviceId} enforcement to ${checked}`)
@@ -94,63 +93,20 @@ const MapView = () => {
       return acc
     }, {})
 
-    // Collect ALL pairs across ALL clusters first
-    const allPairs = []
+    // Process each cluster using the distances already included in the services
     for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
       )
 
-      // Create pairs for all sequential services in the cluster
-      for (let i = 1; i < sortedCluster.length; i++) {
-        allPairs.push(
-          `${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`,
-        )
-      }
-    }
-
-    // Split ALL pairs into chunks of 1000
-    const chunkedPairs = chunk(allPairs, 1000)
-
-    // Fetch distances for all pairs in one go
-    const distanceResults = []
-    for (const [index, pairChunk] of chunkedPairs.entries()) {
-      console.log(
-        `Fetching distances batch ${index + 1}/${chunkedPairs.length}`,
-      )
-      const response = await axios.get('/api/distance', {
-        params: {
-          id: pairChunk,
-        },
-        paramsSerializer: params => {
-          return params.id.map(pair => `id=${pair}`).join('&')
-        },
-      })
-      distanceResults.push(...response.data)
-    }
-
-    // Now process each cluster with the complete distance results
-    for (const clusterServices of Object.values(clusters)) {
-      const sortedCluster = clusterServices.sort(
-        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
-      )
-
-      // Add sequence numbers and distances to services
+      // Add sequence numbers and use distances from the service objects
       for (let i = 0; i < sortedCluster.length; i++) {
         const currentService = sortedCluster[i]
         currentService.sequenceNumber = i + 1
 
         if (i > 0) {
           const previousService = sortedCluster[i - 1]
-          const pairResult = distanceResults.find(
-            result =>
-              result.from.id ===
-              `${previousService.location.id},${currentService.location.id}`,
-          )
-
-          if (pairResult?.distance?.[0]?.distance) {
-            currentService.distanceFromPrevious =
-              pairResult.distance[0].distance
+          if (currentService.distanceFromPrevious !== undefined) {
             currentService.previousCompany = previousService.company
           }
         }
@@ -172,6 +128,7 @@ const MapView = () => {
         return
       }
 
+      // Add loading state
       setClusteredServices([])
       setClusteringInfo(null)
 
@@ -183,7 +140,6 @@ const MapView = () => {
           minPoints,
           maxPoints,
           algorithm,
-          singleCluster,
         },
       })
 
@@ -220,7 +176,6 @@ const MapView = () => {
     minPoints,
     maxPoints,
     algorithm,
-    singleCluster,
     addDistanceInfo,
   ])
 
@@ -253,9 +208,10 @@ const MapView = () => {
   }
 
   const optimizeSchedule = useCallback(
-    async (services, newDistanceBias) => {
+    async (services, distanceBias) => {
       setIsOptimizing(true)
       try {
+        // Make a single request to cluster API with optimization parameters
         const response = await axios.get('/api/cluster', {
           params: {
             start: startDate,
@@ -263,32 +219,29 @@ const MapView = () => {
             clusterUnclustered,
             minPoints,
             maxPoints,
-            algorithm: 'scheduling',
-            distanceBias: newDistanceBias
+            algorithm,
+            distanceBias,
+            optimize: true
           },
         })
 
-        if (!response.data?.clusteredServices) {
-          console.error('Invalid response format:', response.data)
-          return
+        if (response.data?.clusteredServices) {
+          const servicesWithDistance = await addDistanceInfo(
+            response.data.clusteredServices,
+          )
+          setClusteredServices(servicesWithDistance)
+          setClusteringInfo(response.data.clusteringInfo)
         }
-
-        const servicesWithDistance = await addDistanceInfo(
-          response.data.clusteredServices,
-        )
-        setClusteredServices(servicesWithDistance)
-        setClusteringInfo(response.data.clusteringInfo)
-        setDistanceBias(newDistanceBias)
       } catch (error) {
         console.error('Error optimizing schedule:', error)
       } finally {
         setIsOptimizing(false)
       }
     },
-    [startDate, endDate, clusterUnclustered, minPoints, maxPoints, addDistanceInfo],
+    [clusterUnclustered, minPoints, maxPoints, algorithm, startDate, endDate, addDistanceInfo],
   )
 
-  // Update the handleOptimizationChange function
+  // Update the optimization change handler
   const handleOptimizationChange = useCallback(
     async newBias => {
       await optimizeSchedule(clusteredServices, newBias)
@@ -325,8 +278,6 @@ const MapView = () => {
         setDistanceBias={setDistanceBias}
         isOptimizing={isOptimizing}
         onOptimizationChange={handleOptimizationChange}
-        singleCluster={singleCluster}
-        setSingleCluster={setSingleCluster}
       />
       <MapContainer
         center={center}
@@ -342,21 +293,33 @@ const MapView = () => {
           attribution="" // Remove attribution
         />
         {!isLoading &&
-          clusteredServices.map((service, i) => (
-            <MapMarker
-              key={service.id}
-              service={service}
-              markerRefs={markerRefs}
-              activePopup={activePopup}
-              setActivePopup={setActivePopup}
-              index={service.sequenceNumber}
-            >
-              <MapPopup
-                service={service}
-                updateServiceEnforcement={updateServiceEnforcement}
-              />
-            </MapMarker>
-          ))}
+          clusteredServices.reduce(
+            (acc, service, i) => {
+              const index =
+                service.cluster >= 0 ? acc.validMarkers + 1 : undefined
+              acc.markers.push(
+                <MapMarker
+                  key={service.id}
+                  service={service}
+                  markerRefs={markerRefs}
+                  activePopup={activePopup}
+                  setActivePopup={setActivePopup}
+                  index={index}
+                >
+                  <MapPopup
+                    service={service}
+                    updateServiceEnforcement={updateServiceEnforcement}
+                  />
+                </MapMarker>,
+              )
+              if (service.cluster >= 0) {
+                acc.validMarkers += 1
+              }
+              return acc
+            },
+            { markers: [], validMarkers: 0 },
+          ).markers
+        }
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
