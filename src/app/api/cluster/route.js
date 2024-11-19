@@ -15,7 +15,7 @@ const WORKER_TIMEOUT = 10000
 async function processRequest(params, requestId) {
   if (currentWorker) {
     console.log(`Terminating existing worker for request ${currentRequestId}`)
-    currentAbortController.abort()
+    if (currentAbortController) currentAbortController.abort()
     await terminateWorker()
   }
 
