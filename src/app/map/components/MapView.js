@@ -175,7 +175,7 @@ const MapView = () => {
       setClusteredServices([])
       setClusteringInfo(null)
 
-      const response = await axios.get('/api/cluster', {
+      const response = await axios.get('/api/cluster-single', {
         params: {
           start: startDate,
           end: endDate,

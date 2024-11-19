@@ -7,11 +7,13 @@ const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_TRAVEL_TIME = 30 // maximum travel time between services in minutes
 
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
-  if (newStart.getTime() === existingEnd.getTime()) return false
-  if (existingStart.getTime() === newEnd.getTime()) return false
+  if (newStart.getTime() === existingEnd.getTime() || 
+      existingStart.getTime() === newEnd.getTime()) {
+    return false
+  }
   
   return (
-    (newStart >= existingStart && newStart < existingEnd) ||
+    (newStart < existingEnd && newStart >= existingStart) ||
     (newEnd > existingStart && newEnd <= existingEnd) ||
     (newStart <= existingStart && newEnd >= existingEnd)
   )
@@ -20,6 +22,14 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
 function calculateTravelTime(distanceMatrix, fromIndex, toIndex) {
   const distance = distanceMatrix[fromIndex][toIndex]
   return distance ? Math.ceil(distance * 2) : MAX_TRAVEL_TIME // Assume 30 mph average speed
+}
+
+function roundToNearestInterval(date) {
+  const minutes = date.getMinutes()
+  const roundedMinutes = Math.ceil(minutes / TIME_INCREMENT) * TIME_INCREMENT
+  const newDate = new Date(date)
+  newDate.setMinutes(roundedMinutes)
+  return newDate
 }
 
 function findBestNextService(currentService, remainingServices, distanceMatrix, shiftEnd, scheduledServices) {
@@ -31,9 +41,12 @@ function findBestNextService(currentService, remainingServices, distanceMatrix, 
   
   for (const service of remainingServices) {
     const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
-    const earliestPossibleStart = new Date(
+    let earliestPossibleStart = new Date(
       new Date(currentService.end).getTime() + travelTime * 60000
     )
+    
+    // Round to nearest 15-minute interval
+    earliestPossibleStart = roundToNearestInterval(earliestPossibleStart)
     
     // Skip if service can't start after travel time or would end after shift
     const serviceEnd = new Date(
