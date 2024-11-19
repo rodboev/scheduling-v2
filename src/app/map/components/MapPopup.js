@@ -36,7 +36,7 @@ const MapPopup = ({ service }) => {
               className="h-4 w-4"
             />
             <span className="leading-none">
-              {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
+              {dayjs(service.time.range[0]).format('M/D')} {formatTime(service.start)} -{' '}
               {formatTime(service.end)}
             </span>
           </div>
@@ -57,7 +57,7 @@ const MapPopup = ({ service }) => {
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                 {(parseInt(service.distanceFromPrevious / 10 * 60))} min {/* at 10mph */} from {service.previousCompany}
+                {(parseInt(service.distanceFromPrevious / 10 * 60))} min from {service.previousCompany}
               </div>
             )}
           </div>
@@ -70,12 +70,11 @@ const MapPopup = ({ service }) => {
         </div>
 
         <div className="whitespace-nowrap">
-          Preferred Time: {dayjs(service.time.preferred).format('h:mma')}
+          Preferred Time: {dayjs(service.time.preferred).format('M/D h:mma')}
         </div>
         <div>Duration: {service.time.duration} min</div>
         <div>
-          Time Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
-          {dayjs(service.time.range[0]).format('h:mma')} -{' '}
+          Time Range: {dayjs(service.time.range[0]).format('M/D h:mma')} -{' '}
           {dayjs(service.time.range[1]).format('h:mma')}
         </div>
 
