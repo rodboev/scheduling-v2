@@ -57,7 +57,8 @@ const MapPopup = ({ service }) => {
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                {(parseInt(service.distanceFromPrevious / 10 * 60))} min from {service.previousCompany}
+                {/*(parseInt(service.distanceFromPrevious / 10 * 60))*/}
+                15 min from {service.previousCompany}
               </div>
             )}
           </div>
