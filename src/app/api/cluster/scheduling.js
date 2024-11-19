@@ -3,42 +3,133 @@ import { chunk } from '../../map/utils/array.js'
 import { calculateTravelTime } from '../../map/utils/distance.js'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
+const MAX_CLUSTER_DURATION = 8 * 60 // 8 hours in minutes
+const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
+const TIME_INCREMENT = 15 // 15 minute increments
 
-// Helper function to get distances in batches
-async function getDistances(pairs) {
-  try {
-    const chunkedPairs = chunk(pairs, 500)
-    const allResults = []
+function sortServicesByDistance(services) {
+  return services.sort((a, b) => 
+    (a.distanceFromPrevious || 0) - (b.distanceFromPrevious || 0)
+  )
+}
 
-    for (const pairChunk of chunkedPairs) {
-      const response = await axios.get(`${BASE_URL}/api/distance`, {
-        params: {
-          id: pairChunk,
-        },
-        paramsSerializer: params => {
-          return params.id.map(pair => `id=${pair}`).join('&')
-        },
-      })
-      allResults.push(...response.data)
+function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
+  // Allow exact minute matches
+  if (newStart.getTime() === existingEnd.getTime()) return false
+  if (existingStart.getTime() === newEnd.getTime()) return false
+  
+  return (
+    (newStart >= existingStart && newStart < existingEnd) ||
+    (newEnd > existingStart && newEnd <= existingEnd) ||
+    (newStart <= existingStart && newEnd >= existingEnd)
+  )
+}
+
+function calculateTotalDuration(scheduledTimes) {
+  if (!scheduledTimes.length) return 0
+  
+  // Sort times by start time
+  const sortedTimes = scheduledTimes.sort((a, b) => a.start - b.start)
+  
+  // Calculate total duration including break times
+  const firstStart = sortedTimes[0].start
+  const lastEnd = sortedTimes[sortedTimes.length - 1].end
+  return (lastEnd - firstStart) / (1000 * 60) // Convert to minutes
+}
+
+function findValidTimeSlot(proposedStart, duration, scheduledTimes) {
+  const baseTime = new Date(proposedStart)
+  
+  // Try current time first
+  const currentEnd = new Date(baseTime.getTime() + duration * 60000)
+  if (!hasOverlap(baseTime, currentEnd, scheduledTimes)) {
+    return baseTime
+  }
+  
+  // Only try later times in 15-minute increments
+  for (let offset = TIME_INCREMENT; offset <= MAX_TIME_SEARCH; offset += TIME_INCREMENT) {
+    const laterStart = new Date(baseTime.getTime() + offset * 60000)
+    const laterEnd = new Date(laterStart.getTime() + duration * 60000)
+    if (!hasOverlap(laterStart, laterEnd, scheduledTimes)) {
+      return laterStart
     }
+  }
+  
+  return null // No valid slot found within 2 hours forward
+}
 
-    return allResults
-  } catch (error) {
-    console.error('Failed to get distances from API:', error)
-    return null
+function hasOverlap(start, end, scheduledTimes) {
+  return scheduledTimes.some(time => 
+    checkTimeOverlap(time.start, time.end, start, end)
+  )
+}
+
+function sortServicesByEarliestTime(services) {
+  return [...services].sort((a, b) => {
+    const aStart = new Date(a.time.range[0])
+    const bStart = new Date(b.time.range[0])
+    
+    // If start times are equal, sort by duration (shorter first)
+    if (aStart.getTime() === bStart.getTime()) {
+      return a.time.duration - b.time.duration
+    }
+    
+    return aStart.getTime() - bStart.getTime()
+  })
+}
+
+function formatDateTime(date) {
+  return date.toLocaleString('en-US', { 
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit', 
+    minute: '2-digit', 
+    hour12: true 
+  })
+}
+
+function logClusterSchedule(clusterId, services) {
+  console.log(`\nCluster ${clusterId} Schedule:`)
+  console.log('----------------------------------------')
+  
+  // Sort by full date-time, not just time
+  const sortedServices = [...services].sort((a, b) => {
+    const dateA = new Date(a.start)
+    const dateB = new Date(b.start)
+    return dateA.getTime() - dateB.getTime()
+  })
+  
+  let previousService = null
+  sortedServices.forEach(service => {
+    const start = formatDateTime(new Date(service.start))
+    const end = formatDateTime(new Date(service.end))
+    
+    let distanceInfo = '(first stop)'
+    if (previousService) {
+      const distance = service.distanceFromPrevious 
+        ? `${service.distanceFromPrevious.toFixed(2)} mi from ${previousService.company}`
+        : 'distance unknown'
+      distanceInfo = `(${distance})`
+    }
+    
+    console.log(
+      `[${service.sequenceNumber}] ${start} - ${end} ${service.company} ${distanceInfo}`
+    )
+    
+    previousService = service
+  })
+  
+  // Calculate and log total duration
+  if (sortedServices.length > 0) {
+    const firstStart = new Date(sortedServices[0].start)
+    const lastEnd = new Date(sortedServices[sortedServices.length - 1].end)
+    const totalMinutes = (lastEnd - firstStart) / (1000 * 60)
+    console.log(`Total duration: ${(totalMinutes / 60).toFixed(2)} hours\n`)
   }
 }
 
-export async function scheduleServices(
-  services,
-  shouldClusterNoise = true,
-  distanceBias = 50,
-  minPoints = 4,
-  maxPoints = 24,
-  distanceMatrix = null,
-) {
-  // Group services by cluster
-  const clusters = services.reduce((acc, service) => {
+export async function scheduleServices(services, distanceMatrix = null) {
+  let clusters = services.reduce((acc, service) => {
     if (service.cluster >= 0) {
       if (!acc[service.cluster]) acc[service.cluster] = []
       acc[service.cluster].push(service)
@@ -46,75 +137,199 @@ export async function scheduleServices(
     return acc
   }, {})
 
-  // Schedule each cluster
+  let nextClusterId = Math.max(...Object.keys(clusters).map(Number)) + 1
+  let unscheduledServices = []
+
+  // Schedule each cluster independently
   for (const [clusterId, clusterServices] of Object.entries(clusters)) {
-    // Sort by preferred time
-    clusterServices.sort(
-      (a, b) => new Date(a.time.preferred) - new Date(b.time.preferred),
-    )
-
-    // Schedule first service at its preferred time
-    let currentService = clusterServices[0]
-    currentService.start = currentService.time.preferred
+    // Sort services by earliest possible time before scheduling
+    let sortedServices = sortServicesByEarliestTime(clusterServices)
+    let scheduledTimes = []
+    
+    // Schedule first service at its earliest possible time from range
+    let currentService = sortedServices[0]
+    const earliestPossibleStart = new Date(currentService.time.range[0])
+    
+    currentService.start = earliestPossibleStart.toISOString()
     currentService.end = new Date(
-      new Date(currentService.start).getTime() +
-        currentService.time.duration * 60000,
+      earliestPossibleStart.getTime() + currentService.time.duration * 60000
     ).toISOString()
+    scheduledTimes.push({
+      start: earliestPossibleStart,
+      end: new Date(currentService.end)
+    })
 
-    // Create pairs for all sequential services in the cluster
-    const pairs = []
-    for (let i = 1; i < clusterServices.length; i++) {
-      const prevService = clusterServices[i - 1]
-      currentService = clusterServices[i]
-      pairs.push(`${prevService.location.id},${currentService.location.id}`)
-    }
-
-    // Get all distances at once
-    const distanceResults = await getDistances(pairs)
-
-    // Schedule remaining services using the fetched distances
-    for (let i = 1; i < clusterServices.length; i++) {
-      const prevService = clusterServices[i - 1]
-      currentService = clusterServices[i]
-
-      // Find the distance result for this pair
-      const pairResult = distanceResults?.find(
-        result =>
-          result.from.id ===
-          `${prevService.location.id},${currentService.location.id}`,
-      )
-
-      // Calculate travel time
-      let travelTime
-      if (pairResult?.distance?.[0]?.distance) {
-        travelTime = pairResult.distance[0].distance
-      } else {
-        // Fallback to Haversine
-        travelTime = calculateTravelTime(
-          prevService.location.latitude,
-          prevService.location.longitude,
-          currentService.location.latitude,
-          currentService.location.longitude,
-        )
+    // Schedule remaining services without assigning sequence numbers
+    for (let i = 1; i < sortedServices.length; i++) {
+      currentService = sortedServices[i]
+      const prevService = sortedServices[i - 1]
+      
+      // Calculate minimum travel time from previous service
+      let travelTime = 15 // Default 15 minutes if no distance info
+      if (currentService.distanceFromPrevious) {
+        travelTime = Math.ceil(currentService.distanceFromPrevious)
       }
 
-      // Calculate earliest possible start time
-      const prevEndTime = new Date(prevService.end)
-      const earliestStart = new Date(prevEndTime)
-      earliestStart.setMinutes(earliestStart.getMinutes() + travelTime)
+      // Calculate earliest possible start time after previous service
+      let proposedStart = new Date(prevService.end)
+      proposedStart.setMinutes(proposedStart.getMinutes() + travelTime)
+      
+      // Ensure we don't schedule before the service's earliest possible time
+      const serviceEarliestTime = new Date(currentService.time.range[0])
+      if (proposedStart < serviceEarliestTime) {
+        proposedStart = serviceEarliestTime
+      }
+      
+      // Find a valid time slot
+      const validStart = findValidTimeSlot(
+        proposedStart,
+        currentService.time.duration,
+        scheduledTimes
+      )
+      
+      if (validStart) {
+        const validEnd = new Date(
+          validStart.getTime() + currentService.time.duration * 60000
+        )
+        
+        // Ensure we don't schedule beyond the service's latest possible time
+        const serviceLatestEnd = new Date(currentService.time.range[1])
+        if (validEnd > serviceLatestEnd) {
+          unscheduledServices.push(currentService)
+          continue
+        }
+        
+        // Check if adding this service would exceed 8 hour cluster duration
+        const tempTimes = [...scheduledTimes, { start: validStart, end: validEnd }]
+        const totalDuration = calculateTotalDuration(tempTimes)
+        
+        if (totalDuration <= MAX_CLUSTER_DURATION) {
+          currentService.start = validStart.toISOString()
+          currentService.end = validEnd.toISOString()
+          scheduledTimes.push({ start: validStart, end: validEnd })
+        } else {
+          unscheduledServices.push(currentService)
+        }
+      } else {
+        unscheduledServices.push(currentService)
+      }
+    }
 
-      // Set start time to either earliest possible or preferred time
-      currentService.start = new Date(
-        Math.max(earliestStart, new Date(currentService.time.preferred)),
-      ).toISOString()
-
-      // Set end time based on duration
-      currentService.end = new Date(
-        new Date(currentService.start).getTime() +
-          currentService.time.duration * 60000,
-      ).toISOString()
+    // Log schedule for first 10 clusters
+    if (parseInt(clusterId) < 10) {
+      logClusterSchedule(clusterId, clusterServices.filter(service => 
+        !unscheduledServices.includes(service)
+      ))
     }
   }
+
+  // Try to schedule unscheduled services in new clusters
+  while (unscheduledServices.length > 0) {
+    const newCluster = []
+    let scheduledTimes = []
+    
+    // Try to schedule each unscheduled service in the new cluster
+    for (const service of [...unscheduledServices]) {
+      if (newCluster.length === 0) {
+        // First service in new cluster
+        service.cluster = nextClusterId
+        service.start = service.time.range[0]
+        service.end = new Date(
+          new Date(service.start).getTime() + service.time.duration * 60000
+        ).toISOString()
+        newCluster.push(service)
+        scheduledTimes.push({
+          start: new Date(service.start),
+          end: new Date(service.end)
+        })
+        unscheduledServices = unscheduledServices.filter(s => s !== service)
+      } else {
+        // Try to fit service into current cluster
+        const lastService = newCluster[newCluster.length - 1]
+        let travelTime = 15
+        if (service.distanceFromPrevious) {
+          travelTime = Math.ceil(service.distanceFromPrevious)
+        }
+
+        let proposedStart = new Date(lastService.end)
+        proposedStart.setMinutes(proposedStart.getMinutes() + travelTime)
+
+        const validStart = findValidTimeSlot(
+          proposedStart,
+          service.time.duration,
+          scheduledTimes
+        )
+
+        if (validStart) {
+          const validEnd = new Date(
+            validStart.getTime() + service.time.duration * 60000
+          )
+          
+          const tempTimes = [...scheduledTimes, { start: validStart, end: validEnd }]
+          const totalDuration = calculateTotalDuration(tempTimes)
+          
+          if (totalDuration <= MAX_CLUSTER_DURATION && 
+              validEnd <= new Date(service.time.range[1])) {
+            service.cluster = nextClusterId
+            service.start = validStart.toISOString()
+            service.end = validEnd.toISOString()
+            newCluster.push(service)
+            scheduledTimes.push({ start: validStart, end: validEnd })
+            unscheduledServices = unscheduledServices.filter(s => s !== service)
+          }
+        }
+      }
+    }
+
+    if (newCluster.length > 0) {
+      clusters[nextClusterId] = newCluster
+      // Log new cluster if it's one of first 10
+      if (nextClusterId < 10) {
+        logClusterSchedule(nextClusterId, newCluster)
+      }
+      nextClusterId++
+    }
+  }
+
+  // After ALL services are scheduled, sort ALL services chronologically
+  const allScheduledServices = services.filter(service => service.cluster >= 0 && service.start)
+  
+  // Sort by actual scheduled start time (not range)
+  const sortedByStartTime = [...allScheduledServices].sort((a, b) => {
+    const dateA = new Date(a.start).getTime()
+    const dateB = new Date(b.start).getTime()
+    return dateA - dateB
+  })
+  
+  // Clear all existing sequence numbers first
+  for (let i = 0; i < services.length; i++) {
+    services[i].sequenceNumber = null
+  }
+  
+  // Assign new sequence numbers based on chronological order
+  for (let i = 0; i < sortedByStartTime.length; i++) {
+    const service = sortedByStartTime[i]
+    const sequenceNumber = i + 1
+    
+    // Find the index in the original services array and update directly
+    const index = services.findIndex(s => s.id === service.id)
+    if (index !== -1) {
+      services[index].sequenceNumber = sequenceNumber
+    }
+  }
+
+  // Log the final sequence order for verification
+  console.log('\nFinal Sequence Order (After Assignment):')
+  console.log('----------------------------------------')
+  const verificationSort = [...services]
+    .filter(s => s.cluster >= 0 && s.start)
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  
+  verificationSort.forEach(service => {
+    console.log(
+      `[${service.sequenceNumber}] ${new Date(service.start).toLocaleString()} - ${service.company} (cluster ${service.cluster})`
+    )
+  })
 
   return services
 }
