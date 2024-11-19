@@ -1,6 +1,0 @@
-Filter current clusters for closest points and minimum breaks between locations, pick enough to fill 8 hours of duration (each service location plus at least 15 min between them)
-Start each cluster with the location closest to any technician's address, use tech name for those services
-Show previous tech name too
-Calculate distance between locations based on based on 15mph (use Vroom later)
-Drop rest of locations if shift is over 8 hours
-Re-generate clusters and find cloest points again

@@ -93,20 +93,63 @@ const MapView = () => {
       return acc
     }, {})
 
-    // Process each cluster using the distances already included in the services
+    // Collect ALL pairs across ALL clusters first
+    const allPairs = []
     for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
       )
 
-      // Add sequence numbers and use distances from the service objects
+      // Create pairs for all sequential services in the cluster
+      for (let i = 1; i < sortedCluster.length; i++) {
+        allPairs.push(
+          `${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`,
+        )
+      }
+    }
+
+    // Split ALL pairs into chunks of 1000
+    const chunkedPairs = chunk(allPairs, 1000)
+
+    // Fetch distances for all pairs in one go
+    const distanceResults = []
+    for (const [index, pairChunk] of chunkedPairs.entries()) {
+      console.log(
+        `Fetching distances batch ${index + 1}/${chunkedPairs.length}`,
+      )
+      const response = await axios.get('/api/distance', {
+        params: {
+          id: pairChunk,
+        },
+        paramsSerializer: params => {
+          return params.id.map(pair => `id=${pair}`).join('&')
+        },
+      })
+      distanceResults.push(...response.data)
+    }
+
+    // Now process each cluster with the complete distance results
+    for (const clusterServices of Object.values(clusters)) {
+      const sortedCluster = clusterServices.sort(
+        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
+      )
+
+      // Add sequence numbers and distances to services
       for (let i = 0; i < sortedCluster.length; i++) {
         const currentService = sortedCluster[i]
         currentService.sequenceNumber = i + 1
 
         if (i > 0) {
           const previousService = sortedCluster[i - 1]
-          if (currentService.distanceFromPrevious !== undefined) {
+          const pairResult = distanceResults.find(
+            result =>
+              result.from.id ===
+              `${previousService.location.id},${currentService.location.id}`,
+          )
+
+          if (pairResult?.distance?.[0]?.distance) {
+            currentService.distanceFromPrevious =
+              pairResult.distance[0].distance
             currentService.previousCompany = previousService.company
           }
         }
@@ -211,34 +254,67 @@ const MapView = () => {
     async (services, distanceBias) => {
       setIsOptimizing(true)
       try {
-        // Make a single request to cluster API with optimization parameters
-        const response = await axios.get('/api/cluster', {
-          params: {
-            start: startDate,
-            end: endDate,
-            clusterUnclustered,
-            minPoints,
-            maxPoints,
-            algorithm,
-            distanceBias,
-            optimize: true
-          },
-        })
-
-        if (response.data?.clusteredServices) {
-          const servicesWithDistance = await addDistanceInfo(
-            response.data.clusteredServices,
-          )
-          setClusteredServices(servicesWithDistance)
-          setClusteringInfo(response.data.clusteringInfo)
+        // Create pairs of service IDs for batch processing
+        const pairs = []
+        for (let i = 0; i < services.length; i++) {
+          for (let j = i + 1; j < services.length; j++) {
+            pairs.push(`${services[i].location.id},${services[j].location.id}`)
+          }
         }
+
+        // Split pairs into chunks of 500 to avoid too large URLs
+        const chunkedPairs = chunk(pairs, 500)
+        const distanceMatrix = Array(services.length)
+          .fill()
+          .map(() => Array(services.length).fill(0))
+
+        // Fetch distances in batches
+        for (const pairChunk of chunkedPairs) {
+          const response = await axios.get('/api/distance', {
+            params: {
+              id: pairChunk,
+            },
+            paramsSerializer: params => {
+              return params.id.map(pair => `id=${pair}`).join('&')
+            },
+          })
+
+          // Populate the distance matrix with results
+          for (const result of response.data) {
+            const [fromId, toId] = result.from.id.split(',')
+            const fromIndex = services.findIndex(
+              s => s.location.id.toString() === fromId,
+            )
+            const toIndex = services.findIndex(
+              s => s.location.id.toString() === toId,
+            )
+
+            if (result.distance?.[0]?.distance) {
+              const distance = result.distance[0].distance
+              distanceMatrix[fromIndex][toIndex] = distance
+              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
+            }
+          }
+        }
+
+        // Schedule services using the distance matrix
+        const optimizedServices = await scheduleServices(
+          services,
+          clusterUnclustered,
+          distanceBias,
+          minPoints,
+          maxPoints,
+          distanceMatrix,
+        )
+
+        setClusteredServices(optimizedServices)
       } catch (error) {
         console.error('Error optimizing schedule:', error)
       } finally {
         setIsOptimizing(false)
       }
     },
-    [clusterUnclustered, minPoints, maxPoints, algorithm, startDate, endDate, addDistanceInfo],
+    [clusterUnclustered, minPoints, maxPoints],
   )
 
   // Update the optimization change handler
@@ -249,11 +325,19 @@ const MapView = () => {
     [clusteredServices, optimizeSchedule],
   )
 
-  // Add useEffect to fetch services when dates change
+  // Add these refs at the component level, not inside useEffect
+  const previousStart = useRef(startDate)
+  const previousEnd = useRef(endDate)
+
+  // Update the useEffect
   useEffect(() => {
-    if (startDate && endDate) {
+    if (startDate && endDate && 
+        (previousStart.current !== startDate || previousEnd.current !== endDate)) {
       console.log('Fetching services for date range:', { startDate, endDate })
       fetchClusteredServices()
+      
+      previousStart.current = startDate
+      previousEnd.current = endDate
     }
   }, [startDate, endDate, fetchClusteredServices])
 
