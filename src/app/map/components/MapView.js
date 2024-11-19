@@ -72,8 +72,6 @@ const MapView = () => {
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
   const [algorithm, setAlgorithm] = useState('kmeans')
-  const [distanceBias, setDistanceBias] = useState(50)
-  const [isRescheduling, setIsRescheduling] = useState(false)
   const [isOptimizing, setIsOptimizing] = useState(false)
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
@@ -252,7 +250,6 @@ const MapView = () => {
 
   const optimizeSchedule = useCallback(
     async (services, distanceBias) => {
-      setIsOptimizing(true)
       try {
         // Create pairs of service IDs for batch processing
         const pairs = []
@@ -310,8 +307,6 @@ const MapView = () => {
         setClusteredServices(optimizedServices)
       } catch (error) {
         console.error('Error optimizing schedule:', error)
-      } finally {
-        setIsOptimizing(false)
       }
     },
     [clusterUnclustered, minPoints, maxPoints],
@@ -344,24 +339,11 @@ const MapView = () => {
   return (
     <div className="relative h-screen w-screen">
       <MapTools
-        algorithm={algorithm}
-        setAlgorithm={setAlgorithm}
-        minPoints={minPoints}
-        setMinPoints={setMinPoints}
-        maxPoints={maxPoints}
-        setMaxPoints={setMaxPoints}
-        onPointsChangeComplete={handlePointsChangeComplete}
-        clusterUnclustered={clusterUnclustered}
-        setClusterUnclustered={setClusterUnclustered}
         startDate={startDate}
         setStartDate={setStartDate}
         endDate={endDate}
         setEndDate={setEndDate}
         handleNextDay={handleNextDay}
-        distanceBias={distanceBias}
-        setDistanceBias={setDistanceBias}
-        isOptimizing={isOptimizing}
-        onOptimizationChange={handleOptimizationChange}
       />
       <MapContainer
         center={center}

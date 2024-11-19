@@ -12,6 +12,9 @@ const WORKER_TIMEOUT = 10000
 const DEFAULT_START = '2024-09-03T02:30:00.000Z'
 const DEFAULT_END = '2024-09-03T12:30:00.000Z'
 
+// Add this constant at the top with the other constants
+const CLUSTERING_INFO = false
+
 async function processRequest(params, requestId) {
   if (currentWorker) {
     console.log(`Terminating existing worker for request ${currentRequestId}`)
@@ -49,15 +52,7 @@ async function processRequest(params, requestId) {
     console.log(`Found ${services.length} services for request ${requestId}`)
 
     if (!services.length) {
-      return {
-        clusteredServices: [],
-        clusteringInfo: {
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          totalClusters: 0,
-          outlierCount: 0,
-        },
-      }
+      return { clusteredServices: [] }
     }
   } catch (error) {
     console.error(`Error fetching services for request ${requestId}:`, error)
@@ -67,7 +62,7 @@ async function processRequest(params, requestId) {
   const distanceMatrix = await createDistanceMatrix(services)
   if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
     console.warn(`Invalid distance matrix for request ${requestId}`)
-    return { clusteredServices: services, clusteringInfo: {} }
+    return { clusteredServices: services }
   }
 
   currentWorker = new Worker(
@@ -81,15 +76,7 @@ async function processRequest(params, requestId) {
           `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`
         )
         await terminateWorker()
-        resolve({
-          clusteredServices: services,
-          clusteringInfo: {
-            performanceDuration: WORKER_TIMEOUT,
-            connectedPointsCount: services.length,
-            totalClusters: 1,
-            outlierCount: 0,
-          },
-        })
+        resolve({ clusteredServices: services })
       }
     }, WORKER_TIMEOUT)
 
@@ -98,7 +85,7 @@ async function processRequest(params, requestId) {
         console.log(`Received result for request ${requestId}`)
         clearTimeout(timeoutId)
         await terminateWorker()
-        resolve(result)
+        resolve({ clusteredServices: result.clusteredServices })
       }
     })
 
@@ -107,15 +94,7 @@ async function processRequest(params, requestId) {
         console.error(`Worker error for request ${requestId}:`, error)
         clearTimeout(timeoutId)
         await terminateWorker()
-        resolve({
-          clusteredServices: services,
-          clusteringInfo: {
-            performanceDuration: 0,
-            connectedPointsCount: services.length,
-            totalClusters: 1,
-            outlierCount: 0,
-          },
-        })
+        resolve({ clusteredServices: services })
       }
     })
 
@@ -163,8 +142,7 @@ export async function GET(request) {
         return new Response(
           JSON.stringify({
             error: 'Request superseded',
-            clusteredServices: [],
-            clusteringInfo: null,
+            clusteredServices: []
           }),
           { status: 409 }
         )
@@ -181,8 +159,7 @@ export async function GET(request) {
       return new Response(
         JSON.stringify({
           error: 'Processing failed',
-          clusteredServices: [],
-          clusteringInfo: null,
+          clusteredServices: []
         }),
         { status: 500 }
       )
@@ -193,8 +170,7 @@ export async function GET(request) {
       JSON.stringify({
         error: 'Internal Server Error',
         details: error.message,
-        clusteredServices: [],
-        clusteringInfo: null,
+        clusteredServices: []
       }),
       { status: 500 }
     )

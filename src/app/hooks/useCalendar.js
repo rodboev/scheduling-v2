@@ -7,35 +7,49 @@ export function useCalendar(defaultDate = new Date()) {
   const [date, setDate] = useState(defaultDate)
   const [view, setView] = useState(Views.WEEK)
   const [currentViewRange, setCurrentViewRange] = useState(() => {
-    if (view === Views.DAY) {
-      return createDateRange(date, date)
-    }
-
-    if (view === Views.WEEK) {
-      return createDateRange(
-        dayjs(date).startOf('week').toDate(),
-        dayjs(date).endOf('week').toDate(),
-      )
-    }
-
-    if (view === Views.MONTH) {
-      return createDateRange(
-        dayjs(date).startOf('month').toDate(),
-        dayjs(date).endOf('month').toDate(),
-      )
-    }
-
-    return createDateRange(date, date)
+    return createDateRange(
+      dayjs(defaultDate).startOf('week').toDate(),
+      dayjs(defaultDate).endOf('week').toDate(),
+    )
   })
 
   const handleView = useCallback(newView => {
     setView(newView)
-  }, [])
+    
+    // Update the date range based on the new view
+    if (newView === Views.DAY) {
+      setCurrentViewRange(createDateRange(date, date))
+    } else if (newView === Views.WEEK) {
+      setCurrentViewRange(createDateRange(
+        dayjs(date).startOf('week').toDate(),
+        dayjs(date).endOf('week').toDate()
+      ))
+    } else if (newView === Views.MONTH) {
+      setCurrentViewRange(createDateRange(
+        dayjs(date).startOf('month').toDate(),
+        dayjs(date).endOf('month').toDate()
+      ))
+    }
+  }, [date])
 
-  const handleNavigate = useCallback(newDate => {
+  const handleNavigate = useCallback((newDate, viewType) => {
     setDate(newDate)
-    setCurrentViewRange(createDateRange(newDate, newDate))
-  }, [])
+    
+    // Update the range based on current view
+    if (view === Views.DAY) {
+      setCurrentViewRange(createDateRange(newDate, newDate))
+    } else if (view === Views.WEEK) {
+      setCurrentViewRange(createDateRange(
+        dayjs(newDate).startOf('week').toDate(),
+        dayjs(newDate).endOf('week').toDate()
+      ))
+    } else if (view === Views.MONTH) {
+      setCurrentViewRange(createDateRange(
+        dayjs(newDate).startOf('month').toDate(),
+        dayjs(newDate).endOf('month').toDate()
+      ))
+    }
+  }, [view])
 
   const handleRangeChange = useCallback(range => {
     const [start, end] = Array.isArray(range)

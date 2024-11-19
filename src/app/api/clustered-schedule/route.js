@@ -4,21 +4,24 @@ import { scheduleServices } from '../../scheduling/index.js'
 
 async function fetchServices(start, end) {
   try {
-    const response = await axios.get(
-      `http://localhost:${process.env.PORT}/api/services`,
+    // First fetch the clustered services
+    const clusterResponse = await axios.get(
+      `http://localhost:${process.env.PORT}/api/cluster-single`,
       {
         params: { start, end },
       },
     )
-    return response.data
+    
+    // Return the clustered services
+    return clusterResponse.data.clusteredServices
   } catch (error) {
-    console.error('Error fetching services:', error)
+    console.error('Error fetching clustered services:', error)
     throw error
   }
 }
 
 export async function GET(request) {
-  console.log('Schedule API route called')
+  console.log('Clustered Schedule API route called')
 
   const { searchParams } = new URL(request.url)
   const start = searchParams.get('start') || '2024-09-03T02:30:00.000Z'
@@ -28,12 +31,12 @@ export async function GET(request) {
 
   try {
     const services = await fetchServices(start, end)
-    console.log(`Fetched ${services.length} services for scheduling`)
+    console.log(`Fetched ${services.length} clustered services for scheduling`)
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          console.log('Scheduling services...')
+          console.log('Scheduling clustered services...')
 
           for await (const result of scheduleServices(services)) {
             if (result.type === 'progress') {
@@ -44,7 +47,7 @@ export async function GET(request) {
               )
             } else if (result.type === 'result') {
               const { scheduledServices, unassignedServices } = result.data
-              console.log(`Scheduled services: ${scheduledServices.length}`)
+              console.log(`Scheduled clustered services: ${scheduledServices.length}`)
 
               // Group unassigned services by reason
               const unassignedGroups = unassignedServices.reduce(
@@ -78,7 +81,7 @@ export async function GET(request) {
             }
           }
         } catch (error) {
-          console.error('Error in schedule route:', error)
+          console.error('Error in clustered schedule route:', error)
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ type: 'error', error: error.message, stack: error.stack })}\n\n`,
@@ -98,10 +101,10 @@ export async function GET(request) {
       },
     })
   } catch (error) {
-    console.error('Error fetching services:', error)
+    console.error('Error fetching clustered services:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch services' },
+      { error: 'Failed to fetch clustered services' },
       { status: 500 },
     )
   }
-}
+} 

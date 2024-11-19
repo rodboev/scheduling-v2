@@ -4,7 +4,7 @@ import { parentPort } from 'node:worker_threads'
 const SHIFT_DURATION = 8 * 60 // 8 hours in minutes
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
-const MAX_TRAVEL_TIME = 30 // maximum travel time between services in minutes
+const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
 
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
   if (newStart.getTime() === existingEnd.getTime() || 

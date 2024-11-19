@@ -127,7 +127,7 @@ export default function Service({ service, updateServiceEnforcement }) {
           {dayjs(service.end).format('M/D')} {formatTime(service.end)}
         </p>
         <p className="whitespace-nowrap">
-          Preferred Time: {dayjs(service.time.preferred).format('h:mma')}
+          Preferred Time: {dayjs(service.time?.preferred).format('h:mma')}
         </p>
         <p>Duration: {service.time.duration} min</p>
         <p>
@@ -138,8 +138,8 @@ export default function Service({ service, updateServiceEnforcement }) {
         </p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
-          <p>Route Time: {service.route.time.join(' - ')}</p>
-          <p>Route Days: {service.route.days}</p>
+          <p>Route Time: {service.route?.time.join(' - ')}</p>
+          <p>Route Days: {service.route?.days}</p>
         </div>
 
         {service.comments && (
