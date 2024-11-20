@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const start = searchParams.get('start') || '2024-09-03T02:30:00.000Z'
-  const end = searchParams.get('end') || '2024-09-03T12:30:00.999Z'
+  const start = searchParams.get('start') || '2024-09-01T04:00:00.000Z'
+  const end = searchParams.get('end') || '2024-09-08T03:59:59.999Z'
 
   const encoder = new TextEncoder()
   let isStreamClosed = false
