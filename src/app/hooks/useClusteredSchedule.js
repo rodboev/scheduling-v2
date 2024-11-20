@@ -1,8 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
-const BATCH_SIZE = 100 // Adjust this value based on performance
 const PROGRESS_UPDATE_INTERVAL = 10 // Update progress every 10ms
 
 function debounce(func, wait, immediate = false) {
@@ -27,99 +26,36 @@ export function useSchedule(currentViewRange) {
   const [result, setResult] = useState({
     assignedServices: [],
     resources: [],
-    filteredUnassignedServices: [],
+    unassignedServices: []
   })
-  const dataRef = useRef(null)
-  const progressRef = useRef(0)
-
-  const dateRange = useMemo(
-    () => ({
-      start: dayjs(currentViewRange.start).startOf('day').toISOString(),
-      end: dayjs(currentViewRange.end).endOf('day').toISOString(),
-    }),
-    [currentViewRange],
-  )
 
   const debouncedSetProgress = useCallback(
     debounce(value => {
       setProgress(value)
     }, PROGRESS_UPDATE_INTERVAL),
-    [],
+    []
   )
-
-  const processDataBatch = useCallback(startIndex => {
-    const { scheduledServices, unassignedServices } = dataRef.current
-    const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
-
-    const newAssignedServices = scheduledServices
-      .slice(startIndex, endIndex)
-      .map(service => ({
-        ...service,
-        start: new Date(service.start),
-        end: new Date(service.end),
-      }))
-
-    setResult(prevResult => ({
-      ...prevResult,
-      assignedServices: [
-        ...prevResult.assignedServices,
-        ...newAssignedServices,
-      ],
-    }))
-
-    if (endIndex < scheduledServices.length) {
-      setTimeout(() => processDataBatch(endIndex), 0)
-    } else {
-      // Process unassigned services and resources
-      const filteredUnassignedServices = unassignedServices.map(service => ({
-        ...service,
-        start: new Date(service.start),
-        end: new Date(service.end),
-      }))
-
-      const techSet = new Set(
-        scheduledServices.map(service => service.resourceId),
-      )
-      const resources = Array.from(techSet)
-        .map(techId => ({ id: techId, title: techId }))
-        .sort((a, b) => {
-          const aIsGeneric = a.id.startsWith('Tech ')
-          const bIsGeneric = b.id.startsWith('Tech ')
-          if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
-          return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) -
-                Number.parseInt(b.id.split(' ')[1], 10)
-            : a.id.localeCompare(b.id)
-        })
-
-      setResult(prevResult => ({
-        ...prevResult,
-        filteredUnassignedServices,
-        resources,
-      }))
-
-      setLoading(false)
-      setStatus('')
-    }
-  }, [])
 
   const fetchSchedule = useCallback(async () => {
     setLoading(true)
     setProgress(0)
-    progressRef.current = 0
     setStatus('Initializing...')
 
+    const params = new URLSearchParams({
+      start: dayjs(currentViewRange.start).toISOString(),
+      end: dayjs(currentViewRange.end).toISOString()
+    })
+
     const eventSource = new EventSource(
-      `/api/clustered-schedule?start=${dateRange.start}&end=${dateRange.end}`,
+      `/api/clustered-schedule?${params.toString()}`
     )
 
     eventSource.onmessage = event => {
       const data = JSON.parse(event.data)
+      
       if (data.type === 'progress') {
         const newProgress = data.data
-        progressRef.current = newProgress
         if (newProgress === 0 || newProgress === 1) {
-          // Immediately update for first and last progress
           setProgress(newProgress)
         } else {
           debouncedSetProgress(newProgress)
@@ -127,14 +63,33 @@ export function useSchedule(currentViewRange) {
         setStatus('Scheduling...')
       } else if (data.type === 'result') {
         eventSource.close()
-        dataRef.current = data
-        setStatus('Rendering...')
+        
+        // Convert services to calendar events while preserving original structure
+        const processedServices = (data.clusteredServices || []).map(service => ({
+          ...service, // Keep all original service data
+          // Add calendar-specific fields
+          id: service.id,
+          title: `${service.company} - ${service.tech.name}`,
+          start: new Date(service.start),
+          end: new Date(service.end),
+          resourceId: `Tech ${service.cluster + 1}`,
+          enforced: service.tech.enforced
+        }))
+
+        // Create unique tech resources
+        const techs = new Set(data.clusteredServices?.map(s => s.cluster) || [])
+        const resources = Array.from(techs).sort((a, b) => a - b).map(techNum => ({
+          id: `Tech ${techNum + 1}`,
+          title: `Tech ${techNum + 1}`
+        }))
+
         setResult({
-          assignedServices: [],
-          resources: [],
-          filteredUnassignedServices: [],
+          assignedServices: processedServices,
+          resources,
+          unassignedServices: []
         })
-        processDataBatch(0)
+        setLoading(false)
+        setStatus('')
       }
     }
 
@@ -144,20 +99,20 @@ export function useSchedule(currentViewRange) {
       setLoading(false)
       setStatus('Error occurred')
     }
-  }, [dateRange, processDataBatch, debouncedSetProgress])
+  }, [currentViewRange, debouncedSetProgress])
 
   useEffect(() => {
     fetchSchedule()
   }, [fetchSchedule])
 
   const allServices = useMemo(() => {
-    return [...result.assignedServices, ...result.filteredUnassignedServices]
+    return [...result.assignedServices, ...result.unassignedServices]
   }, [result])
 
   const {
     updateServiceEnforcement,
     updateAllServicesEnforcement,
-    allServicesEnforced,
+    allServicesEnforced
   } = useEnforcement(allServices, fetchSchedule)
 
   return {
@@ -168,6 +123,6 @@ export function useSchedule(currentViewRange) {
     updateServiceEnforcement,
     updateAllServicesEnforcement,
     allServicesEnforced,
-    refetchSchedule: fetchSchedule,
+    refetchSchedule: fetchSchedule
   }
 }
