@@ -1,11 +1,12 @@
 // src/app/api/services/route.js
+import { getPool } from '@/lib/db.js'
 import { capitalize } from '@/app/utils/capitalize'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
-import sql from 'mssql/msnodesqlv8'
 import { NextResponse } from 'next/server'
-import path from 'path'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 
 const CACHE_FILE = 'serviceSetups.json'
 
@@ -32,22 +33,6 @@ const ALLOWED_TECHS = [
   'VASTA RICK',
 ]
 
-sql.driver = 'FreeTDS'
-const config = {
-  server: process.env.SQL_SERVER,
-  port: parseInt(process.env.SQL_PORT),
-  database: process.env.SQL_DATABASE,
-  user: process.env.SQL_USERNAME,
-  password: process.env.SQL_PASSWORD,
-  options: {
-    trustedConnection: false,
-    enableArithAbort: true,
-    encrypt: false,
-    driver: 'FreeTDS',
-  },
-  connectionString: `Driver={FreeTDS};Server=${process.env.SQL_SERVER || '127.0.0.1'},${process.env.SQL_PORT || 1433};Database=${process.env.SQL_DATABASE};Uid=${process.env.SQL_USERNAME};Pwd=${process.env.SQL_PASSWORD};TDS_Version=7.4;`,
-}
-
 const BASE_QUERY = `
   SELECT 
       ServiceSetups.SetupID AS id,
@@ -66,12 +51,12 @@ const BASE_QUERY = `
       ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
       Locations.LocationCode,
-			Locations.Latitude,
-			Locations.Longitude,
-			Locations.Address,
-			Locations.City,
-			Locations.State,
-			Locations.Zip,
+      Locations.Latitude,
+      Locations.Longitude,
+      Locations.Address,
+      Locations.City,
+      Locations.State,
+      Locations.Zip,
       Schedules.ScheduleID AS ScheduleID,
       Schedules.Code AS ScheduleCode,
       Schedules.Description AS ScheduleDescription,
@@ -93,7 +78,8 @@ const BASE_QUERY = `
       ServiceSetups.Active = 1
 `
 
-async function runQuery(pool, query) {
+async function runQuery(query) {
+  const pool = await getPool()
   try {
     const result = await pool.request().query(query)
     console.log('Query executed successfully')
@@ -104,7 +90,19 @@ async function runQuery(pool, query) {
   }
 }
 
-function transformServiceSetup(setup) {
+async function getEnforcementState() {
+  try {
+    const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
+    const rawData = await fs.readFile(filePath, 'utf8')
+    const { cacheData } = JSON.parse(rawData)
+    return cacheData || {}
+  } catch (error) {
+    console.warn('Error reading enforcement state:', error)
+    return {}
+  }
+}
+
+function transformServiceSetup(setup, enforcementState) {
   const formatTechName = (fname, lname) => {
     if (!fname) return ''
     if (!lname) return fname
@@ -125,7 +123,7 @@ function transformServiceSetup(setup) {
   if (rangeStart === null && rangeEnd === null) {
     return null
   }
-  
+
   return {
     id: setup.id,
     location: {
@@ -145,19 +143,16 @@ function transformServiceSetup(setup) {
     tech: {
       code: setup.TechCode,
       name: formatTechName(setup.TechFName, setup.TechLName),
+      enforced: enforcementState[setup.id] || false,
     },
     time: {
       range: [rangeStart, rangeEnd],
       preferred: convertToETTime(setup.WorkTime),
-      // enforced: false,
       duration: setup.Duration,
       originalRange: setup.TimeRange,
     },
     route: {
-      time: [
-        convertToETTime(setup.RouteStartTime),
-        convertToETTime(setup.RouteEndTime),
-      ],
+      time: [convertToETTime(setup.RouteStartTime), convertToETTime(setup.RouteEndTime)],
       days: setup.RouteOptIncludeDays,
     },
     comments: {
@@ -173,18 +168,18 @@ export async function GET(request) {
 
   // Always try to read from disk cache first
   let serviceSetups = await readFromDiskCache({ file: CACHE_FILE })
+  const enforcementState = await getEnforcementState()
 
   if (!serviceSetups) {
-    let pool
     try {
       console.log('Fetching service setups from database...')
-      pool = await sql.connect(config)
-
-      serviceSetups = await runQuery(pool, BASE_QUERY)
+      serviceSetups = await runQuery(BASE_QUERY)
       console.log('Total service setups fetched:', serviceSetups.length)
 
       // Transform all service setups immediately
-      serviceSetups = serviceSetups.map(transformServiceSetup)
+      serviceSetups = serviceSetups
+        .map((setup) => transformServiceSetup(setup, enforcementState))
+        .filter(Boolean)
       console.log('Transformed setups:', serviceSetups.length)
 
       // Write all fetched and transformed data to disk cache
@@ -199,24 +194,23 @@ export async function GET(request) {
         },
         { status: 500 },
       )
-    } finally {
-      if (pool) {
-        try {
-          await pool.close()
-          console.log('Database connection closed')
-        } catch (closeErr) {
-          console.error('Error closing database connection:', closeErr)
-        }
-      }
     }
   } else {
+    // Add enforcement state to cached data
+    serviceSetups = serviceSetups.map((setup) => ({
+      ...setup,
+      tech: {
+        ...setup.tech,
+        enforced: enforcementState[setup.id] || false,
+      },
+    }))
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
   // Filter by ALLOWED_TECHS if necessary
   if (ALLOWED_TECHS?.length > 0) {
-    serviceSetups = serviceSetups.filter(setup =>
-      ALLOWED_TECHS.includes(setup.tech.code),
+    serviceSetups = serviceSetups.filter(
+      (setup) => setup?.tech?.code && ALLOWED_TECHS.includes(setup?.tech?.code),
     )
     console.log(
       `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
@@ -226,12 +220,8 @@ export async function GET(request) {
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
-    serviceSetups = serviceSetups.filter(setup =>
-      ids.includes(setup.id.toString()),
-    )
-    console.log(
-      `Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`,
-    )
+    serviceSetups = serviceSetups.filter((setup) => ids.includes(setup.id.toString()))
+    console.log(`Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`)
   }
 
   return NextResponse.json(serviceSetups)

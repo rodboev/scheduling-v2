@@ -2,18 +2,6 @@
   "semi": false,
   "singleQuote": true,
   "jsxSingleQuote": false,
-  "arrowParens": "avoid",
-  "plugins": [
-    "prettier-plugin-packagejson",
-    "@trivago/prettier-plugin-sort-imports",
-    "prettier-plugin-brace-style",
-    "prettier-plugin-tailwindcss",
-    "prettier-plugin-classnames",
-    "prettier-plugin-merge"
-  ],
-  "multilineArraysWrapThreshold": 1,
-  "importOrder": ["^react$", "<THIRD_PARTY_MODULES>", "^[./]"],
-  "importOrderParserPlugins": ["javascript", "jsx"],
-  "printWidth": 80,
-  "singleAttributePerLine": true
+  "plugins": ["prettier-plugin-tailwindcss"],
+  "printWidth": 100
 }

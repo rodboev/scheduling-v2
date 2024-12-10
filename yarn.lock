@@ -4400,13 +4400,13 @@ ms@^2.1.1, ms@^2.1.3:
   resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
   integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
 
-msnodesqlv8@^4.2.1:
-  version "4.2.1"
-  resolved "https://registry.yarnpkg.com/msnodesqlv8/-/msnodesqlv8-4.2.1.tgz#59f2930e7f3b9b201d7288425a6ffa923ea1a573"
-  integrity sha512-ezVHYnQnHEuNex3PcMslFxHHrJB7tyNqvh5IeMclfuE23lbxZ7NbbVuQUu6x2+eL82jTz5RKmlqPXQQXM74sjw==
+msnodesqlv8@^4.4.0:
+  version "4.4.0"
+  resolved "https://registry.yarnpkg.com/msnodesqlv8/-/msnodesqlv8-4.4.0.tgz#9d693922c595c0ed86e0aff4e26b1cb34690ba30"
+  integrity sha512-nkK3FVVQsxd8c9ZD1+bNjHy/XFdsptDJWEkflJm7nxSmH1M4dNpvwuyYV9s5peZ+BBkQviplnBQNiNjJFPFGPQ==
   dependencies:
-    nan "^2.19.0"
-    node-abi "^3.60.0"
+    nan "^2.22.0"
+    node-abi "^3.71.0"
     prebuild-install "^7.1.2"
 
 mssql@^11.0.1:
@@ -4435,7 +4435,7 @@ mz@^2.7.0:
     object-assign "^4.0.1"
     thenify-all "^1.0.0"
 
-nan@^2.19.0:
+nan@^2.22.0:
   version "2.22.0"
   resolved "https://registry.yarnpkg.com/nan/-/nan-2.22.0.tgz#31bc433fc33213c97bad36404bb68063de604de3"
   integrity sha512-nbajikzWTMwsW+eSsNm3QwlOs7het9gGJU5dDZzRTQGk03vyBOauxgI4VakDzE0PtsGTmXPsXTbbjVhRwR5mpw==
@@ -4504,7 +4504,7 @@ nextjs-node-loader@^1.1.5:
   dependencies:
     loader-utils "^3.0.0"
 
-node-abi@^3.3.0, node-abi@^3.60.0:
+node-abi@^3.3.0, node-abi@^3.71.0:
   version "3.71.0"
   resolved "https://registry.yarnpkg.com/node-abi/-/node-abi-3.71.0.tgz#52d84bbcd8575efb71468fbaa1f9a49b2c242038"
   integrity sha512-SZ40vRiy/+wRTf21hxkkEjPJZpARzUMVcJoQse2EF8qkUWbbO2z7vd5oA/H6bVH6SZQ5STGcu0KRDS7biNRfxw==
