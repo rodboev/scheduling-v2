@@ -8,7 +8,7 @@
     "clean": "rimraf .next",
     "build": "yarn clean && next build",
     "lint": "next lint",
-    "start": "bash scripts/setupDB.sh && node src/server.js"
+    "start": "bash scripts/setupDB.sh && next start"
   },
   "dependencies": {
     "@floating-ui/react": "^0.26.23",

@@ -45,9 +45,13 @@ echo "SSH_TUNNEL_SERVER: ${SSH_TUNNEL_SERVER:-'not set'}"
 echo "SQL_PASSWORD: ${SQL_PASSWORD:+'is set'}"
 
 # Validate required environment variables
-if [ -z "$SQL_DATABASE" ] || [ -z "$SQL_USERNAME" ] || [ -z "$SQL_PASSWORD" ]; then
+if  [ -z "$SSH_TUNNEL_SERVER" ] || [ -z "$SQL_DATABASE" ] || [ -z "$SQL_USERNAME" ] || [ -z "$SQL_PASSWORD" ]; then
     echo "❌ Error: Required environment variables are not set"
-    echo "Please ensure SQL_DATABASE, SQL_USERNAME, and SQL_PASSWORD are set"
+    echo "Please ensure these variables are set:"
+    echo "SSH_TUNNEL_SERVER: ${SSH_TUNNEL_SERVER:-'not set'}"
+    echo "SQL_DATABASE: ${SQL_DATABASE:-'not set'}"
+    echo "SQL_USERNAME: ${SQL_USERNAME:-'not set'}"
+    echo "SQL_PASSWORD: ${SQL_PASSWORD:+'is set'}"
     exit 1
 fi
 
@@ -74,7 +78,7 @@ cat > "$CONFIG_DIR/freetds/freetds.conf" << EOL
 
 [PestPac]
         host = ${SSH_TUNNEL_SERVER}
-        port = ${SSH_TUNNEL_PORT}
+        port = ${SSH_TUNNEL_PORT:-1022}
         tds version = 7.4
         database = ${SQL_DATABASE}
 EOL
