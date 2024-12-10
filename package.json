@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "yarn clean && next build && bash scripts/setupTunnel.sh",
-    "clean": "rimraf .next",
     "dev": "concurrently -n \"DB,Next\" -c \"greenBright,magentaBright\" \"bash scripts/setupDB.sh\" \"next dev\"",
+    "clean": "rimraf .next",
+    "build": "yarn clean && next build",
     "lint": "next lint",
     "start": "bash scripts/setupDB.sh && node src/server.js"
   },
