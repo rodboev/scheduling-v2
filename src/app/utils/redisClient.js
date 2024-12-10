@@ -118,10 +118,12 @@ export async function getLocationInfo(ids) {
 
 export async function storeLocations(serviceSetups) {
   const redis = getRedisClient()
-  const pipeline = redis.pipeline()
-
   console.log('Starting location storage process...')
   console.log(`Total service setups to process: ${serviceSetups.length}`)
+
+  // Get existing locations before clearing
+  const existingLocations = await redis.zrange('locations', 0, -1)
+  console.log(`Existing locations in Redis before clearing: ${existingLocations.length}`)
 
   // Clear existing data
   await redis.del('locations')
@@ -134,19 +136,14 @@ export async function storeLocations(serviceSetups) {
   const errors = []
   const storedIds = new Set()
 
-  for (const setup of serviceSetups) {
-    const { location, company } = setup
+  // Use pipeline for better performance
+  const pipeline = redis.pipeline()
 
-    // Debug location data
-    console.log('Processing location:', {
-      id: location?.id,
-      lat: location?.latitude,
-      lon: location?.longitude,
-      company,
-    })
+  for (const setup of serviceSetups) {
+    const { location, company, id: setupId } = setup
 
     if (!location?.id) {
-      console.warn('Setup missing location ID:', setup)
+      console.warn(`Setup ${setupId} missing location ID:`, setup)
       invalidCount++
       continue
     }
@@ -154,31 +151,30 @@ export async function storeLocations(serviceSetups) {
     const locationId = location.id.toString()
 
     if (processedLocations.has(locationId)) {
-      console.log(`Skipping duplicate location ID: ${locationId}`)
+      console.log(`Skipping duplicate location ID: ${locationId} (setup ${setupId})`)
       continue
     }
 
-    if (
-      location &&
-      typeof location.latitude === 'number' &&
-      typeof location.longitude === 'number'
-    ) {
+    if (location?.latitude != null && location?.longitude != null) {
       try {
-        await Promise.all([
-          redis.geoadd('locations', location.longitude, location.latitude, locationId),
-          redis.hset('company_names', locationId, company || ''),
-        ])
+        pipeline.geoadd('locations', location.longitude, location.latitude, locationId)
+        pipeline.hset('company_names', locationId, company || '')
         validCount++
         processedLocations.add(locationId)
         storedIds.add(locationId)
       } catch (err) {
-        console.error(`Failed to store location ${locationId}:`, err)
-        errors.push({ id: locationId, error: err.message })
+        console.error(`Failed to queue location ${locationId} (setup ${setupId}):`, err)
+        errors.push({
+          setupId,
+          locationId,
+          error: err.message,
+          location: { lat: location.latitude, lon: location.longitude },
+        })
         invalidCount++
       }
     } else {
       console.warn(
-        `Invalid location data for id ${locationId}:`,
+        `Invalid coordinates for setup ${setupId}, location ${locationId}:`,
         `lat=${location?.latitude},`,
         `lon=${location?.longitude}`,
       )
@@ -186,24 +182,31 @@ export async function storeLocations(serviceSetups) {
     }
   }
 
-  const finalCount = await redis.zcard('locations')
-  console.log('Location storage complete:')
-  console.log(`- Valid locations stored: ${validCount}`)
-  console.log(`- Invalid/skipped: ${invalidCount}`)
-  console.log(`- Final Redis count: ${finalCount}`)
-  console.log('- Stored IDs:', Array.from(storedIds))
-
-  if (errors.length) {
-    console.log('Storage errors:', errors)
+  // Execute pipeline
+  try {
+    await pipeline.exec()
+  } catch (error) {
+    console.error('Pipeline execution failed:', error)
+    throw error
   }
 
-  // Verify a few random locations
-  const sampleIds = Array.from(storedIds).slice(0, 5)
-  console.log('Verifying sample locations:')
-  for (const id of sampleIds) {
-    const pos = await redis.geopos('locations', id)
-    const company = await redis.hget('company_names', id)
-    console.log(`ID ${id}:`, { pos, company })
+  const finalCount = await redis.zcard('locations')
+  console.log('Location storage complete:')
+  console.log(`- Previous location count: ${existingLocations.length}`)
+  console.log(`- Valid locations queued: ${validCount}`)
+  console.log(`- Invalid/skipped: ${invalidCount}`)
+  console.log(`- Final Redis count: ${finalCount}`)
+
+  if (finalCount < validCount) {
+    console.error('Warning: Final count less than valid locations!')
+    console.error('Missing locations:', {
+      expected: Array.from(storedIds),
+      actual: await redis.zrange('locations', 0, -1),
+    })
+  }
+
+  if (errors.length) {
+    console.error('Storage errors:', errors)
   }
 
   return {
@@ -215,15 +218,15 @@ export async function storeLocations(serviceSetups) {
   }
 }
 
-export async function getLocations() {
+export async function getLocations(forceRefresh = false) {
   const redis = getRedisClient()
   try {
     // Check if locations are already loaded
     const locationCount = await redis.zcard('locations')
     console.log(`Current location count in Redis: ${locationCount}`)
 
-    if (locationCount === 0) {
-      console.log('Loading locations into Redis...')
+    if (locationCount === 0 || forceRefresh) {
+      console.log(forceRefresh ? 'Forcing Redis refresh...' : 'Loading locations into Redis...')
 
       // Load service setups to get locations
       const baseUrl =
@@ -243,6 +246,17 @@ export async function getLocations() {
 
       if (result.finalCount === 0) {
         throw new Error('Failed to store any locations in Redis')
+      }
+
+      // Verify all required locations are stored
+      const storedLocations = await redis.zrange('locations', 0, -1)
+      const missingLocations = services
+        .filter((s) => s.location?.id && !storedLocations.includes(s.location.id.toString()))
+        .map((s) => ({ setupId: s.id, locationId: s.location.id }))
+
+      if (missingLocations.length > 0) {
+        console.error('Missing locations after storage:', missingLocations)
+        throw new Error(`Failed to store ${missingLocations.length} locations`)
       }
 
       return result.finalCount

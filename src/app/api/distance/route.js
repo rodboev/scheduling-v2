@@ -19,6 +19,7 @@ export async function GET(request) {
     .map(([_, value]) => value)
 
   try {
+    // First try without force refresh
     await getLocations()
 
     // Handle single distance request
@@ -91,6 +92,67 @@ export async function GET(request) {
 
       const missingIds = Array.from(allIds).filter((id, index) => !locations[index]?.[0])
       if (missingIds.length > 0) {
+        // Try force refreshing Redis before giving up
+        console.log('Missing locations, attempting Redis refresh...')
+        await getLocations(true)
+        
+        // Check again after refresh
+        const refreshedLocations = await Promise.all(
+          Array.from(allIds).map((id) => redis.geopos('locations', id)),
+        )
+        const stillMissingIds = Array.from(allIds).filter((id, index) => !refreshedLocations[index]?.[0])
+
+        if (stillMissingIds.length > 0) {
+          // Now proceed with the existing error handling...
+          try {
+            // Get service setups to cross-reference IDs
+            const serviceSetupsUrl = `${BASE_URL}/api/serviceSetups`
+            console.log('Fetching service setups from:', serviceSetupsUrl)
+
+            const response = await axios.get(serviceSetupsUrl)
+            if (!response?.data) {
+              throw new Error(`Invalid response from serviceSetups: ${JSON.stringify(response)}`)
+            }
+
+            const serviceSetups = response.data
+
+            // Check each missing ID against serviceSetups
+            const detailedErrors = stillMissingIds.map((id) => {
+              const setup = serviceSetups.find((s) => s.location?.id?.toString() === id)
+              if (!setup) {
+                return `Location ID ${id} not found in serviceSetups database`
+              } else {
+                return `Location ID ${id} (from setup ${setup.id}) exists in serviceSetups but missing from Redis locations`
+              }
+            })
+
+            console.error('Location lookup errors:', {
+              missingIds: stillMissingIds,
+              serviceSetupsUrl,
+              redisLocationsCount: await redis.zcard('locations'),
+              detailedErrors,
+            })
+
+            return NextResponse.json(
+              {
+                error: {
+                  message: 'Some locations not found',
+                  details: detailedErrors,
+                  context: {
+                    missingLocationIds: stillMissingIds,
+                    totalLocationsInRedis: await redis.zcard('locations'),
+                  },
+                },
+              },
+              { status: 400 },
+            )
+          } catch (error) {
+            console.error('Error checking missing locations:', {
+              error: error.message,
+              stack: error.stack,
+              config: error.config,
+              response: error.response?.data,
+            })
         try {
           // Get service setups to cross-reference IDs
           const serviceSetupsUrl = `${BASE_URL}/api/serviceSetups`
