@@ -95,15 +95,16 @@ export async function GET(request) {
         // Try force refreshing Redis before giving up
         console.log('Missing locations, attempting Redis refresh...')
         await getLocations(true)
-        
+
         // Check again after refresh
         const refreshedLocations = await Promise.all(
           Array.from(allIds).map((id) => redis.geopos('locations', id)),
         )
-        const stillMissingIds = Array.from(allIds).filter((id, index) => !refreshedLocations[index]?.[0])
+        const stillMissingIds = Array.from(allIds).filter(
+          (id, index) => !refreshedLocations[index]?.[0],
+        )
 
         if (stillMissingIds.length > 0) {
-          // Now proceed with the existing error handling...
           try {
             // Get service setups to cross-reference IDs
             const serviceSetupsUrl = `${BASE_URL}/api/serviceSetups`
@@ -153,69 +154,21 @@ export async function GET(request) {
               config: error.config,
               response: error.response?.data,
             })
-        try {
-          // Get service setups to cross-reference IDs
-          const serviceSetupsUrl = `${BASE_URL}/api/serviceSetups`
-          console.log('Fetching service setups from:', serviceSetupsUrl)
 
-          const response = await axios.get(serviceSetupsUrl)
-          if (!response?.data) {
-            throw new Error(`Invalid response from serviceSetups: ${JSON.stringify(response)}`)
+            return NextResponse.json(
+              {
+                error: {
+                  message: 'Error validating locations',
+                  details: `Failed to check locations: ${error.message}`,
+                  context: {
+                    missingLocationIds: stillMissingIds,
+                    totalLocationsInRedis: await redis.zcard('locations'),
+                  },
+                },
+              },
+              { status: 500 },
+            )
           }
-
-          const serviceSetups = response.data
-
-          // Check each missing ID against serviceSetups
-          const detailedErrors = missingIds.map((id) => {
-            const setup = serviceSetups.find((s) => s.location?.id?.toString() === id)
-            if (!setup) {
-              return `Location ID ${id} not found in serviceSetups database`
-            } else {
-              return `Location ID ${id} (from setup ${setup.id}) exists in serviceSetups but missing from Redis locations`
-            }
-          })
-
-          console.error('Location lookup errors:', {
-            missingIds,
-            serviceSetupsUrl,
-            redisLocationsCount: await redis.zcard('locations'),
-            detailedErrors,
-          })
-
-          return NextResponse.json(
-            {
-              error: {
-                message: 'Some locations not found',
-                details: detailedErrors,
-                context: {
-                  missingLocationIds: missingIds,
-                  totalLocationsInRedis: await redis.zcard('locations'),
-                },
-              },
-            },
-            { status: 400 },
-          )
-        } catch (error) {
-          console.error('Error checking missing locations:', {
-            error: error.message,
-            stack: error.stack,
-            config: error.config,
-            response: error.response?.data,
-          })
-
-          return NextResponse.json(
-            {
-              error: {
-                message: 'Error validating locations',
-                details: `Failed to check locations: ${error.message}`,
-                context: {
-                  missingLocationIds: missingIds,
-                  totalLocationsInRedis: await redis.zcard('locations'),
-                },
-              },
-            },
-            { status: 500 },
-          )
         }
       }
 
