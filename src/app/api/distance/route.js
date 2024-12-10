@@ -3,25 +3,6 @@ import { NextResponse } from 'next/server'
 
 const redis = getRedisClient()
 
-const EARTH_RADIUS_MILES = 3958.8 // Earth's radius in miles
-
-function degreesToRadians(degrees) {
-  return degrees * (Math.PI / 180)
-}
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const dLat = degreesToRadians(lat2 - lat1)
-  const dLon = degreesToRadians(lon2 - lon1)
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(degreesToRadians(lat1)) *
-      Math.cos(degreesToRadians(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return EARTH_RADIUS_MILES * c
-}
-
 function formatNumber(num, precision = 14) {
   return Number(num.toFixed(precision))
 }
@@ -50,10 +31,9 @@ export async function GET(request) {
       ])
 
       if (!geopos1?.[0]) {
-        return NextResponse.json({ error: `Location ${fromId} not found` }, { status: 404 })
+        console.error(`Location ${fromId} not found`)
+        return NextResponse.json({ error: 'Invalid location pair' }, { status: 400 })
       }
-
-      const [lon1, lat1] = geopos1[0]
 
       const [geopos2, company2, distance] = await Promise.all([
         redis.geopos('locations', toId),
@@ -62,9 +42,11 @@ export async function GET(request) {
       ])
 
       if (!geopos2?.[0]) {
-        return NextResponse.json({ error: `Location ${toId} not found` }, { status: 404 })
+        console.error(`Location ${toId} not found`)
+        return NextResponse.json({ error: 'Invalid location pair' }, { status: 400 })
       }
 
+      const [lon1, lat1] = geopos1[0]
       const [lon2, lat2] = geopos2[0]
 
       const result = {
@@ -93,6 +75,21 @@ export async function GET(request) {
 
     // Handle multiple distance requests
     if (idPairs.length > 0) {
+      // First verify all IDs exist
+      const allIds = new Set(idPairs.flatMap((pair) => pair.split(',')))
+      const locations = await Promise.all(
+        Array.from(allIds).map((id) => redis.geopos('locations', id)),
+      )
+
+      const missingIds = Array.from(allIds).filter((id, index) => !locations[index]?.[0])
+      if (missingIds.length > 0) {
+        console.error('Missing locations:', missingIds)
+        return NextResponse.json(
+          { error: `Invalid location IDs: ${missingIds.join(', ')}` },
+          { status: 400 },
+        )
+      }
+
       const results = await Promise.all(
         idPairs.map(async (pair) => {
           const [id1, id2] = pair.split(',')
@@ -106,18 +103,13 @@ export async function GET(request) {
             redis.hget('company_names', id1),
           ])
 
-          if (!geopos1?.[0]) return { error: `ID ${id1} not found` }
-
-          const [lon1, lat1] = geopos1[0]
-
           const [geopos2, company2, distance] = await Promise.all([
             redis.geopos('locations', id2),
             redis.hget('company_names', id2),
             redis.geodist('locations', id1, id2, 'mi'),
           ])
 
-          if (!geopos2?.[0]) return { error: `ID ${id2} not found` }
-
+          const [lon1, lat1] = geopos1[0]
           const [lon2, lat2] = geopos2[0]
 
           const result = {
