@@ -59,7 +59,7 @@ fi
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     IS_WINDOWS=true
     CONFIG_DIR="$USERPROFILE/freetds"
-    DRIVER_PATH="C:/Windows/System32/libsybdb-5.dll"
+    DRIVER_NAME="ODBC Driver 18 for SQL Server"
 else
     IS_WINDOWS=false
     CONFIG_DIR="/app/.apt/etc"
@@ -84,21 +84,36 @@ cat > "$CONFIG_DIR/freetds/freetds.conf" << EOL
 EOL
 
 # Create odbcinst.ini
-cat > "$CONFIG_DIR/odbcinst.ini" << EOL
+if [ "$IS_WINDOWS" = true ]; then
+    cat > "$CONFIG_DIR/odbcinst.ini" << EOL
+[SQL Server]
+Description = Microsoft ODBC Driver for SQL Server
+Driver = ODBC Driver 18 for SQL Server
+UsageCount = 1
+EOL
+else
+    cat > "$CONFIG_DIR/odbcinst.ini" << EOL
 [FreeTDS]
 Description = FreeTDS Driver
 Driver = ${DRIVER_PATH}
 Setup = ${DRIVER_PATH}
 UsageCount = 1
 EOL
+fi
 
 # Create odbc.ini
+if [ "$IS_WINDOWS" = true ]; then
+    ODBC_DRIVER="Driver = {ODBC Driver 18 for SQL Server}"
+else
+    ODBC_DRIVER="Driver = /app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so"
+fi
+
 cat > "$CONFIG_DIR/odbc.ini" << EOL
 [ODBC Data Sources]
 PestPac6681=FreeTDS
 
 [PestPac6681]
-Driver = /app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so
+${ODBC_DRIVER}
 Description = PestPac SQL Connection
 Server = ${SSH_TUNNEL_SERVER}
 Port = ${SSH_TUNNEL_PORT}
@@ -152,7 +167,7 @@ done
 
 # Test DB connection using existing db.js module
 echo "Testing SQL connection..."
-if node -e "import('./src/lib/db.js').then(({getPool}) => getPool().then(() => process.exit(0)).catch(() => process.exit(1)))"; then
+if node -e "import('./src/lib/db.js').then(({getPool}) => getPool().then(pool => pool.request().query('SELECT 1').then(() => process.exit(0))).catch(() => process.exit(1)))"; then
     echo "✅ SQL connection test successful"
 else
     echo "❌ SQL connection test failed"

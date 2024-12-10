@@ -22,7 +22,7 @@ const isWindows = process.platform === 'win32'
 const config = isWindows
   ? {
       // Windows uses DSN
-      connectionString: `DSN=${process.env.SQL_DATABASE};UID=${process.env.SQL_USERNAME};PWD=${process.env.SQL_PASSWORD}`,
+      connectionString: `Driver={ODBC Driver 18 for SQL Server};Server=${process.env.SSH_TUNNEL_SERVER},${process.env.SSH_TUNNEL_PORT};Database=${process.env.SQL_DATABASE};Uid=${process.env.SQL_USERNAME};Pwd=${process.env.SQL_PASSWORD};TrustServerCertificate=yes;`,
       options: {
         trustServerCertificate: true,
         encrypt: false,
@@ -54,10 +54,15 @@ async function getPool() {
       }
     }
 
-    console.log('Connecting with config:', {
+    // Safe logging that works for both configs
+    const logConfig = {
       ...config,
-      connectionString: config.connectionString.replace(process.env.SQL_PASSWORD, '***hidden***'),
-    })
+      password: '***hidden***',
+      connectionString: config.connectionString
+        ? config.connectionString.replace(process.env.SQL_PASSWORD, '***hidden***')
+        : undefined,
+    }
+    console.log('Connecting with config:', logConfig)
 
     pool = await sql.connect(config)
     return pool
