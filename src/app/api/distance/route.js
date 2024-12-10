@@ -1,5 +1,8 @@
 import { getRedisClient, getLocations, getCachedData, setCachedData } from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
+import axios from 'axios'
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 
 const redis = getRedisClient()
 
@@ -50,23 +53,28 @@ export async function GET(request) {
       const [lon2, lat2] = geopos2[0]
 
       const result = {
-        from: {
-          id: fromId,
-          company: company1,
-          location: {
-            longitude: formatNumber(Number.parseFloat(lon1)),
-            latitude: formatNumber(Number.parseFloat(lat1)),
-          },
+        pair: {
+          id: `${fromId},${toId}`,
+          distance: formatNumber(Number.parseFloat(distance)),
+          points: [
+            {
+              id: fromId,
+              company: company1,
+              location: {
+                longitude: formatNumber(Number.parseFloat(lon1)),
+                latitude: formatNumber(Number.parseFloat(lat1)),
+              },
+            },
+            {
+              id: toId,
+              company: company2,
+              location: {
+                longitude: formatNumber(Number.parseFloat(lon2)),
+                latitude: formatNumber(Number.parseFloat(lat2)),
+              },
+            },
+          ],
         },
-        to: {
-          id: toId,
-          company: company2,
-          location: {
-            longitude: formatNumber(Number.parseFloat(lon2)),
-            latitude: formatNumber(Number.parseFloat(lat2)),
-          },
-        },
-        distance: formatNumber(Number.parseFloat(distance)),
       }
 
       setCachedData(cacheKey, result)
@@ -83,9 +91,28 @@ export async function GET(request) {
 
       const missingIds = Array.from(allIds).filter((id, index) => !locations[index]?.[0])
       if (missingIds.length > 0) {
-        console.error('Missing locations:', missingIds)
+        // Get service setups to cross-reference IDs
+        const response = await axios.get(`${process.env.BASE_URL || ''}/api/serviceSetups`)
+        const serviceSetups = response.data
+
+        // Check each missing ID against serviceSetups
+        const detailedErrors = missingIds.map((id) => {
+          const setup = serviceSetups.find((s) => s.location?.id?.toString() === id)
+          if (!setup) {
+            return `Location ID ${id} not found in serviceSetups`
+          } else {
+            return `Location ID ${id} (from setup ${setup.id}) exists in serviceSetups but not in Redis locations`
+          }
+        })
+
+        console.error('Location errors:', detailedErrors)
         return NextResponse.json(
-          { error: `Invalid location IDs: ${missingIds.join(', ')}` },
+          {
+            error: {
+              message: 'Some locations not found',
+              details: detailedErrors,
+            },
+          },
           { status: 400 },
         )
       }
@@ -113,25 +140,28 @@ export async function GET(request) {
           const [lon2, lat2] = geopos2[0]
 
           const result = {
-            from: {
-              id: pair,
-              company: company1,
-              location: {
-                longitude: formatNumber(Number.parseFloat(lon1)),
-                latitude: formatNumber(Number.parseFloat(lat1)),
-              },
-            },
-            distance: [
-              {
-                id: id2,
-                distance: formatNumber(Number.parseFloat(distance)),
-                company: company2,
-                location: {
-                  longitude: formatNumber(Number.parseFloat(lon2)),
-                  latitude: formatNumber(Number.parseFloat(lat2)),
+            pair: {
+              id: `${id1},${id2}`,
+              distance: formatNumber(Number.parseFloat(distance)),
+              points: [
+                {
+                  id: id1,
+                  company: company1,
+                  location: {
+                    longitude: formatNumber(Number.parseFloat(lon1)),
+                    latitude: formatNumber(Number.parseFloat(lat1)),
+                  },
                 },
-              },
-            ],
+                {
+                  id: id2,
+                  company: company2,
+                  location: {
+                    longitude: formatNumber(Number.parseFloat(lon2)),
+                    latitude: formatNumber(Number.parseFloat(lat2)),
+                  },
+                },
+              ],
+            },
           }
 
           setCachedData(cacheKey, result)

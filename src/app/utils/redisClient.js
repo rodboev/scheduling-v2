@@ -132,16 +132,29 @@ export async function storeLocations(serviceSetups) {
   let invalidCount = 0
   const processedLocations = new Set()
   const errors = []
+  const storedIds = new Set()
 
   for (const setup of serviceSetups) {
     const { location, company } = setup
+
+    // Debug location data
+    console.log('Processing location:', {
+      id: location?.id,
+      lat: location?.latitude,
+      lon: location?.longitude,
+      company,
+    })
+
     if (!location?.id) {
       console.warn('Setup missing location ID:', setup)
       invalidCount++
       continue
     }
 
-    if (processedLocations.has(location.id)) {
+    const locationId = location.id.toString()
+
+    if (processedLocations.has(locationId)) {
+      console.log(`Skipping duplicate location ID: ${locationId}`)
       continue
     }
 
@@ -152,19 +165,20 @@ export async function storeLocations(serviceSetups) {
     ) {
       try {
         await Promise.all([
-          redis.geoadd('locations', location.longitude, location.latitude, location.id.toString()),
-          redis.hset('company_names', location.id.toString(), company || ''),
+          redis.geoadd('locations', location.longitude, location.latitude, locationId),
+          redis.hset('company_names', locationId, company || ''),
         ])
         validCount++
-        processedLocations.add(location.id)
+        processedLocations.add(locationId)
+        storedIds.add(locationId)
       } catch (err) {
-        console.error(`Failed to store location ${location.id}:`, err)
-        errors.push({ id: location.id, error: err.message })
+        console.error(`Failed to store location ${locationId}:`, err)
+        errors.push({ id: locationId, error: err.message })
         invalidCount++
       }
     } else {
       console.warn(
-        `Invalid location data for id ${location?.id}:`,
+        `Invalid location data for id ${locationId}:`,
         `lat=${location?.latitude},`,
         `lon=${location?.longitude}`,
       )
@@ -177,8 +191,19 @@ export async function storeLocations(serviceSetups) {
   console.log(`- Valid locations stored: ${validCount}`)
   console.log(`- Invalid/skipped: ${invalidCount}`)
   console.log(`- Final Redis count: ${finalCount}`)
+  console.log('- Stored IDs:', Array.from(storedIds))
+
   if (errors.length) {
     console.log('Storage errors:', errors)
+  }
+
+  // Verify a few random locations
+  const sampleIds = Array.from(storedIds).slice(0, 5)
+  console.log('Verifying sample locations:')
+  for (const id of sampleIds) {
+    const pos = await redis.geopos('locations', id)
+    const company = await redis.hget('company_names', id)
+    console.log(`ID ${id}:`, { pos, company })
   }
 
   return {
@@ -186,6 +211,7 @@ export async function storeLocations(serviceSetups) {
     invalidCount,
     finalCount,
     errors,
+    storedIds: Array.from(storedIds),
   }
 }
 

@@ -40,11 +40,7 @@ function MapEventHandler({ setActivePopup }) {
 
     const handleMoveEnd = () => {
       const center = map.getCenter()
-      console.log(
-        'Current center:',
-        center.lat.toFixed(3),
-        center.lng.toFixed(3),
-      )
+      console.log('Current center:', center.lat.toFixed(3), center.lng.toFixed(3))
     }
 
     map.on('moveend', handleMoveEnd)
@@ -79,7 +75,7 @@ const MapView = () => {
     // Implement the logic to update service enforcement
   }, [])
 
-  const addDistanceInfo = useCallback(async services => {
+  const addDistanceInfo = useCallback(async (services) => {
     const servicesWithDistance = [...services]
 
     // Group services by cluster
@@ -100,9 +96,7 @@ const MapView = () => {
 
       // Create pairs for all sequential services in the cluster
       for (let i = 1; i < sortedCluster.length; i++) {
-        allPairs.push(
-          `${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`,
-        )
+        allPairs.push(`${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`)
       }
     }
 
@@ -112,15 +106,13 @@ const MapView = () => {
     // Fetch distances for all pairs in one go
     const distanceResults = []
     for (const [index, pairChunk] of chunkedPairs.entries()) {
-      console.log(
-        `Fetching distances batch ${index + 1}/${chunkedPairs.length}`,
-      )
+      console.log(`Fetching distances batch ${index + 1}/${chunkedPairs.length}`)
       const response = await axios.get('/api/distance', {
         params: {
           id: pairChunk,
         },
-        paramsSerializer: params => {
-          return params.id.map(pair => `id=${pair}`).join('&')
+        paramsSerializer: (params) => {
+          return params.id.map((pair) => `id=${pair}`).join('&')
         },
       })
       distanceResults.push(...response.data)
@@ -140,14 +132,12 @@ const MapView = () => {
         if (i > 0) {
           const previousService = sortedCluster[i - 1]
           const pairResult = distanceResults.find(
-            result =>
-              result.from.id ===
-              `${previousService.location.id},${currentService.location.id}`,
+            (result) =>
+              result.pair.id === `${previousService.location.id},${currentService.location.id}`,
           )
 
-          if (pairResult?.distance?.[0]?.distance) {
-            currentService.distanceFromPrevious =
-              pairResult.distance[0].distance
+          if (pairResult?.pair?.distance) {
+            currentService.distanceFromPrevious = pairResult.pair.distance
             currentService.previousCompany = previousService.company
           }
         }
@@ -194,9 +184,7 @@ const MapView = () => {
         return
       }
 
-      const servicesWithDistance = await addDistanceInfo(
-        response.data.clusteredServices,
-      )
+      const servicesWithDistance = await addDistanceInfo(response.data.clusteredServices)
       setClusteredServices(servicesWithDistance)
       setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
@@ -210,15 +198,7 @@ const MapView = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [
-    startDate,
-    endDate,
-    clusterUnclustered,
-    minPoints,
-    maxPoints,
-    algorithm,
-    addDistanceInfo,
-  ])
+  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm, addDistanceInfo])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
@@ -271,20 +251,16 @@ const MapView = () => {
             params: {
               id: pairChunk,
             },
-            paramsSerializer: params => {
-              return params.id.map(pair => `id=${pair}`).join('&')
+            paramsSerializer: (params) => {
+              return params.id.map((pair) => `id=${pair}`).join('&')
             },
           })
 
           // Populate the distance matrix with results
           for (const result of response.data) {
             const [fromId, toId] = result.from.id.split(',')
-            const fromIndex = services.findIndex(
-              s => s.location.id.toString() === fromId,
-            )
-            const toIndex = services.findIndex(
-              s => s.location.id.toString() === toId,
-            )
+            const fromIndex = services.findIndex((s) => s.location.id.toString() === fromId)
+            const toIndex = services.findIndex((s) => s.location.id.toString() === toId)
 
             if (result.distance?.[0]?.distance) {
               const distance = result.distance[0].distance
@@ -314,7 +290,7 @@ const MapView = () => {
 
   // Update the optimization change handler
   const handleOptimizationChange = useCallback(
-    async newBias => {
+    async (newBias) => {
       await optimizeSchedule(clusteredServices, newBias)
     },
     [clusteredServices, optimizeSchedule],
@@ -326,11 +302,14 @@ const MapView = () => {
 
   // Update the useEffect
   useEffect(() => {
-    if (startDate && endDate && 
-        (previousStart.current !== startDate || previousEnd.current !== endDate)) {
+    if (
+      startDate &&
+      endDate &&
+      (previousStart.current !== startDate || previousEnd.current !== endDate)
+    ) {
       console.log('Fetching services for date range:', { startDate, endDate })
       fetchClusteredServices()
-      
+
       previousStart.current = startDate
       previousEnd.current = endDate
     }
@@ -361,8 +340,7 @@ const MapView = () => {
         {!isLoading &&
           clusteredServices.reduce(
             (acc, service, i) => {
-              const index =
-                service.cluster >= 0 ? acc.validMarkers + 1 : undefined
+              const index = service.cluster >= 0 ? acc.validMarkers + 1 : undefined
               acc.markers.push(
                 <MapMarker
                   key={service.id}
@@ -372,10 +350,7 @@ const MapView = () => {
                   setActivePopup={setActivePopup}
                   index={index}
                 >
-                  <MapPopup
-                    service={service}
-                    updateServiceEnforcement={updateServiceEnforcement}
-                  />
+                  <MapPopup service={service} updateServiceEnforcement={updateServiceEnforcement} />
                 </MapMarker>,
               )
               if (service.cluster >= 0) {
@@ -384,8 +359,7 @@ const MapView = () => {
               return acc
             },
             { markers: [], validMarkers: 0 },
-          ).markers
-        }
+          ).markers}
       </MapContainer>
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
@@ -393,9 +367,7 @@ const MapView = () => {
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Clusters: {clusteringInfo.totalClusters}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
-          {clusteringInfo.algorithm === 'dbscan' && (
-            <p>Noise: {clusteringInfo.noisePoints}</p>
-          )}
+          {clusteringInfo.algorithm === 'dbscan' && <p>Noise: {clusteringInfo.noisePoints}</p>}
         </div>
       )}
     </div>
