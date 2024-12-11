@@ -115,6 +115,17 @@ const MapView = () => {
           return params.id.map((pair) => `id=${pair}`).join('&')
         },
       })
+
+      if (response.data.error) {
+        console.error('Distance API error:', response.data.error)
+        // Handle missing locations if needed
+        if (response.data.error.context?.missingLocationIds) {
+          console.log('Missing locations:', response.data.error.context.missingLocationIds)
+          // Optionally trigger a refresh or retry
+        }
+        return []
+      }
+
       distanceResults.push(...response.data)
     }
 

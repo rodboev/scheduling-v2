@@ -220,8 +220,13 @@ export async function GET(request) {
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
-    serviceSetups = serviceSetups.filter((setup) => ids.includes(setup.id.toString()))
-    console.log(`Filtered to ${serviceSetups.length} setups for requested IDs: ${idParam}`)
+    // Check both setup IDs and location IDs
+    serviceSetups = serviceSetups.filter(
+      (setup) => ids.includes(setup.id.toString()) || ids.includes(setup.location?.id?.toString()),
+    )
+    console.log(
+      `Filtered to ${serviceSetups.length} setups for requested IDs (checking both setup and location IDs): ${idParam}`,
+    )
   }
 
   return NextResponse.json(serviceSetups)
