@@ -289,3 +289,158 @@ export function setCachedData(key, data, ttl = 300) {
 export function deleteCachedData(key) {
   memoryCache.del(key)
 }
+
+export async function refreshMissingLocations(missingIds) {
+  const redis = getRedisClient()
+  console.log(`Refreshing ${missingIds.length} missing locations...`)
+
+  try {
+    // Fetch only the missing locations from serviceSetups
+    const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL}/api/serviceSetups`, {
+      params: { id: missingIds.join(',') },
+    })
+    const services = response.data
+
+    if (!Array.isArray(services)) {
+      throw new Error(`Invalid services data for missing locations: ${typeof services}`)
+    }
+
+    // Use pipeline for better performance
+    const pipeline = redis.pipeline()
+    let validCount = 0
+    const errors = []
+
+    for (const setup of services) {
+      const { location, company, id: setupId } = setup
+      if (!location?.id || location?.latitude == null || location?.longitude == null) {
+        errors.push({ setupId, locationId: location?.id, error: 'Invalid location data' })
+        continue
+      }
+
+      try {
+        pipeline.geoadd('locations', location.longitude, location.latitude, location.id.toString())
+        pipeline.hset('company_names', location.id.toString(), company || '')
+        validCount++
+      } catch (err) {
+        errors.push({ setupId, locationId: location.id, error: err.message })
+      }
+    }
+
+    await pipeline.exec()
+    console.log(`Successfully refreshed ${validCount}/${missingIds.length} locations`)
+
+    if (errors.length) {
+      console.error('Refresh errors:', errors)
+    }
+
+    return {
+      refreshedCount: validCount,
+      errors,
+    }
+  } catch (error) {
+    console.error('Error refreshing locations:', error)
+    throw error
+  }
+}
+
+export async function calculateDistance(id1, id2, redis) {
+  const [geopos1, company1] = await Promise.all([
+    redis.geopos('locations', id1),
+    redis.hget('company_names', id1),
+  ])
+
+  const [geopos2, company2, distance] = await Promise.all([
+    redis.geopos('locations', id2),
+    redis.hget('company_names', id2),
+    redis.geodist('locations', id1, id2, 'mi'),
+  ])
+
+  const [lon1, lat1] = geopos1[0]
+  const [lon2, lat2] = geopos2[0]
+
+  return {
+    pair: {
+      id: `${id1},${id2}`,
+      distance: formatNumber(Number.parseFloat(distance)),
+      points: [
+        {
+          id: id1,
+          company: company1,
+          location: {
+            longitude: formatNumber(Number.parseFloat(lon1)),
+            latitude: formatNumber(Number.parseFloat(lat1)),
+          },
+        },
+        {
+          id: id2,
+          company: company2,
+          location: {
+            longitude: formatNumber(Number.parseFloat(lon2)),
+            latitude: formatNumber(Number.parseFloat(lat2)),
+          },
+        },
+      ],
+    },
+  }
+}
+
+export async function getLocationPairs(idPairs) {
+  const redis = getRedisClient()
+
+  // First verify all IDs exist
+  const allIds = new Set(idPairs.flatMap((pair) => pair.split(',')))
+  const locations = await Promise.all(Array.from(allIds).map((id) => redis.geopos('locations', id)))
+
+  const missingIds = Array.from(allIds).filter((id, index) => !locations[index]?.[0])
+
+  if (missingIds.length > 0) {
+    // Try refreshing missing locations
+    const refreshResult = await refreshMissingLocations(missingIds)
+
+    // Check which locations are still missing
+    const refreshedLocations = await Promise.all(
+      missingIds.map((id) => redis.geopos('locations', id)),
+    )
+    const stillMissingIds = missingIds.filter((id, index) => !refreshedLocations[index]?.[0])
+
+    if (stillMissingIds.length > 0) {
+      return {
+        error: 'missing_locations',
+        missingIds: stillMissingIds,
+        totalLocationsInRedis: await redis.zcard('locations'),
+      }
+    }
+  }
+
+  // Only recalculate pairs that contain refreshed locations
+  const affectedPairs = idPairs.filter((pair) => {
+    const [id1, id2] = pair.split(',')
+    return missingIds.includes(id1) || missingIds.includes(id2)
+  })
+
+  // Process pairs in parallel, reusing cached results for unaffected pairs
+  const results = await Promise.all(
+    idPairs.map(async (pair) => {
+      const [id1, id2] = pair.split(',')
+      const cacheKey = `distance:${id1},${id2}`
+
+      // Only recalculate if pair was affected by refresh
+      if (affectedPairs.includes(pair)) {
+        const result = await calculateDistance(id1, id2, redis)
+        setCachedData(cacheKey, result)
+        return result
+      }
+
+      // Use cached result if available
+      const cachedResult = await getCachedData(cacheKey)
+      if (cachedResult) return cachedResult
+
+      // Calculate if not in cache
+      const result = await calculateDistance(id1, id2, redis)
+      setCachedData(cacheKey, result)
+      return result
+    }),
+  )
+
+  return { results }
+}
