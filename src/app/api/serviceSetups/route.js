@@ -10,27 +10,28 @@ import path from 'node:path'
 
 const CACHE_FILE = 'serviceSetups.json'
 
+// Lmit to 20 techs
 const ALLOWED_TECHS = [
-  'BELTRAN',
-  'BAEZ MALIK',
-  'BLAKAJ A.',
-  'CAPALDI J.',
-  'CAPPA T.',
-  'CHIN SAU',
+  // 'BELTRAN',
+  // 'BAEZ MALIK',
+  // 'BLAKAJ A.',
+  // 'CAPALDI J.',
+  // 'CAPPA T.',
+  // 'CHIN SAU',
   'CORA JOSE',
-  'CRUZ N.',
+  // 'CRUZ N.',
   'FERNANDEZ',
   'GHANIM MO',
   'GUITEREZ O',
-  'FORD J.',
-  'HARRIS',
-  'HUNTLEY E.',
-  'JOHNI',
-  'JONES H.',
-  'LOPEZ A.',
-  'MADERA M.',
-  'RIVERS',
-  'VASTA RICK',
+  // 'FORD J.',
+  // 'HARRIS',
+  // 'HUNTLEY E.',
+  // 'JOHNI',
+  // 'JONES H.',
+  // 'LOPEZ A.',
+  // 'MADERA M.',
+  // 'RIVERS',
+  // 'VASTA RICK',
 ]
 
 const BASE_QUERY = `
@@ -224,9 +225,9 @@ export async function GET(request) {
     serviceSetups = serviceSetups.filter(
       (setup) => ids.includes(setup.id.toString()) || ids.includes(setup.location?.id?.toString()),
     )
-    console.log(
-      `Filtered to ${serviceSetups.length} setups for requested IDs (checking both setup and location IDs): ${idParam}`,
-    )
+    // console.log(
+    //   `Filtered to ${serviceSetups.length} setups for requested IDs (checking both setup and location IDs): ${idParam}`,
+    // )
   }
 
   return NextResponse.json(serviceSetups)

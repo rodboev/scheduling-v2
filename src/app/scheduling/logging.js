@@ -1,9 +1,5 @@
 // /src/app/scheduling/logging.js
-import {
-  formatDate,
-  formatTime,
-  calculateDuration,
-} from '../utils/dateHelpers.js'
+import { formatDate, formatTime, calculateDuration } from '../utils/dateHelpers.js'
 
 const SHOW_ONLY_TECH_1_SHIFT_1 = 0 // Toggle to show only Tech 1 Shift 1 when set to 1
 
@@ -36,7 +32,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
         const shiftStart = new Date(shift.shiftStart)
         const shiftEnd = new Date(shift.shiftEnd)
 
-        const formatShiftTime = time => {
+        const formatShiftTime = (time) => {
           return `${formatDate(time)} ${formatTime(time)}`
         }
 
@@ -46,9 +42,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
 
         if (Array.isArray(shift.services) && shift.services.length > 0) {
           // Sort services by their assigned index to ensure correct order
-          const sortedServices = [...shift.services].sort(
-            (a, b) => a.index - b.index,
-          )
+          const sortedServices = [...shift.services].sort((a, b) => a.index - b.index)
 
           sortedServices.forEach((service, serviceIndex) => {
             const startTime = new Date(service.start)
@@ -70,7 +64,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
               : `(distance missing)`
 
             console.log(
-              `- [${service.index}] ${date}, ${start}-${end}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${timeRange}) ${distanceStr}`,
+              `- ${serviceIndex + 1}: ${date}, ${start}-${end}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${timeRange}) ${distanceStr}`,
             )
           })
 
@@ -114,7 +108,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
     // Print unassigned services
     if (unassignedServices.length > 0) {
       console.log('Unassigned services:')
-      unassignedServices.forEach(service => {
+      unassignedServices.forEach((service) => {
         const date = formatDate(new Date(service.date))
         const timeRange =
           service.time.range[0] && service.time.range[1]
@@ -123,9 +117,7 @@ export function printSummary({ techSchedules, unassignedServices }) {
                 formatTime(new Date(service.time.range[1])),
               ].join(' - ')
             : 'Invalid time range'
-        console.log(
-          `- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`,
-        )
+        console.log(`- ${date}, ${timeRange}, ${service.company} (id: ${service.id})`)
       })
       console.log('')
     }
@@ -147,12 +139,10 @@ function formatHours(hours) {
 // Placeholder for findScheduleGaps function
 function findScheduleGaps(shift, shiftStart, shiftEnd) {
   const gaps = []
-  const sortedServices = [...shift.services].sort(
-    (a, b) => new Date(a.start) - new Date(b.start),
-  )
+  const sortedServices = [...shift.services].sort((a, b) => new Date(a.start) - new Date(b.start))
 
   let previousEnd = shiftStart
-  sortedServices.forEach(service => {
+  sortedServices.forEach((service) => {
     const serviceStart = new Date(service.start)
     if (serviceStart > previousEnd) {
       gaps.push({ start: previousEnd, end: serviceStart })

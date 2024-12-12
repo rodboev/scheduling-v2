@@ -10,7 +10,9 @@ import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer } from 'react-leaflet'
+import MapEventHandler from '@/app/map/components/MapEventHandler'
+import { logMapActivity } from '@/app/api/cluster-single/logging'
 
 /**
  * MapView Component
@@ -19,39 +21,6 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
  * - Groups services into clusters based on location and time
  * - Schedules services within clusters based on time/distance priority
  */
-
-/**
- * MapEventHandler Component
- * Handles map interaction events
- * - Closes active popups on map click
- * - Logs map center coordinates on movement
- */
-function MapEventHandler({ setActivePopup }) {
-  const map = useMap()
-
-  useMapEvents({
-    click() {
-      setActivePopup(null)
-    },
-  })
-
-  useEffect(() => {
-    if (!map) return
-
-    const handleMoveEnd = () => {
-      const center = map.getCenter()
-      console.log('Current center:', center.lat.toFixed(3), center.lng.toFixed(3))
-    }
-
-    map.on('moveend', handleMoveEnd)
-
-    return () => {
-      map.off('moveend', handleMoveEnd)
-    }
-  }, [map])
-
-  return null
-}
 
 const MapView = () => {
   const [clusteredServices, setClusteredServices] = useState([])
@@ -68,7 +37,6 @@ const MapView = () => {
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
   const [algorithm, setAlgorithm] = useState('kmeans')
-  const [isOptimizing, setIsOptimizing] = useState(false)
 
   const updateServiceEnforcement = useCallback((serviceId, checked) => {
     console.log(`Updating service ${serviceId} enforcement to ${checked}`)
@@ -101,7 +69,7 @@ const MapView = () => {
     }
 
     // Split ALL pairs into chunks of 1000
-    const chunkedPairs = chunk(allPairs, 1000)
+    const chunkedPairs = chunk(allPairs, 1000) // right now allApairs is 94, so this doesn't do anything
 
     // Fetch distances for all pairs in one go
     const distanceResults = []
@@ -196,6 +164,14 @@ const MapView = () => {
       }
 
       const servicesWithDistance = await addDistanceInfo(response.data.clusteredServices)
+
+      // Add logging here
+      logMapActivity({
+        services: servicesWithDistance,
+        clusteringInfo: response.data.clusteringInfo,
+        algorithm,
+      })
+
       setClusteredServices(servicesWithDistance)
       setClusteringInfo(response.data.clusteringInfo)
     } catch (error) {
@@ -297,14 +273,6 @@ const MapView = () => {
       }
     },
     [clusterUnclustered, minPoints, maxPoints],
-  )
-
-  // Update the optimization change handler
-  const handleOptimizationChange = useCallback(
-    async (newBias) => {
-      await optimizeSchedule(clusteredServices, newBias)
-    },
-    [clusteredServices, optimizeSchedule],
   )
 
   // Add these refs at the component level, not inside useEffect

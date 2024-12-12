@@ -20,7 +20,7 @@ export async function createDistanceMatrix(services) {
     return []
   }
 
-  const cacheKey = `distanceMatrix:${services.map(s => s.id).join(',')}`
+  const cacheKey = `distanceMatrix:${services.map((s) => s.id).join(',')}`
   const cachedMatrix = getCachedData(cacheKey)
 
   if (cachedMatrix) {

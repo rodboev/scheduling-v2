@@ -411,7 +411,6 @@ export async function getLocationPairs(idPairs) {
 
     // Try refreshing missing locations
     const refreshResult = await refreshMissingLocations(missingLocationIds)
-    console.log('Refresh result:', refreshResult)
 
     // Check which locations are still missing
     const refreshedLocations = await Promise.all(
@@ -449,7 +448,7 @@ export async function getLocationPairs(idPairs) {
 
       // Only recalculate if pair was affected by refresh
       if (affectedPairs.includes(pair)) {
-        console.log(`Calculating distance for refreshed pair: ${pair}`)
+        // console.log(`Calculating distance for refreshed pair: ${pair}`)
         const result = await calculateDistance(locationId1, locationId2, redis)
         if (result) setCachedData(cacheKey, result)
         return result
@@ -460,7 +459,7 @@ export async function getLocationPairs(idPairs) {
       if (cachedResult) return cachedResult
 
       // Calculate if not in cache
-      console.log(`Calculating uncached distance for: ${pair}`)
+      // console.log(`Calculating uncached distance for: ${pair}`)
       const result = await calculateDistance(locationId1, locationId2, redis)
       if (result) setCachedData(cacheKey, result)
       return result
@@ -475,7 +474,7 @@ export async function getLocations(forceRefresh = false) {
   try {
     // Check if locations are already loaded
     const locationCount = await redis.zcard('locations')
-    console.log(`Current location count in Redis: ${locationCount}`)
+    // console.log(`Current location count in Redis: ${locationCount}`)
 
     if (locationCount === 0 || forceRefresh) {
       console.log(forceRefresh ? 'Forcing Redis refresh...' : 'Loading locations into Redis...')

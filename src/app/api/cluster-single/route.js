@@ -2,6 +2,7 @@ import { createDistanceMatrix } from '@/app/utils/distance'
 import axios from 'axios'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { logMapActivity } from '@/app/api/cluster-single/logging'
 
 let currentWorker = null
 let currentAbortController = null
@@ -11,9 +12,6 @@ const WORKER_TIMEOUT = 10000
 // Default date range constants
 const DEFAULT_START = '2024-09-03T02:30:00.000Z'
 const DEFAULT_END = '2024-09-03T12:30:00.000Z'
-
-// Add this constant at the top with the other constants
-const CLUSTERING_INFO = false
 
 async function processRequest(params, requestId) {
   if (currentWorker) {
@@ -33,26 +31,27 @@ async function processRequest(params, requestId) {
       requestId,
     })
 
-    const response = await axios.get(
-      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
-      {
-        params: { 
-          start: params.start, 
-          end: params.end 
-        },
-      }
-    )
+    const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
+      params: {
+        start: params.start,
+        end: params.end,
+      },
+    })
 
     services = response.data.filter(
-      service => 
-        service.time.range[0] !== null && 
-        service.time.range[1] !== null
+      (service) => service.time.range[0] !== null && service.time.range[1] !== null,
     )
 
     console.log(`Found ${services.length} services for request ${requestId}`)
 
     if (!services.length) {
-      return { clusteredServices: [] }
+      return {
+        clusteredServices: [],
+        performanceDuration: 0,
+        totalClusters: 0,
+        connectedPointsCount: 0,
+        outlierCount: 0,
+      }
     }
   } catch (error) {
     console.error(`Error fetching services for request ${requestId}:`, error)
@@ -65,36 +64,57 @@ async function processRequest(params, requestId) {
     return { clusteredServices: services }
   }
 
-  currentWorker = new Worker(
-    path.resolve(process.cwd(), 'src/app/api/cluster-single/worker.js')
-  )
+  currentWorker = new Worker(path.resolve(process.cwd(), 'src/app/api/cluster-single/worker.js'))
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(async () => {
       if (currentRequestId === requestId) {
-        console.log(
-          `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`
-        )
+        console.log(`Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`)
         await terminateWorker()
-        resolve({ clusteredServices: services })
+        resolve({
+          clusteredServices: services,
+          performanceDuration: WORKER_TIMEOUT,
+          totalClusters: 1,
+          connectedPointsCount: services.length,
+          outlierCount: 0,
+        })
       }
     }, WORKER_TIMEOUT)
 
-    currentWorker.on('message', async result => {
+    currentWorker.on('message', async (result) => {
       if (currentRequestId === requestId) {
         console.log(`Received result for request ${requestId}`)
         clearTimeout(timeoutId)
         await terminateWorker()
-        resolve({ clusteredServices: result.clusteredServices })
+
+        // Calculate clustering metrics before resolving
+        const clusteredCount = result.clusteredServices.filter((s) => s.cluster >= 0).length
+        const clusters = new Set(
+          result.clusteredServices.map((s) => s.cluster).filter((c) => c >= 0),
+        )
+
+        resolve({
+          clusteredServices: result.clusteredServices,
+          performanceDuration: result.duration || 0,
+          totalClusters: clusters.size,
+          connectedPointsCount: clusteredCount,
+          outlierCount: result.clusteredServices.length - clusteredCount,
+        })
       }
     })
 
-    currentWorker.on('error', async error => {
+    currentWorker.on('error', async (error) => {
       if (currentRequestId === requestId) {
         console.error(`Worker error for request ${requestId}:`, error)
         clearTimeout(timeoutId)
         await terminateWorker()
-        resolve({ clusteredServices: services })
+        resolve({
+          clusteredServices: services,
+          performanceDuration: 0,
+          totalClusters: 1,
+          connectedPointsCount: services.length,
+          outlierCount: 0,
+        })
       }
     })
 
@@ -109,14 +129,14 @@ async function processRequest(params, requestId) {
 
     currentWorker.postMessage({
       services,
-      distanceMatrix
+      distanceMatrix,
     })
   })
 }
 
 async function terminateWorker() {
   if (currentWorker) {
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       currentWorker.once('exit', resolve)
       currentWorker.terminate()
     })
@@ -128,27 +148,45 @@ async function terminateWorker() {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    
+
     const params = {
       start: searchParams.get('start') || DEFAULT_START,
       end: searchParams.get('end') || DEFAULT_END,
+      algorithm: searchParams.get('algorithm') || 'kmeans',
     }
 
     const requestId = ++currentRequestId
     try {
-      const result = await processRequest(params, requestId)
+      const processedResult = await processRequest(params, requestId)
 
       if (currentRequestId !== requestId) {
         return new Response(
           JSON.stringify({
             error: 'Request superseded',
-            clusteredServices: []
+            clusteredServices: [],
           }),
-          { status: 409 }
+          { status: 409 },
         )
       }
 
-      return new Response(JSON.stringify(result), {
+      const finalResult = {
+        clusteredServices: processedResult.clusteredServices,
+        clusteringInfo: {
+          performanceDuration: processedResult.performanceDuration || 0,
+          connectedPointsCount: processedResult.clusteredServices.length || 0,
+          totalClusters: processedResult.totalClusters || 0,
+          outlierCount: processedResult.outlierCount || 0,
+          algorithm: params.algorithm,
+        },
+      }
+
+      logMapActivity({
+        services: finalResult.clusteredServices,
+        clusteringInfo: finalResult.clusteringInfo,
+        algorithm: params.algorithm,
+      })
+
+      return new Response(JSON.stringify(finalResult), {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
@@ -159,9 +197,9 @@ export async function GET(request) {
       return new Response(
         JSON.stringify({
           error: 'Processing failed',
-          clusteredServices: []
+          clusteredServices: [],
         }),
-        { status: 500 }
+        { status: 500 },
       )
     }
   } catch (error) {
@@ -170,9 +208,9 @@ export async function GET(request) {
       JSON.stringify({
         error: 'Internal Server Error',
         details: error.message,
-        clusteredServices: []
+        clusteredServices: [],
       }),
-      { status: 500 }
+      { status: 500 },
     )
   }
-} 
+}

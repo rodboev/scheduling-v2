@@ -17,20 +17,12 @@ function createServicesForRange(setup, startDate, endDate) {
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
       const rangeStart =
-        setup.time.range[0] !== null
-          ? round(date.add(setup.time.range[0], 'seconds'))
-          : null
+        setup.time.range[0] !== null ? round(date.add(setup.time.range[0], 'seconds')) : null
       const rangeEnd =
         setup.time.range[1] !== null
-          ? round(
-              date
-                .add(setup.time.range[1], 'seconds')
-                .add(setup.time.duration, 'minutes'),
-            )
+          ? round(date.add(setup.time.range[1], 'seconds').add(setup.time.duration, 'minutes'))
           : null
-      const preferred = round(
-        date.add(parseTime(setup.time.preferred), 'seconds'),
-      )
+      const preferred = round(date.add(parseTime(setup.time.preferred), 'seconds'))
       const duration = Math.round(setup.time.duration / 15) * 15
 
       services.push({
@@ -85,7 +77,7 @@ export async function GET(request) {
     const serviceSetups = await fetchServiceSetups()
 
     // Generate services for the date range
-    const services = serviceSetups.flatMap(setup =>
+    const services = serviceSetups.flatMap((setup) =>
       createServicesForRange(setup, startDate, endDate),
     )
 
@@ -108,7 +100,7 @@ export async function GET(request) {
     }
 
     // Apply enforcement state
-    const servicesWithEnforcement = services.map(service => ({
+    const servicesWithEnforcement = services.map((service) => ({
       ...service,
       tech: {
         ...service.tech,
@@ -120,7 +112,7 @@ export async function GET(request) {
   } catch (error) {
     console.error('Error generating services:', error)
     return NextResponse.json(
-      { error: 'Failed to generate services' },
+      { error: 'Failed to generate services: ' + error.message },
       { status: 500 },
     )
   }
