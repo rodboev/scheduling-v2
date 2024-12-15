@@ -51,6 +51,8 @@ const BASE_QUERY = `
       ServiceSetups.RouteOptTime1End as RouteEndTime,
       ServiceSetups.RouteOptIncludeDays,
       Locations.Company,
+      Locations.FName,
+      Locations.LName,
       Locations.LocationCode,
       Locations.Latitude,
       Locations.Longitude,
@@ -110,6 +112,12 @@ function transformServiceSetup(setup, enforcementState) {
     return `${fname} ${lname.charAt(0)}.`
   }
 
+  const formatCompanyName = (company, fname, lname) => {
+    if (company?.trim()) return company // capitalize(company)
+    if (fname && lname) return `${capitalize(fname)} ${capitalize(lname)}`
+    return capitalize(fname || lname || 'Unnamed Location')
+  }
+
   let [rangeStart, rangeEnd] = setup.TimeRange
     ? parseTimeRange(setup.TimeRange, setup.Duration)
     : [null, null]
@@ -135,7 +143,7 @@ function transformServiceSetup(setup, enforcementState) {
       address: capitalize(setup.Address),
       address2: `${capitalize(setup.City)}, ${setup.State} ${setup.Zip}`,
     },
-    company: capitalize(setup.Company),
+    company: formatCompanyName(setup.Company, setup.FName, setup.LName),
     schedule: {
       code: setup.ScheduleCode,
       string: setup.ScheduleString,

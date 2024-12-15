@@ -66,10 +66,13 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
     })
 
     servicesWithDistance.forEach((service, index) => {
-      const startTime = new Date(service.time.range[0])
-      const endTime = new Date(service.time.range[1])
+      const scheduledStart = new Date(service.start)
+      const scheduledEnd = new Date(service.end)
+      const rangeStart = new Date(service.time.range[0])
+      const rangeEnd = new Date(service.time.range[1])
 
-      const timeRange = `${formatTime(startTime)}-${formatTime(endTime)}`
+      const scheduledTime = `${formatTime(scheduledStart)}-${formatTime(scheduledEnd)}`
+      const timeRange = `${formatTime(rangeStart)}-${formatTime(rangeEnd)}`
 
       const distance =
         index === 0
@@ -77,9 +80,9 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
           : `(${service.distanceFromPrevious.toFixed(2)} mi from ${service.previousCompany})`
 
       console.log(
-        `- ${index + 1}: ${formatDate(startTime)}, ${timeRange}, ` +
+        `- ${index + 1}: ${formatDate(scheduledStart)}, ${scheduledTime}, ` +
           `${service.company} (${service.location.latitude}, ${service.location.longitude}) ` +
-          `(range: ${formatTime(startTime)} - ${formatTime(endTime)}) ${distance}`,
+          `(range: ${timeRange}) ${distance}`,
       )
     })
 

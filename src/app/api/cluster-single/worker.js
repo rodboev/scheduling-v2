@@ -7,11 +7,13 @@ const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
 
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
-  if (newStart.getTime() === existingEnd.getTime() || 
-      existingStart.getTime() === newEnd.getTime()) {
+  if (
+    newStart.getTime() === existingEnd.getTime() ||
+    existingStart.getTime() === newEnd.getTime()
+  ) {
     return false
   }
-  
+
   return (
     (newStart < existingEnd && newStart >= existingStart) ||
     (newEnd > existingStart && newEnd <= existingEnd) ||
@@ -32,97 +34,115 @@ function roundToNearestInterval(date) {
   return newDate
 }
 
-function findBestNextService(currentService, remainingServices, distanceMatrix, shiftEnd, scheduledServices) {
+function findBestNextService(
+  currentService,
+  remainingServices,
+  distanceMatrix,
+  shiftEnd,
+  scheduledServices,
+) {
   let bestService = null
   let bestScore = -Infinity
   let bestStart = null
-  
+
   const currentIndex = currentService.originalIndex
-  
+  const MAX_REASONABLE_DISTANCE = 5 // 5 miles as a reasonable travel distance
+
   for (const service of remainingServices) {
     const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
+    const distance = distanceMatrix[currentIndex][service.originalIndex]
+
+    // Heavily penalize distances over MAX_REASONABLE_DISTANCE miles
+    if (distance > MAX_REASONABLE_DISTANCE) {
+      continue // Skip services that are too far away
+    }
+
     let earliestPossibleStart = new Date(
-      new Date(currentService.end).getTime() + travelTime * 60000
+      new Date(currentService.end).getTime() + travelTime * 60000,
     )
-    
+
     // Round to nearest 15-minute interval
     earliestPossibleStart = roundToNearestInterval(earliestPossibleStart)
-    
+
     // Skip if service can't start after travel time or would end after shift
-    const serviceEnd = new Date(
-      earliestPossibleStart.getTime() + service.time.duration * 60000
-    )
+    const serviceEnd = new Date(earliestPossibleStart.getTime() + service.time.duration * 60000)
     if (serviceEnd > shiftEnd) continue
-    
+
     // Check for conflicts with already scheduled services
     let hasConflict = false
     for (const scheduled of scheduledServices) {
-      if (checkTimeOverlap(
-        new Date(scheduled.start),
-        new Date(scheduled.end),
-        earliestPossibleStart,
-        serviceEnd
-      )) {
+      if (
+        checkTimeOverlap(
+          new Date(scheduled.start),
+          new Date(scheduled.end),
+          earliestPossibleStart,
+          serviceEnd,
+        )
+      ) {
         hasConflict = true
         break
       }
     }
     if (hasConflict) continue
-    
+
     // Score based on travel time and time gap
     const timeGap = (earliestPossibleStart - new Date(currentService.end)) / 60000
-    const score = -travelTime - (timeGap / 2) // Prioritize shorter travel times and gaps
-    
+
+    // Modified scoring system that heavily weighs distance
+    const distanceScore = -Math.pow(distance, 2) // Square the distance to penalize longer distances more
+    const timeGapScore = -timeGap / 4 // Reduce the impact of time gaps (was -travelTime - timeGap / 2)
+    const score = distanceScore + timeGapScore
+
     if (score > bestScore) {
       bestScore = score
       bestService = service
       bestStart = earliestPossibleStart
     }
   }
-  
+
   return bestService ? { service: bestService, start: bestStart } : null
 }
 
 function createShifts(services, distanceMatrix) {
-  // Add original indices to services for distance matrix lookup
+  // Add original indices and handle blank company names
   const servicesWithIndices = services.map((service, index) => ({
     ...service,
-    originalIndex: index
+    originalIndex: index,
   }))
-  
+
   // Sort all services by earliest possible start time
   const sortedServices = [...servicesWithIndices].sort(
-    (a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0])
+    (a, b) => new Date(a.time.range[0]) - new Date(b.time.range[0]),
   )
-  
+
   const shifts = []
   let remainingServices = [...sortedServices]
-  
+
   while (remainingServices.length > 0) {
     const currentShift = {
       services: [],
       startTime: null,
-      endTime: null
+      endTime: null,
     }
-    
+
     // Start new shift with earliest available service
     const firstService = remainingServices[0]
     const shiftStart = new Date(firstService.time.range[0])
     const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION * 60000)
-    
+
     currentShift.startTime = shiftStart
     currentShift.endTime = shiftEnd
-    
+
     // Add first service to shift
     currentShift.services.push({
       ...firstService,
       cluster: shifts.length,
       start: shiftStart.toISOString(),
-      end: new Date(shiftStart.getTime() + firstService.time.duration * 60000).toISOString()
+      end: new Date(shiftStart.getTime() + firstService.time.duration * 60000).toISOString(),
     })
-    
+
     remainingServices.splice(0, 1)
-    
+
     // Keep adding services until we can't fit any more
     let currentService = currentShift.services[0]
     while (true) {
@@ -131,78 +151,75 @@ function createShifts(services, distanceMatrix) {
         remainingServices,
         distanceMatrix,
         shiftEnd,
-        currentShift.services
+        currentShift.services,
       )
-      
+
       if (!next) break
-      
+
       // Add service to shift and remove from remaining
       const { service, start } = next
       const scheduledService = {
         ...service,
         cluster: shifts.length,
         start: start.toISOString(),
-        end: new Date(start.getTime() + service.time.duration * 60000).toISOString()
+        end: new Date(start.getTime() + service.time.duration * 60000).toISOString(),
       }
-      
+
       currentShift.services.push(scheduledService)
-      remainingServices = remainingServices.filter(s => s.originalIndex !== service.originalIndex)
+      remainingServices = remainingServices.filter((s) => s.originalIndex !== service.originalIndex)
       currentService = scheduledService
     }
-    
+
     shifts.push(currentShift)
   }
-  
+
   return shifts
 }
 
-parentPort.on(
-  'message',
-  async ({ services, distanceMatrix }) => {
-    const startTime = performance.now()
+parentPort.on('message', async ({ services, distanceMatrix }) => {
+  const startTime = performance.now()
 
-    try {
-      // Create optimized 8-hour shifts
-      const shifts = createShifts(services, distanceMatrix)
-      
-      // Flatten all services from all shifts
-      const clusteredServices = shifts.flatMap(shift => shift.services)
-      
-      const endTime = performance.now()
-      const duration = endTime - startTime
+  try {
+    // Create optimized 8-hour shifts
+    const shifts = createShifts(services, distanceMatrix)
 
-      const clusteringInfo = {
-        algorithm: 'shifts',
-        performanceDuration: Number.parseInt(duration),
-        connectedPointsCount: services.length,
-        outlierCount: 0,
-        totalClusters: shifts.length,
-        clusterSizes: shifts.map(shift => shift.services.length),
-        clusterDistribution: shifts.map((shift, index) => ({ 
-          [index]: shift.services.length 
-        })),
-        shifts: shifts.map(shift => ({
-          startTime: shift.startTime,
-          endTime: shift.endTime,
-          serviceCount: shift.services.length
-        }))
-      }
+    // Flatten all services from all shifts
+    const clusteredServices = shifts.flatMap((shift) => shift.services)
 
-      parentPort.postMessage({
-        clusteredServices,
-        clusteringInfo,
-      })
-    } catch (error) {
-      console.error('Error in clustering worker:', error)
-      parentPort.postMessage({
-        error: error.message,
-        clusteringInfo: {
-          algorithm: 'shifts',
-        },
-      })
+    const endTime = performance.now()
+    const duration = endTime - startTime
+
+    const clusteringInfo = {
+      algorithm: 'shifts',
+      performanceDuration: Number.parseInt(duration),
+      connectedPointsCount: services.length,
+      outlierCount: 0,
+      totalClusters: shifts.length,
+      clusterSizes: shifts.map((shift) => shift.services.length),
+      clusterDistribution: shifts.map((shift, index) => ({
+        [index]: shift.services.length,
+      })),
+      shifts: shifts.map((shift) => ({
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        serviceCount: shift.services.length,
+      })),
     }
+
+    parentPort.postMessage({
+      clusteredServices,
+      clusteringInfo,
+    })
+  } catch (error) {
+    console.error('Error in clustering worker:', error)
+    parentPort.postMessage({
+      error: error.message,
+      clusteringInfo: {
+        algorithm: 'shifts',
+      },
+    })
   }
-)
+})
 
 parentPort.on('terminate', () => {
   console.log('Worker received terminate signal')
