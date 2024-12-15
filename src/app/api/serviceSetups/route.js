@@ -12,26 +12,26 @@ const CACHE_FILE = 'serviceSetups.json'
 
 // Lmit to 20 techs
 const ALLOWED_TECHS = [
-  // 'BELTRAN',
-  // 'BAEZ MALIK',
-  // 'BLAKAJ A.',
-  // 'CAPALDI J.',
-  // 'CAPPA T.',
-  // 'CHIN SAU',
+  'BELTRAN',
+  'BAEZ MALIK',
+  'BLAKAJ A.',
+  'CAPALDI J.',
+  'CAPPA T.',
+  'CHIN SAU',
   'CORA JOSE',
-  // 'CRUZ N.',
+  'CRUZ N.',
   'FERNANDEZ',
   'GHANIM MO',
   'GUITEREZ O',
-  // 'FORD J.',
-  // 'HARRIS',
-  // 'HUNTLEY E.',
-  // 'JOHNI',
-  // 'JONES H.',
-  // 'LOPEZ A.',
-  // 'MADERA M.',
-  // 'RIVERS',
-  // 'VASTA RICK',
+  'FORD J.',
+  'HARRIS',
+  'HUNTLEY E.',
+  'JOHNI',
+  'JONES H.',
+  'LOPEZ A.',
+  'MADERA M.',
+  'RIVERS',
+  'VASTA RICK',
 ]
 
 const BASE_QUERY = `
@@ -216,10 +216,10 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Filter by ALLOWED_TECHS if necessary
-  if (ALLOWED_TECHS?.length > 0) {
+  // Filter by ALLOWED_TECHS if defined and not empty
+  if (Array.isArray(ALLOWED_TECHS) && ALLOWED_TECHS.length > 0) {
     serviceSetups = serviceSetups.filter(
-      (setup) => setup?.tech?.code && ALLOWED_TECHS.includes(setup?.tech?.code),
+      (setup) => setup?.tech?.code && ALLOWED_TECHS.includes(setup.tech.code),
     )
     console.log(
       `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
