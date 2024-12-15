@@ -184,11 +184,37 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
     let bestScore = -Infinity
     const serviceBorough = service.borough
 
-    // Try to add to existing shifts in same borough
-    for (const shift of shifts) {
-      // Skip if different borough or shift is full
-      if (shift.services[0].borough !== serviceBorough || shift.services.length >= maxPoints)
-        continue
+    // Try all existing shifts in order of best fit
+    const compatibleShifts = shifts
+      .filter((s) => s.services[0].borough === serviceBorough && s.services.length < maxPoints)
+      .sort((a, b) => {
+        // Sort shifts by closest time and location to this service
+        const aStart = Math.min(...a.services.map((s) => new Date(s.start).getTime()))
+        const bStart = Math.min(...b.services.map((s) => new Date(s.start).getTime()))
+        const serviceStart = new Date(service.time.range[0]).getTime()
+
+        // Calculate average distance to services in each shift
+        const aAvgDist =
+          a.services.reduce(
+            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
+            0,
+          ) / a.services.length
+        const bAvgDist =
+          b.services.reduce(
+            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
+            0,
+          ) / b.services.length
+
+        // Score based on time proximity and average distance
+        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aAvgDist
+        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bAvgDist
+        return aScore - bScore
+      })
+
+    // Try each compatible shift
+    for (const shift of compatibleShifts) {
+      const shiftStartTime = Math.min(...shift.services.map((s) => new Date(s.start).getTime()))
+      const shiftEndTime = Math.max(...shift.services.map((s) => new Date(s.end).getTime()))
 
       // Try each existing service as a potential connection point
       for (const existingService of shift.services) {
@@ -197,36 +223,39 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         if (distance > 5) continue
 
         // Try to schedule after this service
-        const earliestStart = Math.max(
-          new Date(service.time.range[0]).getTime(),
-          new Date(existingService.end).getTime() + 15 * 60000, // 15 min buffer
+        const tryStart = new Date(
+          Math.max(
+            new Date(service.time.range[0]).getTime(),
+            new Date(existingService.end).getTime() + 15 * 60000,
+          ),
         )
-        const latestStart =
-          new Date(service.time.range[1]).getTime() - service.time.duration * 60000
+        const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
 
-        if (earliestStart <= latestStart) {
-          const tryStart = new Date(earliestStart)
-          const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
-          let hasConflict = false
+        // Calculate what the shift duration would be if we add this service
+        const newShiftStart = Math.min(shiftStartTime, tryStart.getTime())
+        const newShiftEnd = Math.max(shiftEndTime, tryEnd.getTime())
+        const newShiftDuration = (newShiftEnd - newShiftStart) / (60 * 1000)
 
-          // Check for conflicts with other services in shift
-          for (const other of shift.services) {
-            if (checkTimeOverlap(new Date(other.start), new Date(other.end), tryStart, tryEnd)) {
-              hasConflict = true
-              break
-            }
+        // Skip if this would make the shift too long
+        if (newShiftDuration > SHIFT_DURATION) continue
+
+        let hasConflict = false
+        for (const other of shift.services) {
+          if (checkTimeOverlap(new Date(other.start), new Date(other.end), tryStart, tryEnd)) {
+            hasConflict = true
+            break
           }
+        }
 
-          if (!hasConflict) {
-            // Score based on time gap and distance
-            const timeGap = (tryStart.getTime() - new Date(existingService.end).getTime()) / 60000
-            const score = -Math.pow(distance, 1.2) - Math.pow(timeGap, 0.5)
+        if (!hasConflict) {
+          // Score based on time gap and distance
+          const timeGap = (tryStart.getTime() - new Date(existingService.end).getTime()) / 60000
+          const score = -Math.pow(distance, 1.2) - Math.pow(timeGap, 0.5)
 
-            if (score > bestScore) {
-              bestScore = score
-              bestShift = shift
-              bestStart = tryStart
-            }
+          if (score > bestScore) {
+            bestScore = score
+            bestShift = shift
+            bestStart = tryStart
           }
         }
       }
