@@ -13,6 +13,12 @@ const MapPopup = ({ service }) => {
     return `${cluster} (${reason || 'unclustered'})`
   }
 
+  function formatBorough(borough) {
+    if (!borough) return 'Unknown'
+    if (borough === 'NJ') return 'New Jersey'
+    return capitalize(borough)
+  }
+
   return (
     <Popup>
       <div className="w-full max-w-sm text-sm leading-relaxed">
@@ -22,19 +28,17 @@ const MapPopup = ({ service }) => {
             target="_new"
           >
             <div>{capitalize(service.company)}</div>
-            <div className="text-sm font-semibold">
-              #{service.location.code}
-            </div>
+            <div className="text-sm font-semibold">#{service.location.code}</div>
           </a>
         </h3>
+
+        {/* Borough */}
+        <div className="mb-2 font-semibold">Borough: {formatBorough(service.borough)}</div>
 
         {/* Format time display based on available data */}
         {service?.start && service?.end && (
           <div className="my-2 flex items-center gap-x-2 font-semibold">
-            <Clock
-              strokeWidth={2.5}
-              className="h-4 w-4"
-            />
+            <Clock strokeWidth={2.5} className="h-4 w-4" />
             <span className="leading-none">
               {dayjs(service.time.range[0]).format('M/D')} {formatTime(service.start)} -{' '}
               {formatTime(service.end)}
@@ -46,11 +50,7 @@ const MapPopup = ({ service }) => {
         {service.distanceFromPrevious && (
           <div className="mb-2">
             <div className="flex items-center gap-x-2">
-              <Car
-                size={32}
-                strokeWidth={2.5}
-                className="h-4 w-4"
-              />
+              <Car size={32} strokeWidth={2.5} className="h-4 w-4" />
               <span className="whitespace-nowrap font-semibold">
                 {service.distanceFromPrevious.toFixed(2)} mi
               </span>

@@ -294,6 +294,14 @@ const MapView = () => {
     }
   }, [startDate, endDate, fetchClusteredServices])
 
+  // Add this near the top with other state declarations
+  const [isClient, setIsClient] = useState(false)
+
+  // Add this useEffect near other useEffects
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
   return (
     <div className="relative h-screen w-screen">
       <MapTools
@@ -303,43 +311,50 @@ const MapView = () => {
         setEndDate={setEndDate}
         handleNextDay={handleNextDay}
       />
-      <MapContainer
-        center={center}
-        zoom={13}
-        className="h-full w-full"
-        onClick={handleMapClick}
-        tap={false}
-        attributionControl={false} // Remove attribution control
-      >
-        <MapEventHandler setActivePopup={setActivePopup} />
-        <TileLayer
-          url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
-          attribution="" // Remove attribution
-        />
-        {!isLoading &&
-          clusteredServices.reduce(
-            (acc, service, i) => {
-              const index = service.cluster >= 0 ? acc.validMarkers + 1 : undefined
-              acc.markers.push(
-                <MapMarker
-                  key={service.id}
-                  service={service}
-                  markerRefs={markerRefs}
-                  activePopup={activePopup}
-                  setActivePopup={setActivePopup}
-                  index={index}
-                >
-                  <MapPopup service={service} updateServiceEnforcement={updateServiceEnforcement} />
-                </MapMarker>,
-              )
-              if (service.cluster >= 0) {
-                acc.validMarkers += 1
-              }
-              return acc
-            },
-            { markers: [], validMarkers: 0 },
-          ).markers}
-      </MapContainer>
+      {!isClient ? (
+        <div className="h-full w-full bg-gray-100" /> // Loading placeholder
+      ) : (
+        <MapContainer
+          center={center}
+          zoom={13}
+          className="h-full w-full"
+          onClick={handleMapClick}
+          tap={false}
+          attributionControl={false}
+        >
+          <MapEventHandler setActivePopup={setActivePopup} />
+          <TileLayer
+            url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
+            attribution=""
+          />
+          {!isLoading &&
+            clusteredServices.reduce(
+              (acc, service, i) => {
+                const index = service.cluster >= 0 ? acc.validMarkers + 1 : undefined
+                acc.markers.push(
+                  <MapMarker
+                    key={service.id}
+                    service={service}
+                    markerRefs={markerRefs}
+                    activePopup={activePopup}
+                    setActivePopup={setActivePopup}
+                    index={index}
+                  >
+                    <MapPopup
+                      service={service}
+                      updateServiceEnforcement={updateServiceEnforcement}
+                    />
+                  </MapMarker>,
+                )
+                if (service.cluster >= 0) {
+                  acc.validMarkers += 1
+                }
+                return acc
+              },
+              { markers: [], validMarkers: 0 },
+            ).markers}
+        </MapContainer>
+      )}
       {clusteringInfo && (
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
           <p>Runtime: {clusteringInfo.performanceDuration} ms</p>

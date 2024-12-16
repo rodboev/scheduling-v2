@@ -1,5 +1,5 @@
-import { formatDate, formatTime, calculateDuration } from '@/app/utils/dateHelpers'
-import { calculateHaversineDistance } from '@/app/map/utils/distance'
+import { formatDate, formatTime, calculateDuration } from '../../utils/dateHelpers.js'
+import { calculateHaversineDistance } from '../../map/utils/distance.js'
 
 export function logMapActivity({ services, clusteringInfo, algorithm }) {
   console.log('\nMap Activity Log:\n')
@@ -105,4 +105,28 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
   })
 
   console.log('\n-------------------\n')
+}
+
+// Add borough-specific logging
+export function logBoroughStats(services) {
+  const boroughCounts = services.reduce((acc, service) => {
+    const borough = service.borough || 'unknown'
+    acc[borough] = (acc[borough] || 0) + 1
+    return acc
+  }, {})
+
+  console.log('\nBorough distribution:', boroughCounts)
+
+  // Log services with unknown boroughs
+  const unknownServices = services.filter((s) => !s.borough)
+  if (unknownServices.length > 0) {
+    console.log(
+      '\nServices with unknown boroughs:',
+      unknownServices.map((s) => ({
+        company: s.company,
+        address: s.location.address,
+        coordinates: [s.location.latitude, s.location.longitude],
+      })),
+    )
+  }
 }

@@ -87,7 +87,23 @@ async function processRequest(params, requestId) {
         clearTimeout(timeoutId)
         await terminateWorker()
 
-        // Calculate clustering metrics before resolving
+        // Ensure result has the expected structure
+        if (!result?.clusteredServices) {
+          console.error('Invalid worker result structure:', result)
+          resolve({
+            clusteredServices: services.map((service) => ({
+              ...service,
+              cluster: -1,
+            })),
+            performanceDuration: 0,
+            totalClusters: 0,
+            connectedPointsCount: 0,
+            outlierCount: services.length,
+          })
+          return
+        }
+
+        // Calculate clustering metrics
         const clusteredCount = result.clusteredServices.filter((s) => s.cluster >= 0).length
         const clusters = new Set(
           result.clusteredServices.map((s) => s.cluster).filter((c) => c >= 0),
@@ -95,7 +111,7 @@ async function processRequest(params, requestId) {
 
         resolve({
           clusteredServices: result.clusteredServices,
-          performanceDuration: result.duration || 0,
+          performanceDuration: result.clusteringInfo?.performanceDuration || 0,
           totalClusters: clusters.size,
           connectedPointsCount: clusteredCount,
           outlierCount: result.clusteredServices.length - clusteredCount,

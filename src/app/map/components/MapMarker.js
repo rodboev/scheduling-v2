@@ -1,10 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useMemo } from 'react'
-import {
-  faCircleExclamation,
-  faMapMarker,
-} from '@fortawesome/free-solid-svg-icons'
+import { faCircleExclamation, faMapMarker } from '@fortawesome/free-solid-svg-icons'
 import L from 'leaflet'
 import { Marker } from 'react-leaflet'
 
@@ -42,6 +39,8 @@ function getContrastRatio(color) {
 }
 
 const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
+  if (!service) return null
+
   const popupRef = useRef(null)
   const markerRef = useRef(null)
   const timeoutRef = useRef(null)
@@ -49,10 +48,10 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
   function getMarkerIcon(cluster) {
     const colorKeys = Object.keys(COLORS)
     const color =
-      cluster < 0
+      cluster === undefined || cluster < 0
         ? COLORS.darkgray
         : COLORS[colorKeys[cluster % colorKeys.length]]
-    const icon = cluster < 0 ? faCircleExclamation : faMapMarker
+    const icon = cluster === undefined || cluster < 0 ? faCircleExclamation : faMapMarker
     const strokeColor = darkenColor(color, 0.25)
     const viewBoxWidth = icon.icon[0] + 32
     const viewBoxHeight = icon.icon[1] + 32
@@ -155,7 +154,7 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
         mouseover: handleMouseEnter,
         mouseout: handleMouseLeave,
       }}
-      ref={element => {
+      ref={(element) => {
         if (element) {
           markerRef.current = element
           markerRefs.current[service.id] = element
@@ -169,6 +168,8 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
 }
 
 function darkenColor(color, factor) {
+  if (!color) return '#404040'
+
   const hex = color.replace(/^#/, '')
   const rgb = Number.parseInt(hex, 16)
   const r = Math.floor((rgb >> 16) * (1 - factor))
