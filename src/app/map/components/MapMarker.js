@@ -4,8 +4,9 @@ import { useEffect, useRef, useMemo } from 'react'
 import { faCircleExclamation, faMapMarker } from '@fortawesome/free-solid-svg-icons'
 import L from 'leaflet'
 import { Marker } from 'react-leaflet'
+import Color from 'color'
 
-const COLORS = {
+const baseColors = {
   red: '#d63e2a',
   darkred: '#a23336',
   orange: '#f69730',
@@ -27,6 +28,19 @@ const COLORS = {
   gray: '#808080',
   darkgray: '#404040',
   black: '#000000',
+}
+
+const COLORS = {
+  ...baseColors,
+  ...Object.entries(baseColors).reduce((acc, [key, value]) => {
+    try {
+      acc[`darker${key.charAt(0).toUpperCase()}${key.slice(1)}`] = Color(value).darken(0.5).hex()
+      acc[`lighter${key.charAt(0).toUpperCase()}${key.slice(1)}`] = Color(value).lighten(0.5).hex()
+    } catch (error) {
+      console.warn(`Failed to modify color: ${key}`)
+    }
+    return acc
+  }, {}),
 }
 
 function getContrastRatio(color) {
@@ -154,7 +168,7 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
         mouseover: handleMouseEnter,
         mouseout: handleMouseLeave,
       }}
-      ref={(element) => {
+      ref={element => {
         if (element) {
           markerRef.current = element
           markerRefs.current[service.id] = element
