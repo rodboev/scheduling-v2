@@ -1,10 +1,24 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Server Actions are no longer experimental in Next.js 14
-  webpack: config => {
+  experimental: {
+    reactCompiler: true,
+  },
+  reactStrictMode: false,
+  serverExternalPackages: ['mssql'],
+  env: {
+    NEXT_PUBLIC_NODE_ENV: process.env.NODE_ENV,
+  },
+  webpack: (config, options) => {
     config.module.rules.push({
-      test: /\.json$/,
-      type: 'json',
+      test: /\.node$/,
+      use: [
+        {
+          loader: 'nextjs-node-loader',
+          options: {
+            outputPath: config.output.path,
+          },
+        },
+      ],
     })
     return config
   },

@@ -10,9 +10,10 @@ import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer } from 'react-leaflet'
+import { MapContainer, TileLayer, Polygon } from 'react-leaflet'
 import MapEventHandler from '@/app/map/components/MapEventHandler'
 import { logMapActivity } from '@/app/api/cluster-single/logging'
+import { BOROUGH_BOUNDARIES } from '@/app/utils/boroughs'
 
 /**
  * MapView Component
@@ -302,6 +303,24 @@ const MapView = () => {
     setIsClient(true)
   }, [])
 
+  // Convert borough boundaries to array of LatLng arrays for Polygon
+  const boroughPolygons = Object.entries(BOROUGH_BOUNDARIES).map(([name, boundary]) => {
+    const coords = boundary.geometry.coordinates[0]
+    // Convert [lng, lat] to [lat, lng] for Leaflet and ensure valid array
+    return {
+      name,
+      coords: coords?.map(coord => [coord[1], coord[0]]) || [],
+    }
+  })
+
+  const polygonStyles = {
+    manhattan: { color: '#ff4444', weight: 2, opacity: 0.6, fillOpacity: 0 },
+    brooklyn: { color: '#44ff44', weight: 2, opacity: 0.6, fillOpacity: 0 },
+    queens: { color: '#4444ff', weight: 2, opacity: 0.6, fillOpacity: 0 },
+    bronx: { color: '#ffff44', weight: 2, opacity: 0.6, fillOpacity: 0 },
+    nj: { color: '#ff44ff', weight: 2, opacity: 0.6, fillOpacity: 0 },
+  }
+
   return (
     <div className="relative h-screen w-screen">
       <MapTools
@@ -327,6 +346,19 @@ const MapView = () => {
             url={`https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
             attribution=""
           />
+
+          {/* Add borough boundary polygons */}
+          {boroughPolygons.map(
+            ({ name, coords }) =>
+              coords.length > 0 && (
+                <Polygon
+                  key={`borough-${name}`}
+                  positions={coords}
+                  pathOptions={polygonStyles[name]}
+                />
+              ),
+          )}
+
           {!isLoading &&
             clusteredServices.reduce(
               (acc, service, i) => {
