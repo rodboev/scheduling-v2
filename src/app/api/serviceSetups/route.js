@@ -11,28 +11,28 @@ import path from 'node:path'
 const CACHE_FILE = 'serviceSetups.json'
 
 // Lmit to 20 techs
-const ALLOWED_TECHS = [
-  'BELTRAN',
-  'BAEZ MALIK',
-  'BLAKAJ A.',
-  'CAPALDI J.',
-  'CAPPA T.',
-  'CHIN SAU',
-  'CORA JOSE',
-  'CRUZ N.',
-  'FERNANDEZ',
-  'GHANIM MO',
-  'GUITEREZ O',
-  'FORD J.',
-  'HARRIS',
-  'HUNTLEY E.',
-  'JOHNI',
-  'JONES H.',
-  'LOPEZ A.',
-  'MADERA M.',
-  'RIVERS',
-  'VASTA RICK',
-]
+// const ALLOWED_TECHS = [
+//   'BELTRAN',
+//   'BAEZ MALIK',
+//   'BLAKAJ A.',
+//   'CAPALDI J.',
+//   'CAPPA T.',
+//   'CHIN SAU',
+//   'CORA JOSE',
+//   'CRUZ N.',
+//   'FERNANDEZ',
+//   'GHANIM MO',
+//   'GUITEREZ O',
+//   'FORD J.',
+//   'HARRIS',
+//   'HUNTLEY E.',
+//   'JOHNI',
+//   'JONES H.',
+//   'LOPEZ A.',
+//   'MADERA M.',
+//   'RIVERS',
+//   'VASTA RICK',
+// ]
 
 const BASE_QUERY = `
   SELECT 
@@ -187,7 +187,7 @@ export async function GET(request) {
 
       // Transform all service setups immediately
       serviceSetups = serviceSetups
-        .map((setup) => transformServiceSetup(setup, enforcementState))
+        .map(setup => transformServiceSetup(setup, enforcementState))
         .filter(Boolean)
       console.log('Transformed setups:', serviceSetups.length)
 
@@ -206,7 +206,7 @@ export async function GET(request) {
     }
   } else {
     // Add enforcement state to cached data
-    serviceSetups = serviceSetups.map((setup) => ({
+    serviceSetups = serviceSetups.map(setup => ({
       ...setup,
       tech: {
         ...setup.tech,
@@ -216,22 +216,20 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Filter by ALLOWED_TECHS if defined and not empty
-  if (Array.isArray(ALLOWED_TECHS) && ALLOWED_TECHS.length > 0) {
-    serviceSetups = serviceSetups.filter(
-      (setup) => setup?.tech?.code && ALLOWED_TECHS.includes(setup.tech.code),
-    )
-    console.log(
-      `Filtered to ${serviceSetups.length} setups for ${ALLOWED_TECHS.length} allowed techs`,
-    )
-  }
+  // Get first 20 unique tech codes
+  const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, 20)
+  console.log('First 20 unique techs:', uniqueTechs)
+
+  // Filter serviceSetups to only include those techs
+  serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
+  console.log('Filtered to first 20 techs, total setups:', serviceSetups.length)
 
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
     // Check both setup IDs and location IDs
     serviceSetups = serviceSetups.filter(
-      (setup) => ids.includes(setup.id.toString()) || ids.includes(setup.location?.id?.toString()),
+      setup => ids.includes(setup.id.toString()) || ids.includes(setup.location?.id?.toString()),
     )
     // console.log(
     //   `Filtered to ${serviceSetups.length} setups for requested IDs (checking both setup and location IDs): ${idParam}`,

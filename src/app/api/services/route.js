@@ -77,7 +77,7 @@ export async function GET(request) {
     const serviceSetups = await fetchServiceSetups()
 
     // Generate services for the date range
-    const services = serviceSetups.flatMap((setup) =>
+    const services = serviceSetups.flatMap(setup =>
       createServicesForRange(setup, startDate, endDate),
     )
 
@@ -99,8 +99,20 @@ export async function GET(request) {
       }
     }
 
+    // Find techs without services in date range
+    const allTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))]
+    console.log('Total techs:', allTechs.length)
+
+    const techsWithServices = allTechs.filter(code =>
+      services.some(service => service.tech.code === code),
+    )
+    console.log('Techs with services:', techsWithServices.length)
+
+    const techsWithoutServices = allTechs.filter(code => !techsWithServices.includes(code))
+    console.log(`Techs without services between ${start} and ${end}:`, techsWithoutServices)
+
     // Apply enforcement state
-    const servicesWithEnforcement = services.map((service) => ({
+    const servicesWithEnforcement = services.map(service => ({
       ...service,
       tech: {
         ...service.tech,
