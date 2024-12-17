@@ -43,7 +43,7 @@ const MapView = () => {
     // Implement the logic to update service enforcement
   }, [])
 
-  const addDistanceInfo = useCallback(async (services) => {
+  const addDistanceInfo = useCallback(async services => {
     const servicesWithDistance = [...services]
 
     // Group services by cluster
@@ -79,8 +79,8 @@ const MapView = () => {
         params: {
           id: pairChunk,
         },
-        paramsSerializer: (params) => {
-          return params.id.map((pair) => `id=${pair}`).join('&')
+        paramsSerializer: params => {
+          return params.id.map(pair => `id=${pair}`).join('&')
         },
       })
 
@@ -111,7 +111,7 @@ const MapView = () => {
         if (i > 0) {
           const previousService = sortedCluster[i - 1]
           const pairResult = distanceResults.find(
-            (result) =>
+            result =>
               result.pair.id === `${previousService.location.id},${currentService.location.id}`,
           )
 
@@ -238,16 +238,16 @@ const MapView = () => {
             params: {
               id: pairChunk,
             },
-            paramsSerializer: (params) => {
-              return params.id.map((pair) => `id=${pair}`).join('&')
+            paramsSerializer: params => {
+              return params.id.map(pair => `id=${pair}`).join('&')
             },
           })
 
           // Populate the distance matrix with results
           for (const result of response.data) {
             const [fromId, toId] = result.from.id.split(',')
-            const fromIndex = services.findIndex((s) => s.location.id.toString() === fromId)
-            const toIndex = services.findIndex((s) => s.location.id.toString() === toId)
+            const fromIndex = services.findIndex(s => s.location.id.toString() === fromId)
+            const toIndex = services.findIndex(s => s.location.id.toString() === toId)
 
             if (result.distance?.[0]?.distance) {
               const distance = result.distance[0].distance
