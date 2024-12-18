@@ -4,44 +4,7 @@ import { useEffect, useRef, useMemo } from 'react'
 import { faCircleExclamation, faMapMarker } from '@fortawesome/free-solid-svg-icons'
 import L from 'leaflet'
 import { Marker } from 'react-leaflet'
-import Color from 'color'
-
-const baseColors = {
-  red: '#d63e2a',
-  darkred: '#a23336',
-  orange: '#f69730',
-  darkorange: '#b65d2a',
-  green: '#72b026',
-  darkgreen: '#728224',
-  blue: '#38aadd',
-  darkblue: '#1d63b5',
-  purple: '#9c2bcb',
-  cadetblue: '#436978',
-  lightred: '#eb7f7f',
-  beige: '#eab776',
-  lightgreen: '#a4c65f',
-  lightblue: '#6fbbd3',
-  pink: '#df8dc3',
-  yellow: '#ffff00',
-  white: '#ffffff',
-  lightgray: '#d3d3d3',
-  gray: '#808080',
-  darkgray: '#404040',
-  black: '#000000',
-}
-
-const COLORS = {
-  ...baseColors,
-  ...Object.entries(baseColors).reduce((acc, [key, value]) => {
-    try {
-      acc[`darker${key.charAt(0).toUpperCase()}${key.slice(1)}`] = Color(value).darken(0.5).hex()
-      acc[`lighter${key.charAt(0).toUpperCase()}${key.slice(1)}`] = Color(value).lighten(0.5).hex()
-    } catch (error) {
-      console.warn(`Failed to modify color: ${key}`)
-    }
-    return acc
-  }, {}),
-}
+import { COLORS } from '@/app/map/utils/colors'
 
 function getContrastRatio(color) {
   const rgb = Number.parseInt(color.slice(1), 16)

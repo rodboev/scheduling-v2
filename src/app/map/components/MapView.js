@@ -10,10 +10,13 @@ import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Polygon } from 'react-leaflet'
+import { MapContainer, TileLayer, Polygon, Polyline } from 'react-leaflet'
 import MapEventHandler from '@/app/map/components/MapEventHandler'
 import { logMapActivity } from '@/app/api/cluster-single/logging'
 import { BOROUGH_BOUNDARIES } from '@/app/utils/boroughs'
+import { COLORS } from '@/app/map/utils/colors'
+import 'leaflet-polylinedecorator'
+import PolylineWithArrow from './PolylineWithArrow'
 
 /**
  * MapView Component
@@ -314,12 +317,48 @@ const MapView = () => {
   })
 
   const polygonStyles = {
-    manhattan: { color: '#ff4444', weight: 2, opacity: 0.6, fillOpacity: 0 },
-    brooklyn: { color: '#44ff44', weight: 2, opacity: 0.6, fillOpacity: 0 },
-    queens: { color: '#4444ff', weight: 2, opacity: 0.6, fillOpacity: 0 },
-    bronx: { color: '#ffff44', weight: 2, opacity: 0.6, fillOpacity: 0 },
-    nj: { color: '#ff44ff', weight: 2, opacity: 0.6, fillOpacity: 0 },
+    manhattan: { color: '#ff4444', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
+    brooklyn: { color: '#44ff44', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
+    queens: { color: '#4444ff', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
+    bronx: { color: '#ffff44', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
+    nj: { color: '#ff44ff', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
   }
+
+  // Add this function to organize services by cluster
+  const clusterPolylines = useMemo(() => {
+    if (!clusteredServices?.length) return []
+
+    // Group services by cluster and sort by sequence number
+    const clusters = clusteredServices.reduce((acc, service) => {
+      if (service.cluster >= 0) {
+        if (!acc[service.cluster]) acc[service.cluster] = []
+        acc[service.cluster].push(service)
+      }
+      return acc
+    }, {})
+
+    // Create polylines for each cluster
+    return Object.entries(clusters).map(([clusterId, services]) => {
+      // Sort services by sequence number
+      const sortedServices = [...services].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+
+      // Create array of coordinates
+      const coordinates = sortedServices.map(service => [
+        service.location.latitude,
+        service.location.longitude,
+      ])
+
+      // Get color based on cluster ID (matching marker colors)
+      const colorKeys = Object.keys(COLORS)
+      const color = COLORS[colorKeys[Number(clusterId) % colorKeys.length]]
+
+      return {
+        clusterId,
+        coordinates,
+        color,
+      }
+    })
+  }, [clusteredServices])
 
   return (
     <div className="relative h-screen w-screen">
@@ -348,7 +387,7 @@ const MapView = () => {
           />
 
           {/* Add borough boundary polygons */}
-          {boroughPolygons.map(
+          {/* {boroughPolygons.map(
             ({ name, coords }) =>
               coords.length > 0 && (
                 <Polygon
@@ -357,7 +396,17 @@ const MapView = () => {
                   pathOptions={polygonStyles[name]}
                 />
               ),
-          )}
+          )} */}
+
+          {/* Add Polylines */}
+          {!isLoading &&
+            clusterPolylines.map(({ clusterId, coordinates, color }) => (
+              <PolylineWithArrow
+                key={`polyline-${clusterId}`}
+                positions={coordinates}
+                color={color}
+              />
+            ))}
 
           {!isLoading &&
             clusteredServices.reduce(
