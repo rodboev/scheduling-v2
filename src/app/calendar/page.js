@@ -1,7 +1,7 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import BigCalendar from '@/app/components/BigCalendar'
+import ClusteredCalendar from '@/app/components/ClusteredCalendar'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -12,10 +12,10 @@ const queryClient = new QueryClient({
   },
 })
 
-export default function CalendarPage() {
+export default function ClusteredPage() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BigCalendar />
+      <ClusteredCalendar />
     </QueryClientProvider>
   )
-} 
+}
