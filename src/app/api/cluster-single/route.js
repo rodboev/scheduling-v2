@@ -11,7 +11,7 @@ const WORKER_TIMEOUT = 10000
 
 // Default date range constants
 const DEFAULT_START = '2024-09-03T02:30:00.000Z'
-const DEFAULT_END = '2024-09-03T12:30:00.000Z'
+const DEFAULT_END = '2024-09-05T03:59:59.999Z'
 
 async function processRequest(params, requestId) {
   if (currentWorker) {
@@ -39,7 +39,7 @@ async function processRequest(params, requestId) {
     })
 
     services = response.data.filter(
-      (service) => service.time.range[0] !== null && service.time.range[1] !== null,
+      service => service.time.range[0] !== null && service.time.range[1] !== null,
     )
 
     console.log(`Found ${services.length} services for request ${requestId}`)
@@ -81,7 +81,7 @@ async function processRequest(params, requestId) {
       }
     }, WORKER_TIMEOUT)
 
-    currentWorker.on('message', async (result) => {
+    currentWorker.on('message', async result => {
       if (currentRequestId === requestId) {
         console.log(`Received result for request ${requestId}`)
         clearTimeout(timeoutId)
@@ -91,7 +91,7 @@ async function processRequest(params, requestId) {
         if (!result?.clusteredServices) {
           console.error('Invalid worker result structure:', result)
           resolve({
-            clusteredServices: services.map((service) => ({
+            clusteredServices: services.map(service => ({
               ...service,
               cluster: -1,
             })),
@@ -104,10 +104,8 @@ async function processRequest(params, requestId) {
         }
 
         // Calculate clustering metrics
-        const clusteredCount = result.clusteredServices.filter((s) => s.cluster >= 0).length
-        const clusters = new Set(
-          result.clusteredServices.map((s) => s.cluster).filter((c) => c >= 0),
-        )
+        const clusteredCount = result.clusteredServices.filter(s => s.cluster >= 0).length
+        const clusters = new Set(result.clusteredServices.map(s => s.cluster).filter(c => c >= 0))
 
         resolve({
           clusteredServices: result.clusteredServices,
@@ -119,7 +117,7 @@ async function processRequest(params, requestId) {
       }
     })
 
-    currentWorker.on('error', async (error) => {
+    currentWorker.on('error', async error => {
       if (currentRequestId === requestId) {
         console.error(`Worker error for request ${requestId}:`, error)
         clearTimeout(timeoutId)
@@ -152,7 +150,7 @@ async function processRequest(params, requestId) {
 
 async function terminateWorker() {
   if (currentWorker) {
-    await new Promise((resolve) => {
+    await new Promise(resolve => {
       currentWorker.once('exit', resolve)
       currentWorker.terminate()
     })
