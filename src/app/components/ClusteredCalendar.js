@@ -8,7 +8,7 @@ import ProgressBar from '@/app/components/ProgressBar'
 import Service from '@/app/components/Service'
 import { Button } from '@/app/components/ui/button'
 import { useCalendar } from '@/app/hooks/useCalendar'
-import { useSchedule } from '@/app/hooks/useClusteredSchedule'
+import { useSchedule } from '@/app/hooks/useSchedule'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views } from 'react-big-calendar'
 import { dayjsLocalizer as createDayjsLocalizer } from 'react-big-calendar'
@@ -26,14 +26,8 @@ export default function BigCalendar() {
   const defaultDate = new Date(2024, 8, 2)
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now())
 
-  const {
-    date,
-    view,
-    currentViewRange,
-    handleView,
-    handleNavigate,
-    handleRangeChange,
-  } = useCalendar(defaultDate)
+  const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
+    useCalendar(defaultDate)
 
   const {
     assignedServices,
@@ -69,10 +63,7 @@ export default function BigCalendar() {
   const eventComponent = useCallback(
     props => (
       <div className="select-none">
-        <Service
-          service={props.event}
-          updateServiceEnforcement={updateServiceEnforcement}
-        />
+        <Service service={props.event} updateServiceEnforcement={updateServiceEnforcement} />
       </div>
     ),
     [updateServiceEnforcement],
@@ -94,10 +85,7 @@ export default function BigCalendar() {
   return (
     <div className="flex h-screen">
       {isScheduling && (
-        <ProgressBar
-          schedulingStatus={schedulingStatus}
-          schedulingProgress={schedulingProgress}
-        />
+        <ProgressBar schedulingStatus={schedulingStatus} schedulingProgress={schedulingProgress} />
       )}
       <div className="flex flex-grow flex-col overflow-auto">
         <Header>
@@ -111,10 +99,7 @@ export default function BigCalendar() {
           <Logo />
           <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
-        <div
-          className="flex-grow p-4"
-          onClickCapture={handleClickCapture}
-        >
+        <div className="flex-grow p-4" onClickCapture={handleClickCapture}>
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"
