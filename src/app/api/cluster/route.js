@@ -30,12 +30,16 @@ async function processRequest(params, requestId) {
       requestId,
     })
 
-    const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
-      params: { start: params.start, end: params.end },
-    })
+    const response = await axios.get(
+      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
+      {
+        params: { start: params.start, end: params.end },
+      },
+    )
 
     services = response.data.filter(
-      service => service.time.range[0] !== null && service.time.range[1] !== null,
+      service =>
+        service.time.range[0] !== null && service.time.range[1] !== null,
     )
 
     console.log(`Found ${services.length} services for request ${requestId}`)
@@ -62,12 +66,16 @@ async function processRequest(params, requestId) {
     return { clusteredServices: services, clusteringInfo: {} }
   }
 
-  currentWorker = new Worker(path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'))
+  currentWorker = new Worker(
+    path.resolve(process.cwd(), 'src/app/api/cluster/worker.js'),
+  )
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(async () => {
       if (currentRequestId === requestId) {
-        console.log(`Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`)
+        console.log(
+          `Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`,
+        )
         await terminateWorker()
         resolve({
           clusteredServices: services,
@@ -209,7 +217,10 @@ export async function GET(request) {
 
     const requestId = ++currentRequestId
     try {
-      const result = await processRequest({ ...params, services, distanceMatrix }, requestId)
+      const result = await processRequest(
+        { ...params, services, distanceMatrix },
+        requestId,
+      )
 
       if (currentRequestId !== requestId) {
         return new Response(
@@ -256,12 +267,15 @@ export async function GET(request) {
 async function fetchServices(params) {
   try {
     const { start: defaultStart, end: defaultEnd } = getDefaultDateRange()
-    const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
-      params: {
-        start: params.start || defaultStart,
-        end: params.end || defaultEnd,
+    const response = await axios.get(
+      `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`,
+      {
+        params: {
+          start: params.start || defaultStart,
+          end: params.end || defaultEnd,
+        },
       },
-    })
+    )
 
     if (!response.data) {
       console.error('No data returned from services API')
@@ -269,7 +283,9 @@ async function fetchServices(params) {
     }
 
     return response.data.filter(
-      service => service?.time?.range?.[0] !== null && service?.time?.range?.[1] !== null,
+      service =>
+        service?.time?.range?.[0] !== null &&
+        service?.time?.range?.[1] !== null,
     )
   } catch (error) {
     console.error('Error fetching services:', error)

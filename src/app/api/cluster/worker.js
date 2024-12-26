@@ -5,7 +5,7 @@ import { kMeans } from './kmeans.js'
 import { scheduleServices } from './scheduling.js'
 
 // Constants (moved from constants.js)
-const MAX_RADIUS_MILES = 1
+const MAX_RADIUS_MILES = 5
 
 // Moved from outliers.js
 function filterOutliers(points, distanceMatrix) {
@@ -48,12 +48,18 @@ parentPort.on(
         service.location.longitude,
       ])
 
-      const flatDistances = distanceMatrix.flat().filter(d => d !== null && d !== 0)
+      const flatDistances = distanceMatrix
+        .flat()
+        .filter(d => d !== null && d !== 0)
       const maxDistance = Math.max(...flatDistances)
       const minDistance = Math.min(...flatDistances)
-      const avgDistance = flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
+      const avgDistance =
+        flatDistances.reduce((a, b) => a + b, 0) / flatDistances.length
 
-      const { connectedPoints, outliers } = filterOutliers(points, distanceMatrix)
+      const { connectedPoints, outliers } = filterOutliers(
+        points,
+        distanceMatrix,
+      )
 
       const filteredPoints = connectedPoints.map(index => points[index])
       const filteredDistanceMatrix = connectedPoints.map(i =>
@@ -84,7 +90,9 @@ parentPort.on(
             return { ...service, cluster: -2, wasStatus: 'outlier' }
           }
           const filteredIndex = connectedPoints.indexOf(index)
-          const clusterIndex = clusters.findIndex(cluster => cluster.includes(filteredIndex))
+          const clusterIndex = clusters.findIndex(cluster =>
+            cluster.includes(filteredIndex),
+          )
           return {
             ...service,
             cluster: clusterIndex !== -1 ? clusterIndex : -1,
@@ -148,13 +156,16 @@ parentPort.on(
         ...clusteringInfo,
         noisePoints: clusterCounts['-1'] || 0,
         outliersCount: clusterCounts['-2'] || 0,
-        clusterDistribution: Object.entries(clusterCounts).map(([cluster, count]) => ({
-          [cluster]: count,
-        })),
+        clusterDistribution: Object.entries(clusterCounts).map(
+          ([cluster, count]) => ({ [cluster]: count }),
+        ),
       }
 
       // After clustering, schedule services within each cluster
-      const scheduledServices = await scheduleServices(clusteredServices, distanceMatrix)
+      const scheduledServices = await scheduleServices(
+        clusteredServices,
+        distanceMatrix,
+      )
 
       // Update clusteredServices with scheduled times
       clusteredServices = scheduledServices.map(service => {

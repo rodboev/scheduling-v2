@@ -20,22 +20,6 @@ function debounce(func, wait, immediate = false) {
   }
 }
 
-const mapClusterToTech = (service, clusterNum) => {
-  // Map cluster numbers to tech names based on the original tech if enforced
-  if (service.tech?.enforced) {
-    return {
-      id: service.tech.code,
-      title: service.tech.name,
-    }
-  }
-
-  // Otherwise use generic tech numbers
-  return {
-    id: `Tech ${clusterNum + 1}`,
-    title: `Tech ${clusterNum + 1}`,
-  }
-}
-
 export function useSchedule(currentViewRange) {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
@@ -64,36 +48,38 @@ export function useSchedule(currentViewRange) {
   )
 
   const processDataBatch = useCallback(startIndex => {
-    const { clusteredServices } = dataRef.current
-    const endIndex = Math.min(startIndex + BATCH_SIZE, clusteredServices.length)
+    const { scheduledServices, unassignedServices } = dataRef.current
+    const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
 
-    const newAssignedServices = clusteredServices.slice(startIndex, endIndex).map(service => {
-      const tech = mapClusterToTech(service, service.cluster)
-      return {
+    const newAssignedServices = scheduledServices
+      .slice(startIndex, endIndex)
+      .map(service => ({
         ...service,
         start: new Date(service.start),
         end: new Date(service.end),
-        resourceId: tech.id,
-        title: `${service.company} - ${tech.title}`,
-      }
-    })
+      }))
 
     setResult(prevResult => ({
       ...prevResult,
-      assignedServices: [...prevResult.assignedServices, ...newAssignedServices],
+      assignedServices: [
+        ...prevResult.assignedServices,
+        ...newAssignedServices,
+      ],
     }))
 
-    if (endIndex < clusteredServices.length) {
+    if (endIndex < scheduledServices.length) {
       setTimeout(() => processDataBatch(endIndex), 0)
     } else {
-      // Process resources (techs)
-      const techSet = new Set(
-        clusteredServices.map(service => {
-          const tech = mapClusterToTech(service, service.cluster)
-          return tech.id
-        }),
-      )
+      // Process unassigned services and resources
+      const filteredUnassignedServices = unassignedServices.map(service => ({
+        ...service,
+        start: new Date(service.start),
+        end: new Date(service.end),
+      }))
 
+      const techSet = new Set(
+        scheduledServices.map(service => service.resourceId),
+      )
       const resources = Array.from(techSet)
         .map(techId => ({ id: techId, title: techId }))
         .sort((a, b) => {
@@ -101,14 +87,15 @@ export function useSchedule(currentViewRange) {
           const bIsGeneric = b.id.startsWith('Tech ')
           if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
           return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) - Number.parseInt(b.id.split(' ')[1], 10)
+            ? Number.parseInt(a.id.split(' ')[1], 10) -
+                Number.parseInt(b.id.split(' ')[1], 10)
             : a.id.localeCompare(b.id)
         })
 
       setResult(prevResult => ({
         ...prevResult,
+        filteredUnassignedServices,
         resources,
-        filteredUnassignedServices: [],
       }))
 
       setLoading(false)
@@ -123,7 +110,7 @@ export function useSchedule(currentViewRange) {
     setStatus('Initializing...')
 
     const eventSource = new EventSource(
-      `/api/clustered-schedule?start=${dateRange.start}&end=${dateRange.end}`,
+      `/api/schedule?start=${dateRange.start}&end=${dateRange.end}`,
     )
 
     eventSource.onmessage = event => {
@@ -167,8 +154,11 @@ export function useSchedule(currentViewRange) {
     return [...result.assignedServices, ...result.filteredUnassignedServices]
   }, [result])
 
-  const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
-    useEnforcement(allServices, fetchSchedule)
+  const {
+    updateServiceEnforcement,
+    updateAllServicesEnforcement,
+    allServicesEnforced,
+  } = useEnforcement(allServices, fetchSchedule)
 
   return {
     ...result,
