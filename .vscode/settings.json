@@ -1,3 +1,6 @@
 {
-  "explorer.autoReveal": true
+  "explorer.autoReveal": true,
+  "editor.smoothScrolling": true,
+  "terminal.integrated.smoothScrolling": true,
+  "workbench.list.smoothScrolling": true
 }
