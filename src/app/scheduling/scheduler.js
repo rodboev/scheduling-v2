@@ -143,19 +143,21 @@ async function tryScheduleInShift({ service, shift, techId }) {
       const existingStart = new Date(existingService.start)
       const existingEnd = new Date(existingService.end)
 
-      // Check for overlap including required gaps
+      // Calculate gaps between services
+      const gapBefore = (startTime - existingEnd) / 60000
+      const gapAfter = (existingStart - endTime) / 60000
+
+      // Check for conflicts including required gaps
       if (
-        // New service starts during existing service (including gap)
-        (startTime >= addMinutes(existingStart, -SERVICE_GAP_MINUTES) &&
-          startTime <= addMinutes(existingEnd, SERVICE_GAP_MINUTES)) ||
-        // New service ends during existing service (including gap)
-        (endTime >= addMinutes(existingStart, -SERVICE_GAP_MINUTES) &&
-          endTime <= addMinutes(existingEnd, SERVICE_GAP_MINUTES)) ||
-        // New service spans over existing service
-        (startTime <= existingStart && endTime >= existingEnd)
+        // Overlapping time periods
+        (startTime < existingEnd && endTime > existingStart) ||
+        // Insufficient gap before existing service
+        (gapAfter >= 0 && gapAfter < SERVICE_GAP_MINUTES) ||
+        // Insufficient gap after existing service
+        (gapBefore >= 0 && gapBefore < SERVICE_GAP_MINUTES)
       ) {
         hasConflict = true
-        // Move start time to after the existing service's gap
+        // Move start time to the next possible slot after this service
         startTime = addMinutes(existingEnd, SERVICE_GAP_MINUTES)
         break
       }
@@ -169,22 +171,19 @@ async function tryScheduleInShift({ service, shift, techId }) {
         resourceId: techId,
       }
 
-      // Find correct position to maintain chronological order
-      let insertIndex = 0
-      while (
-        insertIndex < shift.services.length &&
-        new Date(shift.services[insertIndex].start) < startTime
-      ) {
-        insertIndex++
-      }
+      // Insert service in chronological order
+      const insertIndex = shift.services.findIndex(s => new Date(s.start) > startTime)
+      const insertAt = insertIndex === -1 ? shift.services.length : insertIndex
+      shift.services.splice(insertAt, 0, scheduledService)
 
-      shift.services.splice(insertIndex, 0, scheduledService)
       await updateDistances(shift.services)
-
       return { scheduled: true }
     }
 
-    startTime = addMinutes(startTime, 1) // Try next minute
+    // If no conflict but can't schedule here, try the next potential slot
+    if (!hasConflict) {
+      startTime = addMinutes(startTime, SERVICE_GAP_MINUTES)
+    }
   }
 
   return { scheduled: false, reason: 'No valid time slot found' }
