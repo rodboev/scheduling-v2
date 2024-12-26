@@ -220,9 +220,9 @@ export async function GET(request) {
   const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, 20)
   console.log('First 20 unique techs:', uniqueTechs)
 
-  // Filter serviceSetups to only include those techs
-  serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
-  console.log('Filtered to first 20 techs, total setups:', serviceSetups.length)
+  // // Filter serviceSetups to only include those techs
+  // serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
+  // console.log('Filtered to first 20 techs, total setups:', serviceSetups.length)
 
   // Filter by specific IDs if idParam is present
   if (idParam) {

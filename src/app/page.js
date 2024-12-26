@@ -22,14 +22,20 @@ export default function Home() {
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h1 className="text-2xl font-bold">Service Scheduling Tools</h1>
         </div>
-
+        
         <div className="flex flex-col items-center justify-center gap-6 p-12">
           <Link href="/calendar">
             <Button size="lg" variant="outline" className="w-64">
-              Calendar View
+              Standard Calendar View
             </Button>
           </Link>
-
+          
+          <Link href="/clustered">
+            <Button size="lg" variant="outline" className="w-64">
+              Clustered Calendar View
+            </Button>
+          </Link>
+          
           <Link href="/map" target="_blank">
             <Button size="lg" variant="outline" className="w-64">
               Map View
