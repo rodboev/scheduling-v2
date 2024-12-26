@@ -64,10 +64,17 @@ function sortServicesByEarliestTime(services) {
   return [...services].sort((a, b) => {
     const aStart = new Date(a.time.range[0])
     const bStart = new Date(b.time.range[0])
+    const aWindow = new Date(a.time.range[1]) - aStart
+    const bWindow = new Date(b.time.range[1]) - bStart
 
-    // If start times are equal, sort by duration (shorter first)
+    // If start times are equal, prioritize:
+    // 1. Shorter time windows (less flexible services first)
+    // 2. Shorter service durations
     if (aStart.getTime() === bStart.getTime()) {
-      return a.time.duration - b.time.duration
+      if (aWindow === bWindow) {
+        return a.time.duration - b.time.duration
+      }
+      return aWindow - bWindow // Shorter windows first
     }
 
     return aStart.getTime() - bStart.getTime()
@@ -122,6 +129,59 @@ function logClusterSchedule(clusterId, services) {
   }
 }
 
+function scoreService(service, lastService, scheduledTimes) {
+  if (!lastService) return 0
+
+  const travelTime = service.distanceFromPrevious ? Math.ceil(service.distanceFromPrevious * 3) : 15
+
+  const proposedStart = new Date(lastService.end)
+  proposedStart.setMinutes(proposedStart.getMinutes() + travelTime)
+
+  const validStart = findValidTimeSlot(proposedStart, service.time.duration, scheduledTimes)
+  if (!validStart) return -1
+
+  const validEnd = new Date(validStart.getTime() + service.time.duration * 60000)
+  if (validEnd > new Date(service.time.range[1])) return -1
+
+  // Time-based scores (highest priority)
+  const timeScore = 10000000 - validStart.getTime()
+
+  // Window flexibility score (medium priority)
+  const timeWindow = new Date(service.time.range[1]) - new Date(service.time.range[0])
+  const windowScore = (1000000 - timeWindow) * 2 // Double the window score importance
+
+  // Distance score (lower priority but still important)
+  const distanceScore = (1000 - (service.distanceFromPrevious || 0) * 100) * 3
+
+  // How early in its available window (high priority)
+  const serviceStartTime = new Date(service.time.range[0]).getTime()
+  const serviceEndTime = new Date(service.time.range[1]).getTime()
+  const earliestPossibleScore =
+    ((serviceEndTime - validStart.getTime()) / (serviceEndTime - serviceStartTime)) * 5000000
+
+  return timeScore + windowScore + distanceScore + earliestPossibleScore
+}
+
+function findBestInitialService(unscheduledServices) {
+  let bestStart = null
+  let bestScore = -Infinity
+
+  for (const service of unscheduledServices) {
+    const startTime = new Date(service.time.range[0])
+    const timeWindow = new Date(service.time.range[1]) - startTime
+
+    // Heavily weight earlier start times and tighter windows
+    const score = 10000000 - startTime.getTime() + (1000000 - timeWindow)
+
+    if (score > bestScore) {
+      bestScore = score
+      bestStart = service
+    }
+  }
+
+  return bestStart
+}
+
 export async function scheduleServices(services, distanceMatrix = null) {
   let clusters = services.reduce((acc, service) => {
     if (service.cluster >= 0) {
@@ -136,10 +196,11 @@ export async function scheduleServices(services, distanceMatrix = null) {
 
   // Schedule each cluster independently
   for (const [clusterId, clusterServices] of Object.entries(clusters)) {
+    // Sort services by earliest possible time before scheduling
     let sortedServices = sortServicesByEarliestTime(clusterServices)
     let scheduledTimes = []
 
-    // Schedule first service at its earliest possible time
+    // Schedule first service at its earliest possible time from range
     let currentService = sortedServices[0]
     const earliestPossibleStart = new Date(currentService.time.range[0])
 
@@ -152,13 +213,20 @@ export async function scheduleServices(services, distanceMatrix = null) {
       end: new Date(currentService.end),
     })
 
-    // Schedule remaining services with enforced 15-minute gaps
+    // Schedule remaining services without assigning sequence numbers
     for (let i = 1; i < sortedServices.length; i++) {
       currentService = sortedServices[i]
       const prevService = sortedServices[i - 1]
 
-      // Always enforce 15-minute gap
-      let proposedStart = new Date(new Date(prevService.end).getTime() + 15 * 60000)
+      // Calculate minimum travel time from previous service
+      let travelTime = 15 // Default 15 minutes if no distance info
+      if (currentService.distanceFromPrevious) {
+        travelTime = Math.ceil(currentService.distanceFromPrevious)
+      }
+
+      // Calculate earliest possible start time after previous service
+      let proposedStart = new Date(prevService.end)
+      proposedStart.setMinutes(proposedStart.getMinutes() + travelTime)
 
       // Ensure we don't schedule before the service's earliest possible time
       const serviceEarliestTime = new Date(currentService.time.range[0])
@@ -166,24 +234,34 @@ export async function scheduleServices(services, distanceMatrix = null) {
         proposedStart = serviceEarliestTime
       }
 
-      const validEnd = new Date(proposedStart.getTime() + currentService.time.duration * 60000)
+      // Find a valid time slot
+      const validStart = findValidTimeSlot(
+        proposedStart,
+        currentService.time.duration,
+        scheduledTimes,
+      )
 
-      // Ensure we don't schedule beyond the service's latest possible time
-      const serviceLatestEnd = new Date(currentService.time.range[1])
-      if (validEnd > serviceLatestEnd) {
-        unscheduledServices.push(currentService)
-        continue
-      }
+      if (validStart) {
+        const validEnd = new Date(validStart.getTime() + currentService.time.duration * 60000)
 
-      // Check if adding this service would exceed 8 hour cluster duration
-      const tempTimes = [...scheduledTimes, { start: proposedStart, end: validEnd }]
-      const totalDuration = calculateTotalDuration(tempTimes)
+        // Ensure we don't schedule beyond the service's latest possible time
+        const serviceLatestEnd = new Date(currentService.time.range[1])
+        if (validEnd > serviceLatestEnd) {
+          unscheduledServices.push(currentService)
+          continue
+        }
 
-      if (totalDuration <= MAX_CLUSTER_DURATION) {
-        currentService.start = proposedStart.toISOString()
-        currentService.end = validEnd.toISOString()
-        scheduledTimes.push({ start: proposedStart, end: validEnd })
-        currentService.previousCompany = prevService.company
+        // Check if adding this service would exceed 8 hour cluster duration
+        const tempTimes = [...scheduledTimes, { start: validStart, end: validEnd }]
+        const totalDuration = calculateTotalDuration(tempTimes)
+
+        if (totalDuration <= MAX_CLUSTER_DURATION) {
+          currentService.start = validStart.toISOString()
+          currentService.end = validEnd.toISOString()
+          scheduledTimes.push({ start: validStart, end: validEnd })
+        } else {
+          unscheduledServices.push(currentService)
+        }
       } else {
         unscheduledServices.push(currentService)
       }
@@ -203,41 +281,66 @@ export async function scheduleServices(services, distanceMatrix = null) {
     const newCluster = []
     let scheduledTimes = []
 
-    for (const service of [...unscheduledServices]) {
-      if (newCluster.length === 0) {
-        // First service handling remains the same
-        const earliestStart = new Date(service.time.range[0])
-        service.cluster = nextClusterId
-        service.start = earliestStart.toISOString()
-        service.end = new Date(
-          earliestStart.getTime() + service.time.duration * 60000,
-        ).toISOString()
-        newCluster.push(service)
-        scheduledTimes.push({
-          start: earliestStart,
-          end: new Date(service.end),
-        })
-        unscheduledServices = unscheduledServices.filter(s => s !== service)
-      } else {
-        const lastService = newCluster[newCluster.length - 1]
+    // Find best initial service for cluster
+    let bestStart = findBestInitialService(unscheduledServices)
 
-        // Always enforce 15-minute gap
-        let proposedStart = new Date(new Date(lastService.end).getTime() + 15 * 60000)
+    if (!bestStart) break
 
-        if (proposedStart <= new Date(service.time.range[1])) {
-          const validEnd = new Date(proposedStart.getTime() + service.time.duration * 60000)
+    // Add first service to cluster
+    bestStart.cluster = nextClusterId
+    bestStart.start = new Date(bestStart.time.range[0]).toISOString()
+    bestStart.end = new Date(
+      new Date(bestStart.start).getTime() + bestStart.time.duration * 60000,
+    ).toISOString()
+    newCluster.push(bestStart)
+    scheduledTimes.push({ start: new Date(bestStart.start), end: new Date(bestStart.end) })
+    unscheduledServices = unscheduledServices.filter(s => s !== bestStart)
 
-          const tempTimes = [...scheduledTimes, { start: proposedStart, end: validEnd }]
+    // Keep adding services while possible
+    let lastService = bestStart
+    let keepTrying = true
+
+    while (keepTrying) {
+      keepTrying = false
+      let bestNext = null
+      let bestNextScore = -Infinity
+
+      // Score all remaining services
+      for (const service of unscheduledServices) {
+        const score = scoreService(service, lastService, scheduledTimes)
+        if (score > bestNextScore) {
+          bestNextScore = score
+          bestNext = service
+        }
+      }
+
+      if (bestNext && bestNextScore > -1) {
+        const travelTime = bestNext.distanceFromPrevious
+          ? Math.ceil(bestNext.distanceFromPrevious * 3)
+          : 15
+
+        let proposedStart = new Date(lastService.end)
+        proposedStart.setMinutes(proposedStart.getMinutes() + travelTime)
+
+        const validStart = findValidTimeSlot(proposedStart, bestNext.time.duration, scheduledTimes)
+
+        if (validStart) {
+          const validEnd = new Date(validStart.getTime() + bestNext.time.duration * 60000)
+          const tempTimes = [...scheduledTimes, { start: validStart, end: validEnd }]
           const totalDuration = calculateTotalDuration(tempTimes)
 
-          if (totalDuration <= MAX_CLUSTER_DURATION) {
-            service.cluster = nextClusterId
-            service.start = proposedStart.toISOString()
-            service.end = validEnd.toISOString()
-            newCluster.push(service)
-            scheduledTimes.push({ start: proposedStart, end: validEnd })
-            service.previousCompany = lastService.company
-            unscheduledServices = unscheduledServices.filter(s => s !== service)
+          if (
+            totalDuration <= MAX_CLUSTER_DURATION &&
+            validEnd <= new Date(bestNext.time.range[1])
+          ) {
+            bestNext.cluster = nextClusterId
+            bestNext.start = validStart.toISOString()
+            bestNext.end = validEnd.toISOString()
+            newCluster.push(bestNext)
+            scheduledTimes.push({ start: validStart, end: validEnd })
+            unscheduledServices = unscheduledServices.filter(s => s !== bestNext)
+            lastService = bestNext
+            keepTrying = true
           }
         }
       }

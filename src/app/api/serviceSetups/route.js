@@ -216,9 +216,9 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Get first 20 unique tech codes
-  const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, 20)
-  console.log('First 20 unique techs:', uniqueTechs)
+  // // Get first 20 unique tech codes
+  // const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, 20)
+  // console.log('First 20 unique techs:', uniqueTechs)
 
   // // Filter serviceSetups to only include those techs
   // serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
