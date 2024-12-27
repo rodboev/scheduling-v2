@@ -19,6 +19,9 @@ import { COLORS } from '@/app/map/utils/colors'
 import 'leaflet-polylinedecorator'
 import PolylineWithArrow from './PolylineWithArrow'
 
+// Add debug logging for import
+console.log('logMapActivity imported:', typeof logMapActivity)
+
 /**
  * MapView Component
  * Handles the main map display, clustering, and scheduling logic
@@ -80,38 +83,38 @@ const MapView = () => {
 
       // Create pairs for all sequential services in the cluster
       for (let i = 1; i < sortedCluster.length; i++) {
-        allPairs.push(`${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`)
+        const fromId = sortedCluster[i - 1].location.id
+        const toId = sortedCluster[i].location.id
+        if (fromId && toId) {
+          allPairs.push(`${fromId},${toId}`)
+        }
       }
     }
 
-    // Split ALL pairs into chunks of 1000
-    const chunkedPairs = chunk(allPairs, 1000) // right now allApairs is 94, so this doesn't do anything
+    // If no pairs need distance calculation, return early
+    if (allPairs.length === 0) {
+      return servicesWithDistance
+    }
 
-    // Fetch distances for all pairs in one go
-    const distanceResults = []
-    for (const [index, pairChunk] of chunkedPairs.entries()) {
-      console.log(`Fetching distances batch ${index + 1}/${chunkedPairs.length}`)
-      const response = await axios.get('/api/distance', {
+    // Split ALL pairs into chunks of 50 for more efficient batching
+    const chunkedPairs = chunk(allPairs, 50)
+
+    // Fetch distances for all pairs in parallel
+    const distancePromises = chunkedPairs.map(pairChunk =>
+      axios.get('/api/distance', {
         params: {
           id: pairChunk,
         },
         paramsSerializer: params => {
           return params.id.map(pair => `id=${pair}`).join('&')
         },
-      })
+      }),
+    )
 
-      if (response.data.error) {
-        console.error('Distance API error:', response.data.error)
-        // Handle missing locations if needed
-        if (response.data.error.context?.missingLocationIds) {
-          console.log('Missing locations:', response.data.error.context.missingLocationIds)
-          // Optionally trigger a refresh or retry
-        }
-        return []
-      }
-
-      distanceResults.push(...response.data)
-    }
+    const responses = await Promise.all(distancePromises)
+    const distanceResults = responses.flatMap(response =>
+      response.data.error ? [] : response.data,
+    )
 
     // Now process each cluster with the complete distance results
     for (const clusterServices of Object.values(clusters)) {
@@ -128,7 +131,7 @@ const MapView = () => {
           const previousService = sortedCluster[i - 1]
           const pairResult = distanceResults.find(
             result =>
-              result.pair.id === `${previousService.location.id},${currentService.location.id}`,
+              result.pair?.id === `${previousService.location.id},${currentService.location.id}`,
           )
 
           if (pairResult?.pair?.distance) {
@@ -183,38 +186,76 @@ const MapView = () => {
       const filteredServices = response.data.clusteredServices.filter(service => {
         const serviceTimeStart = new Date(service.time.range[0])
         const serviceTimeEnd = new Date(service.time.range[1])
+        const scheduledStart = new Date(service.start)
+        const scheduledEnd = new Date(service.end)
         const windowStart = new Date(startDate)
         const windowEnd = new Date(endDate)
 
-        // First check if the service's time window overlaps with our window
-        const timeWindowOverlaps = serviceTimeStart < windowEnd && serviceTimeEnd > windowStart
+        // Service must have a valid time window and scheduled times
+        if (!serviceTimeStart || !serviceTimeEnd || !scheduledStart || !scheduledEnd) {
+          return false
+        }
 
-        // Then check if the service is actually scheduled within our window
-        const scheduledStart = service.start ? new Date(service.start) : null
-        const scheduledEnd = service.end ? new Date(service.end) : null
-        const isScheduledInWindow =
-          !scheduledStart ||
-          !scheduledEnd ||
-          (scheduledStart < windowEnd && scheduledEnd <= windowEnd)
+        // Check if the service's time window overlaps with our shift window
+        const timeWindowOverlaps = serviceTimeStart <= windowEnd && serviceTimeEnd >= windowStart
 
+        // Check if the service is scheduled within our window
+        const isScheduledInWindow = scheduledStart >= windowStart && scheduledEnd <= windowEnd
+
+        // Service must have both overlapping time window AND be scheduled within the window
         return timeWindowOverlaps && isScheduledInWindow
       })
 
+      // Add debug logging
+      console.log('Time window:', {
+        start: new Date(startDate).toLocaleString(),
+        end: new Date(endDate).toLocaleString(),
+      })
+      console.log('Original services:', response.data.clusteredServices.length)
+      console.log('Filtered services:', filteredServices.length)
+      console.log('Sample filtered service:', filteredServices[0])
+
       const servicesWithDistance = await addDistanceInfo(filteredServices)
 
+      // Add debug logging
+      console.log('=== Debug Logging ===')
+      console.log('Services with distance:', servicesWithDistance.length)
+      console.log('Sample service:', servicesWithDistance[0])
+      console.log(
+        'Clusters:',
+        new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
+      )
+      console.log('Connected points:', filteredServices.filter(s => s.cluster >= 0).length)
+      console.log('Outliers:', filteredServices.filter(s => s.cluster === -1).length)
+      console.log('About to call logMapActivity...')
+
       // Add logging here - moved after filtering
-      logMapActivity({
-        services: servicesWithDistance,
-        clusteringInfo: {
+      try {
+        console.log('Services array type:', Array.isArray(servicesWithDistance))
+        console.log('ClusteringInfo:', {
           ...response.data.clusteringInfo,
-          // Update clustering info to reflect filtered services
           totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
           connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
           outlierCount: filteredServices.filter(s => s.cluster === -1).length,
           performanceDuration: response.data.clusteringInfo.performanceDuration,
-        },
-        algorithm,
-      })
+        })
+
+        logMapActivity({
+          services: servicesWithDistance,
+          clusteringInfo: {
+            ...response.data.clusteringInfo,
+            // Update clustering info to reflect filtered services
+            totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
+            connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
+            outlierCount: filteredServices.filter(s => s.cluster === -1).length,
+            performanceDuration: response.data.clusteringInfo.performanceDuration,
+          },
+          algorithm,
+        })
+        console.log('logMapActivity completed')
+      } catch (error) {
+        console.error('Error in logMapActivity:', error)
+      }
 
       setClusteredServices(servicesWithDistance)
       setClusteringInfo({

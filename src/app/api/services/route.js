@@ -16,30 +16,42 @@ function createServicesForRange(setup, startDate, endDate) {
 
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
+      // Create the service's time window based on its original range
       const rangeStart =
-        setup.time.range[0] !== null ? round(date.add(setup.time.range[0], 'seconds')) : null
+        setup.time.range[0] !== null
+          ? date.startOf('day').add(setup.time.range[0], 'seconds')
+          : null
       const rangeEnd =
         setup.time.range[1] !== null
-          ? round(date.add(setup.time.range[1], 'seconds').add(setup.time.duration, 'minutes'))
+          ? date.startOf('day').add(setup.time.range[1], 'seconds')
           : null
-      const preferred = round(date.add(parseTime(setup.time.preferred), 'seconds'))
+      const preferred = date.startOf('day').add(parseTime(setup.time.preferred), 'seconds')
       const duration = Math.round(setup.time.duration / 15) * 15
 
-      services.push({
-        ...setup,
-        id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
-        date: date.toDate(),
-        time: {
-          range: [rangeStart, rangeEnd],
-          preferred,
-          duration,
-          meta: {
-            dayRange: setup.time.range,
-            originalRange: setup.time.originalRange,
-            preferred: setup.time.preferred,
+      // Calculate scheduled start time based on preferred time
+      const scheduledStart = preferred
+      const scheduledEnd = dayjs(scheduledStart).add(duration, 'minutes')
+
+      // Only create service if scheduled times fall within the time window
+      if (rangeStart && rangeEnd && scheduledStart && scheduledEnd) {
+        services.push({
+          ...setup,
+          id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
+          date: date.toDate(),
+          start: scheduledStart.toDate(),
+          end: scheduledEnd.toDate(),
+          time: {
+            range: [rangeStart.toDate(), rangeEnd.toDate()],
+            preferred: preferred.toDate(),
+            duration,
+            meta: {
+              dayRange: setup.time.range,
+              originalRange: setup.time.originalRange,
+              preferred: setup.time.preferred,
+            },
           },
-        },
-      })
+        })
+      }
     }
   }
 
