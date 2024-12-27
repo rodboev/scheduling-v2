@@ -8,6 +8,7 @@ import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
+import { SHIFT_DURATION_MS } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Polygon, Polyline } from 'react-leaflet'
@@ -36,8 +37,12 @@ const MapView = () => {
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
-  const [startDate, setStartDate] = useState('2024-09-03T02:30:00.000Z')
-  const [endDate, setEndDate] = useState('2024-09-03T12:30:00.000Z')
+  const [startDate, setStartDate] = useState('2024-09-03T13:00:00.000Z') // 9am EDT
+  const [endDate, setEndDate] = useState(() => {
+    const end = new Date('2024-09-03T13:00:00.000Z')
+    end.setTime(end.getTime() + SHIFT_DURATION_MS)
+    return end.toISOString()
+  })
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
   const [algorithm, setAlgorithm] = useState('kmeans')
@@ -167,7 +172,18 @@ const MapView = () => {
         return
       }
 
-      const servicesWithDistance = await addDistanceInfo(response.data.clusteredServices)
+      // Filter services by time window
+      const filteredServices = response.data.clusteredServices.filter(service => {
+        const serviceStart = new Date(service.time.range[0])
+        const serviceEnd = new Date(service.time.range[1])
+        const windowStart = new Date(startDate)
+        const windowEnd = new Date(endDate)
+
+        // Service window must overlap with our time window
+        return serviceStart < windowEnd && serviceEnd > windowStart
+      })
+
+      const servicesWithDistance = await addDistanceInfo(filteredServices)
 
       // Add logging here
       logMapActivity({

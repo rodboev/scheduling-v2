@@ -2,17 +2,12 @@
 
 import { useRef, useEffect } from 'react'
 import { getDefaultDateRange } from '@/app/utils/dates'
+import { SHIFT_DURATION_MS } from '@/app/utils/constants'
 
 /**
  * MapTools provides date range selection for services
  */
-const MapTools = ({
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
-  handleNextDay,
-}) => {
+const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay }) => {
   /**
    * Date handling utilities
    * - Converts between ISO and local datetime strings
@@ -37,9 +32,9 @@ const MapTools = ({
 
     if (isStartDate) {
       setter(newDate.toISOString())
-      // Set end date to 10 hours after start date
+      // Set end date to shift duration after start date
       const newEndDate = new Date(newDate)
-      newEndDate.setHours(newEndDate.getHours() + 10)
+      newEndDate.setTime(newEndDate.getTime() + SHIFT_DURATION_MS)
       setEndDate(newEndDate.toISOString())
     } else {
       setter(newDate.toISOString())
@@ -83,13 +78,6 @@ const MapTools = ({
     }
   }, [])
 
-  // Add useEffect to maintain 10-hour window when startDate changes
-  useEffect(() => {
-    const endDateTime = new Date(startDate)
-    endDateTime.setHours(endDateTime.getHours() + 10)
-    setEndDate(endDateTime.toISOString())
-  }, [startDate, setEndDate])
-
   return (
     <div className="absolute right-4 top-4 z-[1000] overflow-hidden rounded bg-white p-4 shadow">
       {/* Date Range Selection:
@@ -98,10 +86,7 @@ const MapTools = ({
           - Uses 15-minute increments */}
       <div className="grid grid-cols-1 gap-4">
         <div>
-          <label
-            htmlFor="startDate"
-            className="mb-1 block text-sm font-bold"
-          >
+          <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
             Start Date:
           </label>
           <input
@@ -115,10 +100,7 @@ const MapTools = ({
           />
         </div>
         <div>
-          <label
-            htmlFor="endDate"
-            className="mb-1 block text-sm font-bold"
-          >
+          <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
             End Date:
           </label>
           <input
@@ -136,8 +118,7 @@ const MapTools = ({
 
       <button
         onClick={handleNextDay}
-        className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2
-          font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+        className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
         type="button"
       >
         Next day
