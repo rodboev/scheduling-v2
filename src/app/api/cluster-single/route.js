@@ -194,12 +194,6 @@ export async function GET(request) {
         },
       }
 
-      logMapActivity({
-        services: finalResult.clusteredServices,
-        clusteringInfo: finalResult.clusteringInfo,
-        algorithm: params.algorithm,
-      })
-
       return new Response(JSON.stringify(finalResult), {
         status: 200,
         headers: {

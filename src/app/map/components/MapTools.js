@@ -34,11 +34,6 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
     const currentDate = new Date(startDate)
     const [hours, minutes] = SHIFTS[shift].start.split(':').map(Number)
 
-    // For shift 3, add a day since it starts after midnight
-    if (shift === 3) {
-      currentDate.setDate(currentDate.getDate() + 1)
-    }
-
     // Set the start date to the shift start time
     currentDate.setUTCHours(hours, minutes, 0, 0)
     const newStartDate = currentDate.toISOString()

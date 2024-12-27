@@ -12,16 +12,16 @@ export const SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000 // 8 hours in 
 
 // Shift times in UTC
 export const SHIFTS = {
+  3: {
+    start: '04:00', // 12am EDT
+    end: '12:00', // 8am EDT
+  },
   1: {
     start: '12:00', // 8am EDT
     end: '20:00', // 4pm EDT
   },
   2: {
     start: '20:00', // 4pm EDT
-    end: '04:00', // 12am EDT
-  },
-  3: {
-    start: '04:00', // 12am EDT (next day)
-    end: '12:00', // 8am EDT (next day)
+    end: '04:00', // 12am EDT (next day)
   },
 }

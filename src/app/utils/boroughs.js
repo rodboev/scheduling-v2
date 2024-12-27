@@ -1,4 +1,5 @@
 import * as turf from '@turf/turf'
+import { ENFORCE_BOROUGH_BOUNDARIES } from './constants.js'
 
 /**
  * NYC Borough and NJ Service Area Boundaries
@@ -312,7 +313,7 @@ export function getBorough(lat, lng) {
     }
   }
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' && ENFORCE_BOROUGH_BOUNDARIES) {
     console.log('Borough assignment failed:', {
       location: { lat, lng },
     })

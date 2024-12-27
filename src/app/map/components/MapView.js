@@ -202,15 +202,29 @@ const MapView = () => {
 
       const servicesWithDistance = await addDistanceInfo(filteredServices)
 
-      // Add logging here
+      // Add logging here - moved after filtering
       logMapActivity({
         services: servicesWithDistance,
-        clusteringInfo: response.data.clusteringInfo,
+        clusteringInfo: {
+          ...response.data.clusteringInfo,
+          // Update clustering info to reflect filtered services
+          totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
+          connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
+          outlierCount: filteredServices.filter(s => s.cluster === -1).length,
+          performanceDuration: response.data.clusteringInfo.performanceDuration,
+        },
         algorithm,
       })
 
       setClusteredServices(servicesWithDistance)
-      setClusteringInfo(response.data.clusteringInfo)
+      setClusteringInfo({
+        ...response.data.clusteringInfo,
+        // Update clustering info to reflect filtered services
+        totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
+        connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
+        outlierCount: filteredServices.filter(s => s.cluster === -1).length,
+        performanceDuration: response.data.clusteringInfo.performanceDuration,
+      })
     } catch (error) {
       console.error('Error fetching clustered services:', error)
       if (error.response) {

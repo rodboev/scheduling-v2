@@ -118,11 +118,11 @@ export function logBoroughStats(services) {
   console.log('\nBorough distribution:', boroughCounts)
 
   // Log services with unknown boroughs
-  const unknownServices = services.filter((s) => !s.borough)
+  const unknownServices = services.filter(s => !s.borough)
   if (unknownServices.length > 0) {
     console.log(
       '\nServices with unknown boroughs:',
-      unknownServices.map((s) => ({
+      unknownServices.map(s => ({
         company: s.company,
         address: s.location.address,
         coordinates: [s.location.latitude, s.location.longitude],

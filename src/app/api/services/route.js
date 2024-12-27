@@ -109,7 +109,7 @@ export async function GET(request) {
     console.log('Techs with services:', techsWithServices.length)
 
     const techsWithoutServices = allTechs.filter(code => !techsWithServices.includes(code))
-    console.log(`Techs without services between ${start} and ${end}:`, techsWithoutServices)
+    // console.log(`Techs without services between ${start} and ${end}:`, techsWithoutServices)
 
     // Apply enforcement state
     const servicesWithEnforcement = services.map(service => ({
