@@ -8,7 +8,7 @@ import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
 import { logSchedule } from '@/app/map/utils/scheduleLogger'
-import { SHIFT_DURATION_MS } from '@/app/utils/constants'
+import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Polygon, Polyline } from 'react-leaflet'
@@ -37,11 +37,18 @@ const MapView = () => {
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
-  const [startDate, setStartDate] = useState('2024-09-03T13:00:00.000Z') // 9am EDT
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date('2024-09-03T00:00:00.000Z')
+    const [hours, minutes] = SHIFTS[1].start.split(':').map(Number)
+    date.setUTCHours(hours, minutes, 0, 0)
+    return date.toISOString()
+  })
   const [endDate, setEndDate] = useState(() => {
-    const end = new Date('2024-09-03T13:00:00.000Z')
-    end.setTime(end.getTime() + SHIFT_DURATION_MS)
-    return end.toISOString()
+    const date = new Date('2024-09-03T00:00:00.000Z')
+    const [hours, minutes] = SHIFTS[1].start.split(':').map(Number)
+    date.setUTCHours(hours, minutes, 0, 0)
+    date.setTime(date.getTime() + SHIFT_DURATION_MS)
+    return date.toISOString()
   })
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})

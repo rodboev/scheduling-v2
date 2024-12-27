@@ -1,13 +1,15 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { getDefaultDateRange } from '@/app/utils/dates'
-import { SHIFT_DURATION_MS } from '@/app/utils/constants'
+import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
 
 /**
  * MapTools provides date range selection for services
  */
 const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay }) => {
+  const [activeShift, setActiveShift] = useState(1)
+
   /**
    * Date handling utilities
    * - Converts between ISO and local datetime strings
@@ -27,6 +29,27 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
       .replace(' ', 'T')
   }
 
+  const handleShiftChange = shift => {
+    setActiveShift(shift)
+    const currentDate = new Date(startDate)
+    const [hours, minutes] = SHIFTS[shift].start.split(':').map(Number)
+
+    // For shift 3, add a day since it starts after midnight
+    if (shift === 3) {
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+
+    // Set the start date to the shift start time
+    currentDate.setUTCHours(hours, minutes, 0, 0)
+    const newStartDate = currentDate.toISOString()
+    setStartDate(newStartDate)
+
+    // Set the end date 8 hours later
+    const newEndDate = new Date(currentDate)
+    newEndDate.setTime(newEndDate.getTime() + SHIFT_DURATION_MS)
+    setEndDate(newEndDate.toISOString())
+  }
+
   const handleDateChange = (e, setter, isStartDate) => {
     const newDate = new Date(e.target.value)
 
@@ -44,7 +67,10 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
   // Initialize state with default dates if not provided
   useEffect(() => {
     const { start, end } = getDefaultDateRange()
-    if (!startDate) setStartDate(start)
+    if (!startDate) {
+      setStartDate(start)
+      handleShiftChange(1) // Set to shift 1 by default
+    }
     if (!endDate) setEndDate(end)
   }, [startDate, endDate, setStartDate, setEndDate])
 
@@ -79,50 +105,68 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
   }, [])
 
   return (
-    <div className="absolute right-4 top-4 z-[1000] overflow-hidden rounded bg-white p-4 shadow">
-      {/* Date Range Selection:
-          - Controls the time window for services
-          - Enforces 10-hour window
-          - Uses 15-minute increments */}
-      <div className="grid grid-cols-1 gap-4">
-        <div>
-          <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
-            Start Date:
-          </label>
-          <input
-            id="startDate"
-            ref={startDateRef}
-            type="datetime-local"
-            value={toLocalDateTimeString(startDate)}
-            onChange={e => handleDateChange(e, setStartDate, true)}
-            className="w-full cursor-pointer rounded border p-2"
-            step="900" // 15 minutes in seconds
-          />
-        </div>
-        <div>
-          <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
-            End Date:
-          </label>
-          <input
-            id="endDate"
-            disabled
-            ref={endDateRef}
-            type="datetime-local"
-            value={toLocalDateTimeString(endDate)}
-            onChange={e => handleDateChange(e, setEndDate, false)}
-            className="w-full cursor-pointer rounded border p-2 text-gray-500"
-            step="900" // 15 minutes in seconds
-          />
-        </div>
+    <div className="absolute right-4 top-4 z-[1000] space-y-4 overflow-hidden">
+      <div className="flex space-x-4 rounded bg-white p-4 shadow">
+        <div className="my-2 text-sm font-bold">Shift:</div>
+        {[1, 2, 3].map(shift => (
+          <button
+            key={shift}
+            onClick={() => handleShiftChange(shift)}
+            className={`-my-1 rounded-md border-4 border-blue-600 px-4 text-sm font-bold transition-colors ${
+              activeShift === shift
+                ? 'bg-blue-600 text-white'
+                : 'bg-white hover:bg-blue-600 hover:text-white'
+            }`}
+          >
+            {shift}
+          </button>
+        ))}
       </div>
+      <div className="rounded bg-white p-4 shadow">
+        {/* Date Range Selection:
+          - Controls the time window for services
+          - Enforces shift duration window
+          - Uses 15-minute increments */}
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
+              Start Date:
+            </label>
+            <input
+              id="startDate"
+              ref={startDateRef}
+              type="datetime-local"
+              value={toLocalDateTimeString(startDate)}
+              onChange={e => handleDateChange(e, setStartDate, true)}
+              className="w-full cursor-pointer rounded border p-2"
+              step="900" // 15 minutes in seconds
+            />
+          </div>
+          <div>
+            <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
+              End Date:
+            </label>
+            <input
+              id="endDate"
+              disabled
+              ref={endDateRef}
+              type="datetime-local"
+              value={toLocalDateTimeString(endDate)}
+              onChange={e => handleDateChange(e, setEndDate, false)}
+              className="w-full cursor-pointer rounded border p-2 text-gray-500"
+              step="900" // 15 minutes in seconds
+            />
+          </div>
+        </div>
 
-      <button
-        onClick={handleNextDay}
-        className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
-        type="button"
-      >
-        Next day
-      </button>
+        <button
+          onClick={handleNextDay}
+          className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+          type="button"
+        >
+          Next day
+        </button>
+      </div>
     </div>
   )
 }

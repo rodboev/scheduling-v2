@@ -52,7 +52,7 @@
     "react-leaflet": "^4.2.1",
     "react-virtualized-auto-sizer": "^1.0.24",
     "react-window": "^1.8.10",
-    "tailwind-merge": "^2.5.2",
+    "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
