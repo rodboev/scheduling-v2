@@ -1,6 +1,11 @@
 import { formatDate, formatTime, calculateDuration } from '../../utils/dateHelpers.js'
 import { calculateHaversineDistance } from '../../map/utils/distance.js'
 
+// Add debug logging for imports
+console.log('Logging module loaded')
+console.log('formatDate imported:', typeof formatDate)
+console.log('calculateHaversineDistance imported:', typeof calculateHaversineDistance)
+
 export function logMapActivity({ services, clusteringInfo, algorithm }) {
   console.log('\nMap Activity Log:\n')
 

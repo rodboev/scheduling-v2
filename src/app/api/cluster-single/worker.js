@@ -56,16 +56,14 @@ function findBestNextService(
   let bestStart = null
 
   const currentIndex = currentService.originalIndex
-  const MAX_REASONABLE_DISTANCE = 5
 
   for (const service of remainingServices) {
-    const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
     const distance = distanceMatrix[currentIndex][service.originalIndex]
 
-    // Skip services that are too far away or in different boroughs
+    // Strict enforcement of distance caps
     if (distance > HARD_MAX_RADIUS_MILES) continue
     if (
-      ENFORCE_BOROUGH_BOUNDARIES &&
+      distance > MAX_RADIUS_MILES &&
       !areSameBorough(
         currentService.location.latitude,
         currentService.location.longitude,
@@ -74,6 +72,11 @@ function findBestNextService(
       )
     )
       continue
+
+    const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
+
+    // Skip if travel time is too long
+    if (travelTime > MAX_TRAVEL_TIME) continue
 
     // Get the valid time range for this service
     const rangeStart = new Date(service.time.range[0])
@@ -106,8 +109,8 @@ function findBestNextService(
         const timeGap = (tryStart - new Date(currentService.end)) / 60000
         const distanceScore =
           distance > MAX_RADIUS_MILES
-            ? -Math.pow(distance, 2) // More aggressive penalty for distances above soft cap
-            : -Math.pow(distance, 1.25) // Less aggressive penalty for distances within soft cap
+            ? -999999 // Make it impossible to cluster services beyond MAX_RADIUS_MILES
+            : -Math.pow(distance, 1.5) // Stronger penalty for distance
         const timeGapScore = -timeGap / 4
         const score = distanceScore + timeGapScore
 
@@ -116,10 +119,9 @@ function findBestNextService(
           bestService = service
           bestStart = tryStart
         }
-        break // Found a valid time slot, no need to keep trying
+        break
       }
 
-      // Try next 15-minute increment
       tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
     }
   }
@@ -180,17 +182,14 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
       timeWindow: new Date(service.time.range[1]) - new Date(service.time.range[0]),
     }))
     .sort((a, b) => {
-      // First by start time
       const timeCompare = new Date(a.time.range[0]) - new Date(b.time.range[0])
       if (timeCompare !== 0) return timeCompare
-      // Then by time window (shorter windows first)
       return a.timeWindow - b.timeWindow
     })
 
   let clusterIndex = 0
   const shifts = []
 
-  // Try to schedule each service
   for (const service of sortedServices) {
     let bestShift = null
     let bestStart = null
@@ -199,18 +198,32 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
     // Try all existing shifts in order of best fit
     const compatibleShifts = shifts
-      .filter(
-        s =>
-          (!ENFORCE_BOROUGH_BOUNDARIES || s.services[0].borough === serviceBorough) &&
-          s.services.length < maxPoints,
-      )
+      .filter(s => {
+        if (s.services.length >= maxPoints) return false
+        if (ENFORCE_BOROUGH_BOUNDARIES && s.services[0].borough !== serviceBorough) return false
+
+        // Check distance to all services in the shift
+        for (const existingService of s.services) {
+          const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
+          if (distance > HARD_MAX_RADIUS_MILES) return false
+          if (
+            distance > MAX_RADIUS_MILES &&
+            !areSameBorough(
+              existingService.location.latitude,
+              existingService.location.longitude,
+              service.location.latitude,
+              service.location.longitude,
+            )
+          )
+            return false
+        }
+        return true
+      })
       .sort((a, b) => {
-        // Sort shifts by closest time and location to this service
         const aStart = Math.min(...a.services.map(s => new Date(s.start).getTime()))
         const bStart = Math.min(...b.services.map(s => new Date(s.start).getTime()))
         const serviceStart = new Date(service.time.range[0]).getTime()
 
-        // Calculate average distance to services in each shift
         const aAvgDist =
           a.services.reduce(
             (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
@@ -222,9 +235,12 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
             0,
           ) / b.services.length
 
-        // Score based on time proximity and average distance
-        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aAvgDist
-        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bAvgDist
+        // Heavily penalize distances beyond MAX_RADIUS_MILES
+        const aDistScore = aAvgDist > MAX_RADIUS_MILES ? 999999 : aAvgDist
+        const bDistScore = bAvgDist > MAX_RADIUS_MILES ? 999999 : bAvgDist
+
+        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aDistScore
+        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bDistScore
         return aScore - bScore
       })
 
