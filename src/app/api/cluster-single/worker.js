@@ -3,6 +3,7 @@ import { parentPort } from 'node:worker_threads'
 import { areSameBorough, getBorough } from '../../utils/boroughs.js'
 import {
   MAX_RADIUS_MILES,
+  HARD_MAX_RADIUS_MILES,
   SHIFT_DURATION,
   ENFORCE_BOROUGH_BOUNDARIES,
   TECH_SPEED_MPH,
@@ -62,7 +63,7 @@ function findBestNextService(
     const distance = distanceMatrix[currentIndex][service.originalIndex]
 
     // Skip services that are too far away or in different boroughs
-    if (distance > MAX_REASONABLE_DISTANCE) continue
+    if (distance > HARD_MAX_RADIUS_MILES) continue
     if (
       ENFORCE_BOROUGH_BOUNDARIES &&
       !areSameBorough(
@@ -103,7 +104,10 @@ function findBestNextService(
 
       if (!hasConflict) {
         const timeGap = (tryStart - new Date(currentService.end)) / 60000
-        const distanceScore = -Math.pow(distance, 1.25) // Less aggressive penalty for distance
+        const distanceScore =
+          distance > MAX_RADIUS_MILES
+            ? -Math.pow(distance, 2) // More aggressive penalty for distances above soft cap
+            : -Math.pow(distance, 1.25) // Less aggressive penalty for distances within soft cap
         const timeGapScore = -timeGap / 4
         const score = distanceScore + timeGapScore
 
@@ -233,7 +237,7 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
       for (const existingService of shift.services) {
         // Skip if too far
         const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-        if (distance > MAX_RADIUS_MILES) continue
+        if (distance > HARD_MAX_RADIUS_MILES) continue
 
         // Calculate actual travel time needed
         const travelTime = calculateTravelTime(
