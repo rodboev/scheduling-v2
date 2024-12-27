@@ -10,30 +10,6 @@ import path from 'node:path'
 
 const CACHE_FILE = 'serviceSetups.json'
 
-// Lmit to 20 techs
-// const ALLOWED_TECHS = [
-//   'BELTRAN',
-//   'BAEZ MALIK',
-//   'BLAKAJ A.',
-//   'CAPALDI J.',
-//   'CAPPA T.',
-//   'CHIN SAU',
-//   'CORA JOSE',
-//   'CRUZ N.',
-//   'FERNANDEZ',
-//   'GHANIM MO',
-//   'GUITEREZ O',
-//   'FORD J.',
-//   'HARRIS',
-//   'HUNTLEY E.',
-//   'JOHNI',
-//   'JONES H.',
-//   'LOPEZ A.',
-//   'MADERA M.',
-//   'RIVERS',
-//   'VASTA RICK',
-// ]
-
 const BASE_QUERY = `
   SELECT 
       ServiceSetups.SetupID AS id,
@@ -216,13 +192,12 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Get first 20 unique tech codes
-  const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, 20)
-  console.log('First 20 unique techs:', uniqueTechs)
-
-  // // Filter serviceSetups to only include those techs
+  // Get first 20 techs, filter serviceSetups to only include those techs
+  // const numTechs = 20
+  // const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, numTechs)
+  // console.log(`First ${numTechs} unique techs: ${uniqueTechs.join(', ')}`)
   // serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
-  // console.log('Filtered to first 20 techs, total setups:', serviceSetups.length)
+  // console.log(`Filtered to first ${numTechs} techs, total setups:`, serviceSetups.length)
 
   // Filter by specific IDs if idParam is present
   if (idParam) {

@@ -1,8 +1,8 @@
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
 import { areSameBorough, getBorough } from '../../utils/boroughs.js'
+import { MAX_RADIUS_MILES, SHIFT_DURATION } from '../../utils/constants.js'
 
-const SHIFT_DURATION = 8 * 60 // 8 hours in minutes
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
@@ -186,11 +186,11 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
     // Try all existing shifts in order of best fit
     const compatibleShifts = shifts
-      .filter((s) => s.services[0].borough === serviceBorough && s.services.length < maxPoints)
+      .filter(s => s.services[0].borough === serviceBorough && s.services.length < maxPoints)
       .sort((a, b) => {
         // Sort shifts by closest time and location to this service
-        const aStart = Math.min(...a.services.map((s) => new Date(s.start).getTime()))
-        const bStart = Math.min(...b.services.map((s) => new Date(s.start).getTime()))
+        const aStart = Math.min(...a.services.map(s => new Date(s.start).getTime()))
+        const bStart = Math.min(...b.services.map(s => new Date(s.start).getTime()))
         const serviceStart = new Date(service.time.range[0]).getTime()
 
         // Calculate average distance to services in each shift
@@ -213,14 +213,14 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
     // Try each compatible shift
     for (const shift of compatibleShifts) {
-      const shiftStartTime = Math.min(...shift.services.map((s) => new Date(s.start).getTime()))
-      const shiftEndTime = Math.max(...shift.services.map((s) => new Date(s.end).getTime()))
+      const shiftStartTime = Math.min(...shift.services.map(s => new Date(s.start).getTime()))
+      const shiftEndTime = Math.max(...shift.services.map(s => new Date(s.end).getTime()))
 
       // Try each existing service as a potential connection point
       for (const existingService of shift.services) {
         // Skip if too far or different borough
         const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-        if (distance > 5) continue
+        if (distance > MAX_RADIUS_MILES) continue
 
         // Try to schedule after this service
         const tryStart = new Date(
@@ -307,7 +307,7 @@ parentPort.on('message', async ({ services, distanceMatrix }) => {
     const shifts = createShifts(services, distanceMatrix)
 
     // Flatten all services from all shifts
-    const clusteredServices = shifts.flatMap((shift) => shift.services)
+    const clusteredServices = shifts.flatMap(shift => shift.services)
 
     const endTime = performance.now()
     const duration = endTime - startTime
@@ -318,11 +318,11 @@ parentPort.on('message', async ({ services, distanceMatrix }) => {
       connectedPointsCount: services.length,
       outlierCount: 0,
       totalClusters: shifts.length,
-      clusterSizes: shifts.map((shift) => shift.services.length),
+      clusterSizes: shifts.map(shift => shift.services.length),
       clusterDistribution: shifts.map((shift, index) => ({
         [index]: shift.services.length,
       })),
-      shifts: shifts.map((shift) => ({
+      shifts: shifts.map(shift => ({
         startTime: shift.startTime,
         endTime: shift.endTime,
         serviceCount: shift.services.length,
