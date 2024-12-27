@@ -7,7 +7,6 @@ import MapPopup from '@/app/map/components/MapPopup'
 import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
-import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
@@ -202,12 +201,14 @@ const MapView = () => {
 
       const servicesWithDistance = await addDistanceInfo(filteredServices)
 
-      // Add logging here
-      logMapActivity({
-        services: servicesWithDistance,
-        clusteringInfo: response.data.clusteringInfo,
-        algorithm,
-      })
+      // Log clustering results
+      if (response.data.services) {
+        await logMapActivity({
+          services: response.data.services,
+          clusteringInfo: response.data.clusteringInfo,
+          algorithm: response.data.algorithm,
+        })
+      }
 
       setClusteredServices(servicesWithDistance)
       setClusteringInfo(response.data.clusteringInfo)

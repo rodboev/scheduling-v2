@@ -1,7 +1,7 @@
 import { formatDate, formatTime, calculateDuration } from '../../utils/dateHelpers.js'
-import { calculateHaversineDistance } from '../../map/utils/distance.js'
+import { getDistance } from '../../map/utils/distance.js'
 
-export function logMapActivity({ services, clusteringInfo, algorithm }) {
+export async function logMapActivity({ services, clusteringInfo, algorithm }) {
   console.log('\nMap Activity Log:\n')
 
   // Log basic request info
@@ -26,7 +26,7 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
   }, {})
 
   console.log('\nCluster Details:')
-  Object.entries(clusters).forEach(([clusterId, clusterServices]) => {
+  for (const [clusterId, clusterServices] of Object.entries(clusters)) {
     console.log(`\nCluster ${clusterId}:`)
     console.log(`Services in cluster: ${clusterServices.length}`)
 
@@ -47,25 +47,24 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
     }
 
     // Calculate distances between sequential services
-    const servicesWithDistance = sortedServices.map((service, index) => {
-      if (index === 0) return { ...service, distanceFromPrevious: 0, previousCompany: null }
+    const servicesWithDistance = []
+    for (const [index, service] of sortedServices.entries()) {
+      if (index === 0) {
+        servicesWithDistance.push({ ...service, distanceFromPrevious: 0, previousCompany: null })
+        continue
+      }
 
       const previousService = sortedServices[index - 1]
-      const distance = calculateHaversineDistance(
-        previousService.location.latitude,
-        previousService.location.longitude,
-        service.location.latitude,
-        service.location.longitude,
-      )
+      const distance = await getDistance(previousService, service)
 
-      return {
+      servicesWithDistance.push({
         ...service,
         distanceFromPrevious: distance,
         previousCompany: previousService.company,
-      }
-    })
+      })
+    }
 
-    servicesWithDistance.forEach((service, index) => {
+    for (const [index, service] of servicesWithDistance.entries()) {
       const scheduledStart = new Date(service.start)
       const scheduledEnd = new Date(service.end)
       const rangeStart = new Date(service.time.range[0])
@@ -77,14 +76,14 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
       const distance =
         index === 0
           ? '(first location)'
-          : `(${service.distanceFromPrevious.toFixed(2)} mi from ${service.previousCompany})`
+          : `(${service.distanceFromPrevious?.toFixed(2) ?? 'unknown'} mi from ${service.previousCompany})`
 
       console.log(
         `- ${index + 1}: ${formatDate(scheduledStart)}, ${scheduledTime}, ` +
           `${service.company} (${service.location.latitude}, ${service.location.longitude}) ` +
           `(range: ${timeRange}) ${distance}`,
       )
-    })
+    }
 
     // Calculate and log cluster metrics
     if (servicesWithDistance.length > 0) {
@@ -102,7 +101,7 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
       }, 0)
       console.log(`Total cluster distance: ${totalDistance.toFixed(2)} miles`)
     }
-  })
+  }
 
   console.log('\n-------------------\n')
 }
@@ -118,11 +117,11 @@ export function logBoroughStats(services) {
   console.log('\nBorough distribution:', boroughCounts)
 
   // Log services with unknown boroughs
-  const unknownServices = services.filter((s) => !s.borough)
+  const unknownServices = services.filter(s => !s.borough)
   if (unknownServices.length > 0) {
     console.log(
       '\nServices with unknown boroughs:',
-      unknownServices.map((s) => ({
+      unknownServices.map(s => ({
         company: s.company,
         address: s.location.address,
         coordinates: [s.location.latitude, s.location.longitude],
