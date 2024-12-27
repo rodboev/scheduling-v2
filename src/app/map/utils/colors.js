@@ -3,45 +3,12 @@ import Color from 'color'
 // Generate a rainbow spectrum of colors using HSL
 const generateSpectrum = count => {
   const colors = {}
+  const saturation = 85 // Percentage
+  const lightness = 55 // Percentage
 
-  // Generate main spectrum with varying saturation and lightness
+  // Generate main spectrum
   for (let i = 0; i < count; i++) {
     const hue = Math.round((i * 360) / count)
-
-    // Vary saturation and lightness based on hue ranges
-    let saturation, lightness
-
-    // Reds (0-30°)
-    if (hue <= 30) {
-      saturation = 80 + Math.random() * 15
-      lightness = 45 + Math.random() * 15
-    }
-    // Oranges/Yellows (31-90°)
-    else if (hue <= 90) {
-      saturation = 75 + Math.random() * 15
-      lightness = 50 + Math.random() * 15
-    }
-    // Greens (91-150°)
-    else if (hue <= 150) {
-      saturation = 65 + Math.random() * 20
-      lightness = 40 + Math.random() * 15
-    }
-    // Cyans (151-210°)
-    else if (hue <= 210) {
-      saturation = 70 + Math.random() * 20
-      lightness = 45 + Math.random() * 15
-    }
-    // Blues (211-270°)
-    else if (hue <= 270) {
-      saturation = 75 + Math.random() * 15
-      lightness = 50 + Math.random() * 10
-    }
-    // Purples/Magentas (271-360°)
-    else {
-      saturation = 70 + Math.random() * 20
-      lightness = 45 + Math.random() * 15
-    }
-
     const colorName = `spectrum${i + 1}`
     colors[colorName] = Color.hsl(hue, saturation, lightness).hex()
   }

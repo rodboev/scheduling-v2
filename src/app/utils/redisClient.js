@@ -15,7 +15,7 @@ export function getRedisClient() {
     console.log(`Connecting to Redis: ${redisUrl.replace(/\/\/.*@/, '//')}`) // Hide credentials in logs
 
     const options = {
-      retryStrategy: (times) => {
+      retryStrategy: times => {
         if (times > 3) {
           console.error(`Redis connection failed after ${times} attempts`)
           return null // Stop retrying after 3 attempts
@@ -34,7 +34,7 @@ export function getRedisClient() {
 
     redis = new Redis(redisUrl, options)
 
-    redis.on('error', (error) => {
+    redis.on('error', error => {
       console.error('Redis connection error:', error)
     })
 
@@ -244,29 +244,21 @@ function formatNumber(num, precision = 14) {
 }
 
 export async function calculateDistance(id1, id2, redis) {
-  const [geopos1, company1] = await Promise.all([
-    redis.geopos('locations', id1),
-    redis.hget('company_names', id1),
-  ])
-
-  if (!geopos1?.[0]) {
-    console.error(`Location ${id1} not found in Redis`)
-    return null
-  }
-
-  const [geopos2, company2, distance] = await Promise.all([
-    redis.geopos('locations', id2),
-    redis.hget('company_names', id2),
+  // Get all required data in parallel
+  const [geopos, companies, distance] = await Promise.all([
+    redis.geopos('locations', id1, id2),
+    redis.hmget('company_names', id1, id2),
     redis.geodist('locations', id1, id2, 'mi'),
   ])
 
-  if (!geopos2?.[0]) {
-    console.error(`Location ${id2} not found in Redis`)
+  if (!geopos?.[0] || !geopos?.[1]) {
+    console.error(`Location not found in Redis: ${!geopos?.[0] ? id1 : id2}`)
     return null
   }
 
-  const [lon1, lat1] = geopos1[0]
-  const [lon2, lat2] = geopos2[0]
+  const [lon1, lat1] = geopos[0]
+  const [lon2, lat2] = geopos[1]
+  const [company1, company2] = companies
 
   return {
     pair: {
@@ -369,7 +361,7 @@ export async function refreshMissingLocations(missingLocationIds) {
 
     // Verify the missing locations were actually added
     const refreshedLocations = await Promise.all(
-      missingLocationIds.map((locationId) => redis.geopos('locations', locationId)),
+      missingLocationIds.map(locationId => redis.geopos('locations', locationId)),
     )
     const stillMissingLocationIds = missingLocationIds.filter(
       (locationId, i) => !refreshedLocations[i]?.[0],
@@ -396,11 +388,11 @@ export async function getLocationPairs(idPairs) {
   console.log(`Processing ${idPairs.length} location pairs...`)
 
   // First verify all IDs exist
-  const allLocationIds = new Set(idPairs.flatMap((pair) => pair.split(',')))
+  const allLocationIds = new Set(idPairs.flatMap(pair => pair.split(',')))
   console.log(`Checking ${allLocationIds.size} unique locations...`)
 
   const locations = await Promise.all(
-    Array.from(allLocationIds).map((locationId) => redis.geopos('locations', locationId)),
+    Array.from(allLocationIds).map(locationId => redis.geopos('locations', locationId)),
   )
   const missingLocationIds = Array.from(allLocationIds).filter(
     (locationId, index) => !locations[index]?.[0],
@@ -414,7 +406,7 @@ export async function getLocationPairs(idPairs) {
 
     // Check which locations are still missing
     const refreshedLocations = await Promise.all(
-      missingLocationIds.map((locationId) => redis.geopos('locations', locationId)),
+      missingLocationIds.map(locationId => redis.geopos('locations', locationId)),
     )
     const stillMissingLocationIds = missingLocationIds.filter(
       (locationId, index) => !refreshedLocations[index]?.[0],
@@ -431,7 +423,7 @@ export async function getLocationPairs(idPairs) {
   }
 
   // Only recalculate pairs that contain refreshed locations
-  const affectedPairs = idPairs.filter((pair) => {
+  const affectedPairs = idPairs.filter(pair => {
     const [locationId1, locationId2] = pair.split(',')
     return missingLocationIds.includes(locationId1) || missingLocationIds.includes(locationId2)
   })
@@ -442,7 +434,7 @@ export async function getLocationPairs(idPairs) {
 
   // Process pairs in parallel, reusing cached results for unaffected pairs
   const results = await Promise.all(
-    idPairs.map(async (pair) => {
+    idPairs.map(async pair => {
       const [locationId1, locationId2] = pair.split(',')
       const cacheKey = `distance:${locationId1},${locationId2}`
 
@@ -502,8 +494,8 @@ export async function getLocations(forceRefresh = false) {
       // Verify all required locations are stored
       const storedLocations = await redis.zrange('locations', 0, -1)
       const missingLocations = services
-        .filter((s) => s.location?.id && !storedLocations.includes(s.location.id.toString()))
-        .map((s) => ({ setupId: s.id, locationId: s.location.id }))
+        .filter(s => s.location?.id && !storedLocations.includes(s.location.id.toString()))
+        .map(s => ({ setupId: s.id, locationId: s.location.id }))
 
       if (missingLocations.length > 0) {
         console.error('Missing locations after storage:', missingLocations)

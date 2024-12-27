@@ -7,6 +7,8 @@ import {
 } from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
 
+const BATCH_SIZE = 100 // Process 100 pairs at a time
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const fromId = searchParams.get('fromId')
@@ -24,33 +26,40 @@ export async function GET(request) {
 
       const redis = getRedisClient()
       const result = await calculateDistance(fromId, toId, redis)
-      setCachedData(cacheKey, result)
+      if (result) setCachedData(cacheKey, result)
       return NextResponse.json(result)
     }
 
     // Handle multiple distance requests
     if (idPairs.length > 0) {
-      const response = await getLocationPairs(idPairs)
+      // Process in batches to avoid overwhelming Redis
+      const results = []
+      for (let i = 0; i < idPairs.length; i += BATCH_SIZE) {
+        const batchPairs = idPairs.slice(i, i + BATCH_SIZE)
+        const batchResponse = await getLocationPairs(batchPairs)
 
-      if (response.error === 'missing_locations') {
-        return NextResponse.json(
-          {
-            error: {
-              message: 'Some locations not found',
-              details: response.missingIds.map(
-                (id) => `Location ID ${id} missing from Redis locations`,
-              ),
-              context: {
-                missingLocationIds: response.missingIds,
-                totalLocationsInRedis: response.totalLocationsInRedis,
+        if (batchResponse.error === 'missing_locations') {
+          return NextResponse.json(
+            {
+              error: {
+                message: 'Some locations not found',
+                details: batchResponse.missingIds.map(
+                  id => `Location ID ${id} missing from Redis locations`,
+                ),
+                context: {
+                  missingLocationIds: batchResponse.missingIds,
+                  totalLocationsInRedis: batchResponse.totalLocationsInRedis,
+                },
               },
             },
-          },
-          { status: 400 },
-        )
+            { status: 400 },
+          )
+        }
+
+        results.push(...batchResponse.results)
       }
 
-      return NextResponse.json(response.results)
+      return NextResponse.json(results)
     }
 
     return NextResponse.json({ error: 'Invalid query parameters' }, { status: 400 })

@@ -20,7 +20,7 @@ export async function createDistanceMatrix(services) {
     return []
   }
 
-  const cacheKey = `distanceMatrix:${services.map((s) => s.id).join(',')}`
+  const cacheKey = `distanceMatrix:${services.map(s => s.id).join(',')}`
   const cachedMatrix = getCachedData(cacheKey)
 
   if (cachedMatrix) {
@@ -29,20 +29,39 @@ export async function createDistanceMatrix(services) {
 
   await getLocations() // Ensure locations are loaded in Redis
 
-  const distanceMatrix = []
+  // Initialize matrix with zeros on diagonal
+  const distanceMatrix = Array(services.length)
+    .fill()
+    .map((_, i) => Array(services.length).fill(0))
+
+  // Create pairs for parallel processing
+  const pairs = []
   for (let i = 0; i < services.length; i++) {
-    distanceMatrix[i] = []
-    for (let j = 0; j < services.length; j++) {
-      if (i === j) {
-        distanceMatrix[i][j] = 0
-      } else {
-        const fromId = services[i].location?.id?.toString()
-        const toId = services[j].location?.id?.toString()
-        if (!fromId || !toId) {
-          distanceMatrix[i][j] = null
-          continue
-        }
-        distanceMatrix[i][j] = await getDistanceBetweenLocations(fromId, toId)
+    for (let j = i + 1; j < services.length; j++) {
+      const fromId = services[i].location?.id?.toString()
+      const toId = services[j].location?.id?.toString()
+      if (fromId && toId) {
+        pairs.push({ fromId, toId, i, j })
+      }
+    }
+  }
+
+  // Process in chunks of 50 pairs
+  const CHUNK_SIZE = 50
+  for (let i = 0; i < pairs.length; i += CHUNK_SIZE) {
+    const chunk = pairs.slice(i, i + CHUNK_SIZE)
+    const results = await Promise.all(
+      chunk.map(async ({ fromId, toId, i, j }) => {
+        const distance = await getDistanceBetweenLocations(fromId, toId)
+        return { i, j, distance }
+      }),
+    )
+
+    // Fill matrix with results
+    for (const { i, j, distance } of results) {
+      if (distance !== null) {
+        distanceMatrix[i][j] = distance
+        distanceMatrix[j][i] = distance // Mirror the distance
       }
     }
   }
