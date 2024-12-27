@@ -1,126 +1,128 @@
 import Color from 'color'
 
-const baseColors = {
-  red: '#d63e2a',
-  // darkred: '#a23336',
-  // orange: '#f69730',
-  green: '#72b026',
-  // darkgreen: '#728224',
-  blue: '#38aadd',
-  // darkblue: '#1d63b5',
-  purple: '#9c2bcb',
-  cadetblue: '#436978',
-  // lightred: '#eb7f7f',
-  beige: '#eab776',
-  // lightgreen: '#a4c65f',
-  // lightblue: '#6fbbd3',
-  pink: '#df8dc3',
-  yellow: '#ffff00',
-  lightgray: '#d3d3d3',
-  gray: '#808080',
-  darkgray: '#404040',
-  // Additional HTML colors
-  aliceblue: '#f0f8ff',
-  // antiquewhite: '#faebd7',
-  aqua: '#00ffff',
-  aquamarine: '#7fffd4',
-  azure: '#f0ffff',
-  bisque: '#ffe4c4',
-  blanchedalmond: '#ffebcd',
-  blueviolet: '#8a2be2',
-  brown: '#a52a2a',
-  burlywood: '#deb887',
-  chartreuse: '#7fff00',
-  chocolate: '#d2691e',
-  coral: '#ff7f50',
-  cornflowerblue: '#6495ed',
-  cornsilk: '#fff8dc',
-  crimson: '#dc143c',
-  cyan: '#00ffff',
-  deeppink: '#ff1493',
-  deepskyblue: '#00bfff',
-  dodgerblue: '#1e90ff',
-  firebrick: '#b22222',
-  forestgreen: '#228b22',
-  fuchsia: '#ff00ff',
-  gainsboro: '#dcdcdc',
-  // ghostwhite: '#f8f8ff',
-  gold: '#ffd700',
-  goldenrod: '#daa520',
-  greenyellow: '#adff2f',
-  honeydew: '#f0fff0',
-  hotpink: '#ff69b4',
-  indianred: '#cd5c5c',
-  indigo: '#4b0082',
-  ivory: '#fffff0',
-  khaki: '#f0e68c',
-  lavender: '#e6e6fa',
-  lavenderblush: '#fff0f5',
-  lawngreen: '#7cfc00',
-  lemonchiffon: '#fffacd',
-  lime: '#00ff00',
-  limegreen: '#32cd32',
-  magenta: '#ff00ff',
-  maroon: '#800000',
-  mediumaquamarine: '#66cdaa',
-  mediumblue: '#0000cd',
-  mediumorchid: '#ba55d3',
-  mediumpurple: '#9370db',
-  mediumseagreen: '#3cb371',
-  mediumslateblue: '#7b68ee',
-  mediumspringgreen: '#00fa9a',
-  mediumturquoise: '#48d1cc',
-  mediumvioletred: '#c71585',
-  midnightblue: '#191970',
-  mintcream: '#f5fffa',
-  mistyrose: '#ffe4e1',
-  moccasin: '#ffe4b5',
-  // navajowhite: '#ffdead',
-  navy: '#000080',
-  oldlace: '#fdf5e6',
-  olive: '#808000',
-  olivedrab: '#6b8e23',
-  orangered: '#ff4500',
-  orchid: '#da70d6',
-  palegoldenrod: '#eee8aa',
-  palegreen: '#98fb98',
-  paleturquoise: '#afeeee',
-  palevioletred: '#db7093',
-  papayawhip: '#ffefd5',
-  peachpuff: '#ffdab9',
-  peru: '#cd853f',
-  plum: '#dda0dd',
-  powderblue: '#b0e0e6',
-  rosybrown: '#bc8f8f',
-  royalblue: '#4169e1',
-  saddlebrown: '#8b4513',
-  salmon: '#fa8072',
-  sandybrown: '#f4a460',
-  seagreen: '#2e8b57',
-  seashell: '#fff5ee',
-  sienna: '#a0522d',
-  silver: '#c0c0c0',
-  skyblue: '#87ceeb',
-  slateblue: '#6a5acd',
-  slategray: '#708090',
-  snow: '#fffafa',
-  springgreen: '#00ff7f',
-  steelblue: '#4682b4',
-  tan: '#d2b48c',
-  teal: '#008080',
-  thistle: '#d8bfd8',
-  tomato: '#ff6347',
-  turquoise: '#40e0d0',
-  violet: '#ee82ee',
-  wheat: '#f5deb3',
-  // whitesmoke: '#f5f5f5',
-  yellowgreen: '#9acd32',
+// Generate a rainbow spectrum of colors using HSL
+const generateSpectrum = count => {
+  const colors = {}
+
+  // Generate main spectrum with varying saturation and lightness
+  for (let i = 0; i < count; i++) {
+    const hue = Math.round((i * 360) / count)
+
+    // Vary saturation and lightness based on hue ranges
+    let saturation, lightness
+
+    // Reds (0-30°)
+    if (hue <= 30) {
+      saturation = 80 + Math.random() * 15
+      lightness = 45 + Math.random() * 15
+    }
+    // Oranges/Yellows (31-90°)
+    else if (hue <= 90) {
+      saturation = 75 + Math.random() * 15
+      lightness = 50 + Math.random() * 15
+    }
+    // Greens (91-150°)
+    else if (hue <= 150) {
+      saturation = 65 + Math.random() * 20
+      lightness = 40 + Math.random() * 15
+    }
+    // Cyans (151-210°)
+    else if (hue <= 210) {
+      saturation = 70 + Math.random() * 20
+      lightness = 45 + Math.random() * 15
+    }
+    // Blues (211-270°)
+    else if (hue <= 270) {
+      saturation = 75 + Math.random() * 15
+      lightness = 50 + Math.random() * 10
+    }
+    // Purples/Magentas (271-360°)
+    else {
+      saturation = 70 + Math.random() * 20
+      lightness = 45 + Math.random() * 15
+    }
+
+    const colorName = `spectrum${i + 1}`
+    colors[colorName] = Color.hsl(hue, saturation, lightness).hex()
+  }
+
+  // Add essential named colors
+  const namedColors = {
+    red: '#d63e2a',
+    green: '#72b026',
+    blue: '#38aadd',
+    purple: '#9c2bcb',
+    orange: '#f69730',
+    pink: '#df8dc3',
+    teal: '#008080',
+    brown: '#a52a2a',
+    navy: '#000080',
+    gold: '#ffd700',
+    crimson: '#dc143c',
+    indigo: '#4b0082',
+    maroon: '#800000',
+    olive: '#808000',
+    coral: '#ff7f50',
+    violet: '#ee82ee',
+  }
+
+  // Add neutral colors
+  const neutralColors = {
+    gray: '#808080',
+    darkgray: '#404040',
+    silver: '#c0c0c0',
+  }
+
+  return { ...colors, ...namedColors, ...neutralColors }
+}
+
+const baseColors = generateSpectrum(24) // 24 colors for a rich spectrum
+
+const MAX_LIGHTNESS = 0.85 // Prevent colors from getting too close to white
+const MIN_COLOR_DIFFERENCE = 10 // Minimum Delta E difference between colors
+
+function calculateDeltaE(color1, color2) {
+  // Convert to Lab color space for better perceptual difference calculation
+  const lab1 = Color(color1).lab().array()
+  const lab2 = Color(color2).lab().array()
+
+  // Simple Euclidean distance in Lab space
+  // Not as accurate as CIEDE2000 but sufficient for our needs
+  const deltaL = lab1[0] - lab2[0]
+  const deltaA = lab1[1] - lab2[1]
+  const deltaB = lab1[2] - lab2[2]
+
+  return Math.sqrt(deltaL * deltaL + deltaA * deltaA + deltaB * deltaB)
+}
+
+function isColorTooSimilar(newColor, existingColors) {
+  for (const existingColor of existingColors) {
+    const deltaE = calculateDeltaE(newColor, existingColor)
+    if (deltaE < MIN_COLOR_DIFFERENCE) return true
+  }
+  return false
 }
 
 export const COLORS = Object.entries(baseColors).reduce((acc, [key, value]) => {
   try {
-    acc[`${key}Dark`] = Color(value).darken(0.1).hex()
-    acc[`${key}Light`] = Color(value).lighten(0.5).hex()
+    const color = Color(value)
+    const darkColor = color.darken(0.1).hex()
+
+    // Calculate lightened color and ensure it doesn't get too light
+    const lightColor = color.lighten(0.5)
+    const finalLightColor =
+      lightColor.lightness() > MAX_LIGHTNESS * 100
+        ? color.lightness(MAX_LIGHTNESS * 100).hex()
+        : lightColor.hex()
+
+    // Check if colors are too similar to existing ones
+    const existingColors = Object.values(acc)
+    if (!isColorTooSimilar(darkColor, existingColors)) {
+      acc[`${key}Dark`] = darkColor
+    }
+    if (!isColorTooSimilar(finalLightColor, existingColors)) {
+      acc[`${key}Light`] = finalLightColor
+    }
   } catch (error) {
     console.warn(`Failed to modify color: ${key}`)
   }
