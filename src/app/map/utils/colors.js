@@ -44,7 +44,7 @@ const baseColors = {
   forestgreen: '#228b22',
   fuchsia: '#ff00ff',
   gainsboro: '#dcdcdc',
-  ghostwhite: '#f8f8ff',
+  // ghostwhite: '#f8f8ff',
   gold: '#ffd700',
   goldenrod: '#daa520',
   greenyellow: '#adff2f',
@@ -75,7 +75,7 @@ const baseColors = {
   mintcream: '#f5fffa',
   mistyrose: '#ffe4e1',
   moccasin: '#ffe4b5',
-  navajowhite: '#ffdead',
+  // navajowhite: '#ffdead',
   navy: '#000080',
   oldlace: '#fdf5e6',
   olive: '#808000',
@@ -113,7 +113,7 @@ const baseColors = {
   turquoise: '#40e0d0',
   violet: '#ee82ee',
   wheat: '#f5deb3',
-  whitesmoke: '#f5f5f5',
+  // whitesmoke: '#f5f5f5',
   yellowgreen: '#9acd32',
 }
 

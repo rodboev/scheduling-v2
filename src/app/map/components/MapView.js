@@ -174,13 +174,23 @@ const MapView = () => {
 
       // Filter services by time window
       const filteredServices = response.data.clusteredServices.filter(service => {
-        const serviceStart = new Date(service.time.range[0])
-        const serviceEnd = new Date(service.time.range[1])
+        const serviceTimeStart = new Date(service.time.range[0])
+        const serviceTimeEnd = new Date(service.time.range[1])
         const windowStart = new Date(startDate)
         const windowEnd = new Date(endDate)
 
-        // Service window must overlap with our time window
-        return serviceStart < windowEnd && serviceEnd > windowStart
+        // First check if the service's time window overlaps with our window
+        const timeWindowOverlaps = serviceTimeStart < windowEnd && serviceTimeEnd > windowStart
+
+        // Then check if the service is actually scheduled within our window
+        const scheduledStart = service.start ? new Date(service.start) : null
+        const scheduledEnd = service.end ? new Date(service.end) : null
+        const isScheduledInWindow =
+          !scheduledStart ||
+          !scheduledEnd ||
+          (scheduledStart < windowEnd && scheduledEnd <= windowEnd)
+
+        return timeWindowOverlaps && isScheduledInWindow
       })
 
       const servicesWithDistance = await addDistanceInfo(filteredServices)
