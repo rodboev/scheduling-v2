@@ -1,7 +1,11 @@
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
 import { areSameBorough, getBorough } from '../../utils/boroughs.js'
-import { MAX_RADIUS_MILES, SHIFT_DURATION } from '../../utils/constants.js'
+import {
+  MAX_RADIUS_MILES,
+  SHIFT_DURATION,
+  ENFORCE_BOROUGH_BOUNDARIES,
+} from '../../utils/constants.js'
 
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
@@ -56,6 +60,7 @@ function findBestNextService(
     // Skip services that are too far away or in different boroughs
     if (distance > MAX_REASONABLE_DISTANCE) continue
     if (
+      ENFORCE_BOROUGH_BOUNDARIES &&
       !areSameBorough(
         currentService.location.latitude,
         currentService.location.longitude,
@@ -186,7 +191,11 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
     // Try all existing shifts in order of best fit
     const compatibleShifts = shifts
-      .filter(s => s.services[0].borough === serviceBorough && s.services.length < maxPoints)
+      .filter(
+        s =>
+          (!ENFORCE_BOROUGH_BOUNDARIES || s.services[0].borough === serviceBorough) &&
+          s.services.length < maxPoints,
+      )
       .sort((a, b) => {
         // Sort shifts by closest time and location to this service
         const aStart = Math.min(...a.services.map(s => new Date(s.start).getTime()))

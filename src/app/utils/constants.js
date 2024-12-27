@@ -1,5 +1,6 @@
 // Clustering constants
-export const MAX_RADIUS_MILES = 6
+export const MAX_RADIUS_MILES = 5
+export const ENFORCE_BOROUGH_BOUNDARIES = false
 
 // Time constants
 export const MINUTES_PER_HOUR = 60
