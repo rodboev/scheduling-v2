@@ -146,7 +146,7 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
         <div className="grid grid-cols-1 gap-4">
           <div>
             <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
-              Start Date:
+              Start Date/Time:
             </label>
             <input
               id="startDate"
@@ -160,7 +160,7 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
           </div>
           <div>
             <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
-              End Date:
+              End Date/Time:
             </label>
             <input
               id="endDate"
@@ -183,17 +183,17 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
           >
             Next day
           </button>
-
-          <button
-            onClick={handleRefreshDistances}
-            disabled={isRefreshing}
-            className="leading-tighter rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-          >
-            {isRefreshing ? 'Refreshing...' : 'Refresh distances'}
-          </button>
         </div>
       </div>
+
+      <button
+        onClick={handleRefreshDistances}
+        disabled={isRefreshing}
+        className="leading-tighter float-right rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        type="button"
+      >
+        {isRefreshing ? 'Refreshing...' : 'Refresh distances'}
+      </button>
     </div>
   )
 }
