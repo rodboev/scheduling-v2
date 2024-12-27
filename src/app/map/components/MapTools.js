@@ -7,7 +7,14 @@ import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
 /**
  * MapTools provides date range selection for services
  */
-const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay }) => {
+const MapTools = ({
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
+  handleNextDay,
+  fetchClusteredServices,
+}) => {
   const [activeShift, setActiveShift] = useState(1)
 
   /**
@@ -154,14 +161,49 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
           </div>
         </div>
 
-        <button
-          onClick={handleNextDay}
-          className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
-          type="button"
-        >
-          Next day
-        </button>
+        <div className="flex space-x-4">
+          <button
+            onClick={() => {
+              const newStartDate = new Date(startDate)
+              newStartDate.setUTCDate(newStartDate.getUTCDate() - 1)
+              setStartDate(newStartDate.toISOString())
+
+              const newEndDate = new Date(endDate)
+              newEndDate.setUTCDate(newEndDate.getUTCDate() - 1)
+              setEndDate(newEndDate.toISOString())
+              // fetchClusteredServices will be called by useEffect in MapView
+            }}
+            className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+            type="button"
+          >
+            Previous day
+          </button>
+
+          <button
+            onClick={handleNextDay} // handleNextDay already updates the dates, which triggers useEffect
+            className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+            type="button"
+          >
+            Next day
+          </button>
+        </div>
       </div>
+      <button
+        onClick={async () => {
+          try {
+            await fetch('/api/distance/refresh', { method: 'POST' })
+            if (typeof fetchClusteredServices === 'function') {
+              fetchClusteredServices()
+            }
+          } catch (error) {
+            console.error('Failed to refresh distances:', error)
+          }
+        }}
+        className="leading-tighter float-right mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+        type="button"
+      >
+        Refresh Distance
+      </button>
     </div>
   )
 }
