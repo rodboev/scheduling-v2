@@ -13,7 +13,7 @@ export async function GET(request) {
   const toId = searchParams.get('toId')
   const idPairs = Array.from(searchParams.entries())
     .filter(([key]) => key === 'id')
-    .map(([_, value]) => decodeURIComponent(value))
+    .map(([_, value]) => value)
 
   try {
     // Handle single distance request
@@ -30,7 +30,6 @@ export async function GET(request) {
 
     // Handle multiple distance requests
     if (idPairs.length > 0) {
-      console.log(`Processing ${idPairs.length} pairs in batch`)
       const response = await getLocationPairs(idPairs)
 
       if (response.error === 'missing_locations') {
@@ -39,7 +38,7 @@ export async function GET(request) {
             error: {
               message: 'Some locations not found',
               details: response.missingIds.map(
-                id => `Location ID ${id} missing from Redis locations`,
+                (id) => `Location ID ${id} missing from Redis locations`,
               ),
               context: {
                 missingLocationIds: response.missingIds,

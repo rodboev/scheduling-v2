@@ -1,6 +1,5 @@
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
-import { DBSCAN } from './dbscan.js'
 import { kMeans } from './kmeans.js'
 import { scheduleServices } from './scheduling.js'
 import { MAX_RADIUS_MILES } from '../../utils/constants.js'
@@ -68,35 +67,7 @@ parentPort.on(
         avgDistance: Number(avgDistance.toPrecision(3)),
       }
 
-      if (algorithm === 'dbscan') {
-        const { clusters, noise, initialStatus } = DBSCAN({
-          points: filteredPoints,
-          distanceMatrix: filteredDistanceMatrix,
-          minPoints,
-          maxPoints,
-          clusterUnclustered,
-        })
-
-        clusteredServices = services.map((service, index) => {
-          if (outliers.includes(index)) {
-            return { ...service, cluster: -2, wasStatus: 'outlier' }
-          }
-          const filteredIndex = connectedPoints.indexOf(index)
-          const clusterIndex = clusters.findIndex(cluster => cluster.includes(filteredIndex))
-          return {
-            ...service,
-            cluster: clusterIndex !== -1 ? clusterIndex : -1,
-            wasStatus: initialStatus.get(filteredIndex),
-          }
-        })
-
-        clusteringInfo = {
-          ...clusteringInfo,
-          clusterSizes: clusters.map(cluster => cluster.length),
-          noisePoints: noise.size,
-          totalClusters: clusters.length,
-        }
-      } else if (algorithm === 'kmeans') {
+      if (algorithm === 'kmeans') {
         const {
           clusters,
           centroids,

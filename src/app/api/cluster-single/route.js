@@ -194,14 +194,11 @@ export async function GET(request) {
         },
       }
 
-      // Log clustering results
-      if (finalResult.clusteredServices) {
-        await logMapActivity({
-          services: finalResult.clusteredServices,
-          clusteringInfo: finalResult.clusteringInfo,
-          algorithm: params.algorithm,
-        })
-      }
+      logMapActivity({
+        services: finalResult.clusteredServices,
+        clusteringInfo: finalResult.clusteringInfo,
+        algorithm: params.algorithm,
+      })
 
       return new Response(JSON.stringify(finalResult), {
         status: 200,

@@ -1,17 +1,6 @@
 import { getRedisClient, deleteCachedData } from '@/app/utils/redisClient'
 import { NextResponse } from 'next/server'
 
-const BATCH_SIZE = 1000
-
-async function deleteKeysBatch(redis, keys) {
-  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
-    const batch = keys.slice(i, i + BATCH_SIZE)
-    if (batch.length > 0) {
-      await redis.del(...batch)
-    }
-  }
-}
-
 export async function POST() {
   try {
     // Get Redis client
@@ -21,9 +10,13 @@ export async function POST() {
     const distanceKeys = await redis.keys('distance:*')
     const matrixKeys = await redis.keys('distanceMatrix:*')
 
-    // Delete keys in batches
-    await deleteKeysBatch(redis, distanceKeys)
-    await deleteKeysBatch(redis, matrixKeys)
+    // Delete each key from Redis
+    if (distanceKeys.length > 0) {
+      await redis.del(...distanceKeys)
+    }
+    if (matrixKeys.length > 0) {
+      await redis.del(...matrixKeys)
+    }
 
     // Clear all distance-related keys from memory cache
     for (const key of [...distanceKeys, ...matrixKeys]) {

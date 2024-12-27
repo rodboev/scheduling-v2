@@ -2,7 +2,7 @@
 export const MAX_RADIUS_MILES = 4 // Soft cap - services beyond this distance get penalized
 export const HARD_MAX_RADIUS_MILES = 6 // Hard cap - services beyond this distance cannot be connected
 export const ENFORCE_BOROUGH_BOUNDARIES = false
-export const TECH_SPEED_MPH = 5 // Average technician travel speed in miles per hour (point to point distance)
+export const TECH_SPEED_MPH = 10 // Average technician travel speed in miles per hour
 
 // Time constants
 export const MINUTES_PER_HOUR = 60

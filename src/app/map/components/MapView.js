@@ -7,6 +7,7 @@ import MapPopup from '@/app/map/components/MapPopup'
 import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
+import { logSchedule } from '@/app/map/utils/scheduleLogger'
 import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
@@ -72,73 +73,70 @@ const MapView = () => {
 
     // Collect ALL pairs across ALL clusters first
     const allPairs = []
-    const clusterServiceMap = new Map() // Keep track of services for each cluster
-
-    for (const [clusterId, clusterServices] of Object.entries(clusters)) {
+    for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
       )
-      clusterServiceMap.set(clusterId, sortedCluster)
 
       // Create pairs for all sequential services in the cluster
       for (let i = 1; i < sortedCluster.length; i++) {
-        const fromId = sortedCluster[i - 1].location.id
-        const toId = sortedCluster[i].location.id
-        allPairs.push(`${fromId},${toId}`)
+        allPairs.push(`${sortedCluster[i - 1].location.id},${sortedCluster[i].location.id}`)
       }
     }
 
-    // If no pairs to process, return early
-    if (allPairs.length === 0) {
-      return servicesWithDistance
-    }
+    // Split ALL pairs into chunks of 1000
+    const chunkedPairs = chunk(allPairs, 1000) // right now allApairs is 94, so this doesn't do anything
 
-    // Fetch all distances in a single request
-    try {
+    // Fetch distances for all pairs in one go
+    const distanceResults = []
+    for (const [index, pairChunk] of chunkedPairs.entries()) {
+      console.log(`Fetching distances batch ${index + 1}/${chunkedPairs.length}`)
       const response = await axios.get('/api/distance', {
         params: {
-          id: allPairs,
+          id: pairChunk,
         },
         paramsSerializer: params => {
-          return params.id.map(pair => `id=${encodeURIComponent(pair)}`).join('&')
+          return params.id.map(pair => `id=${pair}`).join('&')
         },
       })
 
       if (response.data.error) {
         console.error('Distance API error:', response.data.error)
+        // Handle missing locations if needed
         if (response.data.error.context?.missingLocationIds) {
           console.log('Missing locations:', response.data.error.context.missingLocationIds)
+          // Optionally trigger a refresh or retry
         }
-        return servicesWithDistance
+        return []
       }
 
-      // Create a map for quick distance lookup
-      const distanceMap = new Map()
-      for (const result of response.data) {
-        if (!result?.pair?.id || result?.pair?.distance == null) continue
-        distanceMap.set(result.pair.id, result.pair.distance)
-      }
+      distanceResults.push(...response.data)
+    }
 
-      // Update services with distances
-      for (const [clusterId, sortedCluster] of clusterServiceMap.entries()) {
-        for (let i = 0; i < sortedCluster.length; i++) {
-          const currentService = sortedCluster[i]
-          currentService.sequenceNumber = i + 1
+    // Now process each cluster with the complete distance results
+    for (const clusterServices of Object.values(clusters)) {
+      const sortedCluster = clusterServices.sort(
+        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
+      )
 
-          if (i > 0) {
-            const previousService = sortedCluster[i - 1]
-            const pairId = `${previousService.location.id},${currentService.location.id}`
-            const distance = distanceMap.get(pairId)
+      // Add sequence numbers and distances to services
+      for (let i = 0; i < sortedCluster.length; i++) {
+        const currentService = sortedCluster[i]
+        currentService.sequenceNumber = i + 1
 
-            if (distance != null) {
-              currentService.distanceFromPrevious = distance
-              currentService.previousCompany = previousService.company
-            }
+        if (i > 0) {
+          const previousService = sortedCluster[i - 1]
+          const pairResult = distanceResults.find(
+            result =>
+              result.pair.id === `${previousService.location.id},${currentService.location.id}`,
+          )
+
+          if (pairResult?.pair?.distance) {
+            currentService.distanceFromPrevious = pairResult.pair.distance
+            currentService.previousCompany = previousService.company
           }
         }
       }
-    } catch (error) {
-      console.error('Failed to fetch distances:', error)
     }
 
     return servicesWithDistance
@@ -204,14 +202,12 @@ const MapView = () => {
 
       const servicesWithDistance = await addDistanceInfo(filteredServices)
 
-      // Log clustering results
-      if (response.data.services) {
-        await logMapActivity({
-          services: response.data.services,
-          clusteringInfo: response.data.clusteringInfo,
-          algorithm: response.data.algorithm,
-        })
-      }
+      // Add logging here
+      logMapActivity({
+        services: servicesWithDistance,
+        clusteringInfo: response.data.clusteringInfo,
+        algorithm,
+      })
 
       setClusteredServices(servicesWithDistance)
       setClusteringInfo(response.data.clusteringInfo)
@@ -479,7 +475,6 @@ const MapView = () => {
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Clusters: {clusteringInfo.totalClusters}</p>
           <p>Outliers: {clusteringInfo.outlierCount}</p>
-          {clusteringInfo.algorithm === 'dbscan' && <p>Noise: {clusteringInfo.noisePoints}</p>}
         </div>
       )}
     </div>

@@ -3,14 +3,12 @@
 import { useRef, useEffect, useState } from 'react'
 import { getDefaultDateRange } from '@/app/utils/dates'
 import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
-import axios from 'axios'
 
 /**
  * MapTools provides date range selection for services
  */
 const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay }) => {
   const [activeShift, setActiveShift] = useState(1)
-  const [isRefreshing, setIsRefreshing] = useState(false)
 
   /**
    * Date handling utilities
@@ -63,20 +61,6 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
       setEndDate(newEndDate.toISOString())
     } else {
       setter(newDate.toISOString())
-    }
-  }
-
-  const handleRefreshDistances = async () => {
-    setIsRefreshing(true)
-    try {
-      await axios.post('/api/distance/refresh')
-      // Force reload the page to refresh all data
-      window.location.reload()
-    } catch (error) {
-      console.error('Failed to refresh distances:', error)
-      alert('Failed to refresh distances. Please try again.')
-    } finally {
-      setIsRefreshing(false)
     }
   }
 
@@ -146,7 +130,7 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
         <div className="grid grid-cols-1 gap-4">
           <div>
             <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
-              Start Date/Time:
+              Start Date:
             </label>
             <input
               id="startDate"
@@ -160,7 +144,7 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
           </div>
           <div>
             <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
-              End Date/Time:
+              End Date:
             </label>
             <input
               id="endDate"
@@ -175,25 +159,14 @@ const MapTools = ({ startDate, setStartDate, endDate, setEndDate, handleNextDay 
           </div>
         </div>
 
-        <div className="mt-4 flex gap-4">
-          <button
-            onClick={handleNextDay}
-            className="leading-tighter rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
-            type="button"
-          >
-            Next day
-          </button>
-        </div>
+        <button
+          onClick={handleNextDay}
+          className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+          type="button"
+        >
+          Next day
+        </button>
       </div>
-
-      <button
-        onClick={handleRefreshDistances}
-        disabled={isRefreshing}
-        className="leading-tighter float-right rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        type="button"
-      >
-        {isRefreshing ? 'Refreshing...' : 'Refresh distances'}
-      </button>
     </div>
   )
 }
