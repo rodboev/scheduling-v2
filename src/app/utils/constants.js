@@ -1,6 +1,7 @@
 // Clustering constants
 export const MAX_RADIUS_MILES = 5
 export const ENFORCE_BOROUGH_BOUNDARIES = false
+export const TECH_SPEED_MPH = 10 // Average technician travel speed in miles per hour
 
 // Time constants
 export const MINUTES_PER_HOUR = 60

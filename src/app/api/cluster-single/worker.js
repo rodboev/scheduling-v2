@@ -5,6 +5,7 @@ import {
   MAX_RADIUS_MILES,
   SHIFT_DURATION,
   ENFORCE_BOROUGH_BOUNDARIES,
+  TECH_SPEED_MPH,
 } from '../../utils/constants.js'
 
 const TIME_INCREMENT = 15 // 15 minute increments
@@ -28,7 +29,10 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
 
 function calculateTravelTime(distanceMatrix, fromIndex, toIndex) {
   const distance = distanceMatrix[fromIndex][toIndex]
-  return distance ? Math.ceil(distance * 2) : MAX_TRAVEL_TIME // Assume 30 mph average speed
+  if (!distance) return 30 // Default to 30 minutes if no distance available
+
+  // Calculate travel time in minutes based on distance and speed
+  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
 }
 
 function roundToNearestInterval(date) {
@@ -227,15 +231,22 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
       // Try each existing service as a potential connection point
       for (const existingService of shift.services) {
-        // Skip if too far or different borough
+        // Skip if too far
         const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
         if (distance > MAX_RADIUS_MILES) continue
 
-        // Try to schedule after this service
+        // Calculate actual travel time needed
+        const travelTime = calculateTravelTime(
+          distanceMatrix,
+          existingService.originalIndex,
+          service.originalIndex,
+        )
+
+        // Try to schedule after this service with actual travel time
         const tryStart = new Date(
           Math.max(
             new Date(service.time.range[0]).getTime(),
-            new Date(existingService.end).getTime() + 15 * 60000,
+            new Date(existingService.end).getTime() + travelTime * 60000,
           ),
         )
         const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)

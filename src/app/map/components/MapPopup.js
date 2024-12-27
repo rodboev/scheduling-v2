@@ -3,6 +3,7 @@
 import React from 'react'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime } from '@/app/utils/timeRange'
+import { TECH_SPEED_MPH } from '@/app/utils/constants'
 import dayjs from 'dayjs'
 import { Car, Clock } from 'lucide-react'
 import { Popup } from 'react-leaflet'
@@ -17,6 +18,10 @@ const MapPopup = ({ service }) => {
     if (!borough) return 'Unknown'
     if (borough === 'NJ') return 'New Jersey'
     return capitalize(borough)
+  }
+
+  function calculateTravelTime(distance) {
+    return Math.ceil((distance / TECH_SPEED_MPH) * 60)
   }
 
   return (
@@ -57,8 +62,8 @@ const MapPopup = ({ service }) => {
             </div>
             {service.previousCompany && (
               <div className="text-xs text-gray-600">
-                {/*(parseInt(service.distanceFromPrevious / 10 * 60))*/}
-                15 min from {service.previousCompany}
+                {calculateTravelTime(service.distanceFromPrevious)} min from{' '}
+                {service.previousCompany}
               </div>
             )}
           </div>
