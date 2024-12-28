@@ -1,5 +1,6 @@
 import { formatDate, formatTime, calculateDuration } from '../../utils/dateHelpers.js'
 import { calculateHaversineDistance } from '../../map/utils/distance.js'
+import { HARD_MAX_RADIUS_MILES } from '../../utils/constants.js'
 
 // Add debug logging for imports
 console.log('Logging module loaded')
@@ -29,6 +30,9 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
     acc[clusterKey].push(service)
     return acc
   }, {})
+
+  // Track distance violations
+  const distanceViolations = []
 
   console.log('\nCluster Details:')
   Object.entries(clusters).forEach(([clusterId, clusterServices]) => {
@@ -62,6 +66,16 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
         service.location.latitude,
         service.location.longitude,
       )
+
+      // Check for distance violations
+      if (distance > HARD_MAX_RADIUS_MILES) {
+        distanceViolations.push({
+          cluster: clusterId,
+          from: previousService,
+          to: service,
+          distance,
+        })
+      }
 
       return {
         ...service,
@@ -108,6 +122,23 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
       console.log(`Total cluster distance: ${totalDistance.toFixed(2)} miles`)
     }
   })
+
+  // Log distance violations if any exist
+  if (distanceViolations.length > 0) {
+    console.log('\nDistance Cap Violations:')
+    distanceViolations.forEach(violation => {
+      console.log(`\nCluster ${violation.cluster}:`)
+      console.log(
+        `From: ${violation.from.company} (${violation.from.location.latitude}, ${violation.from.location.longitude})`,
+      )
+      console.log(
+        `To: ${violation.to.company} (${violation.to.location.latitude}, ${violation.to.location.longitude})`,
+      )
+      console.log(
+        `Distance: ${violation.distance.toFixed(2)} miles (exceeds ${HARD_MAX_RADIUS_MILES} mile cap)`,
+      )
+    })
+  }
 
   console.log('\n-------------------\n')
 }

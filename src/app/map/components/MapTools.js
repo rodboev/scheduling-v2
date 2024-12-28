@@ -14,9 +14,10 @@ const MapTools = ({
   setEndDate,
   handleNextDay,
   fetchClusteredServices,
+  isLoading,
+  activeShift,
+  setActiveShift,
 }) => {
-  const [activeShift, setActiveShift] = useState(1)
-
   /**
    * Date handling utilities
    * - Converts between ISO and local datetime strings
@@ -106,8 +107,24 @@ const MapTools = ({
     }
   }, [])
 
+  const formatStatusDate = date => {
+    return new Date(date).toLocaleDateString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+    })
+  }
+
   return (
     <div className="absolute right-4 top-4 z-[1000] space-y-4 overflow-hidden">
+      {isLoading && (
+        <div className="fixed left-1/2 top-4 -translate-x-1/2 transform rounded bg-white px-6 py-2 shadow">
+          <p>
+            {startDate && activeShift
+              ? `Loading ${formatStatusDate(startDate)} shift ${activeShift}...`
+              : 'Loading...'}
+          </p>
+        </div>
+      )}
       <div className="flex space-x-4 rounded bg-white p-4 shadow">
         <div className="my-2 text-sm font-bold">Shift:</div>
         {[1, 2, 3].map(shift => (

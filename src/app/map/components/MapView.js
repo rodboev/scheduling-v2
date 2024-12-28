@@ -37,6 +37,7 @@ const MapView = () => {
   const [minPoints, setMinPoints] = useState(8) // Default min points
   const [maxPoints, setMaxPoints] = useState(14) // Default max points
   const [isLoading, setIsLoading] = useState(true) // Add isLoading state
+  const [activeShift, setActiveShift] = useState(1) // Add activeShift state
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
@@ -456,6 +457,10 @@ const MapView = () => {
         endDate={endDate}
         setEndDate={setEndDate}
         handleNextDay={handleNextDay}
+        fetchClusteredServices={fetchClusteredServices}
+        isLoading={isLoading}
+        activeShift={activeShift}
+        setActiveShift={setActiveShift}
       />
       {!isClient ? (
         <div className="h-full w-full bg-gray-100" /> // Loading placeholder

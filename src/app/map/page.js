@@ -8,7 +8,6 @@ const inter = Inter({ subsets: ['latin'] })
 // Dynamically import the MapView component with ssr disabled
 const MapView = dynamic(() => import('./components/MapView'), {
   ssr: false,
-  loading: () => <p className="mt-8 text-center text-xl">Loading map...</p>,
 })
 
 const MapPage = () => {
