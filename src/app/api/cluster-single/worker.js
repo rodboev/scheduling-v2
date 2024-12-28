@@ -172,6 +172,44 @@ function createNewShift(service, clusterIndex) {
   }
 }
 
+function verifyShiftDistances(shift, service, distanceMatrix) {
+  // First verify the new service against all existing services
+  for (const existingService of shift.services) {
+    const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
+    if (distance > HARD_MAX_RADIUS_MILES) return false
+    if (
+      distance > MAX_RADIUS_MILES &&
+      !areSameBorough(
+        existingService.location.latitude,
+        existingService.location.longitude,
+        service.location.latitude,
+        service.location.longitude,
+      )
+    )
+      return false
+  }
+
+  // Also verify all existing services against each other
+  for (let i = 0; i < shift.services.length; i++) {
+    for (let j = i + 1; j < shift.services.length; j++) {
+      const distance =
+        distanceMatrix[shift.services[i].originalIndex][shift.services[j].originalIndex]
+      if (distance > HARD_MAX_RADIUS_MILES) return false
+      if (
+        distance > MAX_RADIUS_MILES &&
+        !areSameBorough(
+          shift.services[i].location.latitude,
+          shift.services[i].location.longitude,
+          shift.services[j].location.latitude,
+          shift.services[j].location.longitude,
+        )
+      )
+        return false
+    }
+  }
+  return true
+}
+
 function createShifts(services, distanceMatrix, maxPoints = 14) {
   // Sort all services by start time, then by time window duration
   const sortedServices = services
@@ -313,12 +351,22 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
     // Add to best existing shift or create new one
     if (bestShift && bestStart) {
-      bestShift.services.push({
+      // Verify all distances one final time before adding
+      const serviceToAdd = {
         ...service,
         cluster: bestShift.cluster,
         start: bestStart.toISOString(),
         end: new Date(bestStart.getTime() + service.time.duration * 60000).toISOString(),
-      })
+        originalIndex: service.originalIndex,
+      }
+
+      if (verifyShiftDistances(bestShift, serviceToAdd, distanceMatrix)) {
+        bestShift.services.push(serviceToAdd)
+      } else {
+        // If verification fails, create a new shift instead
+        const newShift = createNewShift(service, clusterIndex++)
+        shifts.push(newShift)
+      }
     } else {
       const newShift = createNewShift(service, clusterIndex++)
       shifts.push(newShift)
