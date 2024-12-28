@@ -236,7 +236,18 @@ export function setCachedData(key, data, ttl = 300) {
 }
 
 export function deleteCachedData(key) {
-  memoryCache.del(key)
+  // If key contains wildcard, clear all matching keys
+  if (key.includes('*')) {
+    const pattern = new RegExp(key.replace('*', '.*'))
+    const keys = memoryCache.keys()
+    for (const cacheKey of keys) {
+      if (pattern.test(cacheKey)) {
+        memoryCache.del(cacheKey)
+      }
+    }
+  } else {
+    memoryCache.del(key)
+  }
 }
 
 function formatNumber(num, precision = 14) {

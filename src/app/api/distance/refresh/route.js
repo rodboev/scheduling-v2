@@ -11,16 +11,26 @@ export async function POST() {
     const matrixKeys = await redis.keys('distanceMatrix:*')
 
     // Delete each key from Redis
+    const deletePromises = []
     if (distanceKeys.length > 0) {
-      await redis.del(...distanceKeys)
+      deletePromises.push(redis.del(...distanceKeys))
     }
     if (matrixKeys.length > 0) {
-      await redis.del(...matrixKeys)
+      deletePromises.push(redis.del(...matrixKeys))
     }
+
+    // Wait for all Redis operations to complete
+    await Promise.all(deletePromises)
 
     // Clear all distance-related keys from memory cache
     for (const key of [...distanceKeys, ...matrixKeys]) {
       deleteCachedData(key)
+    }
+
+    // Verify keys were deleted
+    const remainingKeys = await redis.keys('distance*')
+    if (remainingKeys.length > 0) {
+      console.warn('Some distance keys remain after deletion:', remainingKeys)
     }
 
     return NextResponse.json({
@@ -29,6 +39,7 @@ export async function POST() {
         distances: distanceKeys.length,
         matrices: matrixKeys.length,
       },
+      remaining: remainingKeys.length,
     })
   } catch (error) {
     console.error('Error refreshing distances:', error)

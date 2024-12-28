@@ -261,6 +261,9 @@ const MapTools = ({
               throw new Error(data.error || 'Failed to refresh distances')
             }
 
+            // Wait a bit to ensure Redis has updated before fetching new services
+            await new Promise(resolve => setTimeout(resolve, 1000))
+
             if (typeof fetchClusteredServices === 'function') {
               await fetchClusteredServices()
             }
