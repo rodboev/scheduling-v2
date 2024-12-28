@@ -62,6 +62,31 @@ function findBestNextService(
 
     // Strict enforcement of distance caps
     if (distance > HARD_MAX_RADIUS_MILES) continue
+
+    // Check distances between this service and ALL scheduled services
+    let hasDistanceViolation = false
+    for (const scheduled of scheduledServices) {
+      const scheduledDistance = distanceMatrix[scheduled.originalIndex][service.originalIndex]
+      if (scheduledDistance > HARD_MAX_RADIUS_MILES) {
+        hasDistanceViolation = true
+        break
+      }
+      if (
+        scheduledDistance > MAX_RADIUS_MILES &&
+        !areSameBorough(
+          scheduled.location.latitude,
+          scheduled.location.longitude,
+          service.location.latitude,
+          service.location.longitude,
+        )
+      ) {
+        hasDistanceViolation = true
+        break
+      }
+    }
+    if (hasDistanceViolation) continue
+
+    // Check soft cap and borough boundaries for current service
     if (
       distance > MAX_RADIUS_MILES &&
       !areSameBorough(
@@ -110,7 +135,7 @@ function findBestNextService(
         const distanceScore =
           distance > MAX_RADIUS_MILES
             ? -999999 // Make it impossible to cluster services beyond MAX_RADIUS_MILES
-            : -Math.pow(distance, 1.5) // Stronger penalty for distance
+            : -Math.pow(distance, 2) // Even stronger penalty for distance
         const timeGapScore = -timeGap / 4
         const score = distanceScore + timeGapScore
 
@@ -130,7 +155,23 @@ function findBestNextService(
 }
 
 function canAddServiceToShift(service, shift, distanceMatrix) {
-  // Check if service can be added to any existing service in the shift
+  // First verify that the service can be added without violating distance constraints
+  for (const existingService of shift.services) {
+    const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
+    if (distance > HARD_MAX_RADIUS_MILES) return false
+    if (
+      distance > MAX_RADIUS_MILES &&
+      !areSameBorough(
+        existingService.location.latitude,
+        existingService.location.longitude,
+        service.location.latitude,
+        service.location.longitude,
+      )
+    )
+      return false
+  }
+
+  // Then check if it can be scheduled after any existing service
   for (const existingService of shift.services) {
     const next = findBestNextService(
       existingService,
@@ -139,7 +180,7 @@ function canAddServiceToShift(service, shift, distanceMatrix) {
       shift.endTime,
       shift.services,
     )
-    if (next) return { next, existingService } // Return the match info
+    if (next) return { next, existingService }
   }
   return false
 }
