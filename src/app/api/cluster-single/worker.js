@@ -202,7 +202,8 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         if (s.services.length >= maxPoints) return false
         if (ENFORCE_BOROUGH_BOUNDARIES && s.services[0].borough !== serviceBorough) return false
 
-        // Check distance to all services in the shift
+        // Check distance to ALL services in the shift
+        // If ANY service is too far, reject this shift entirely
         for (const existingService of s.services) {
           const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
           if (distance > HARD_MAX_RADIUS_MILES) return false
@@ -224,23 +225,20 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         const bStart = Math.min(...b.services.map(s => new Date(s.start).getTime()))
         const serviceStart = new Date(service.time.range[0]).getTime()
 
-        const aAvgDist =
-          a.services.reduce(
-            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
-            0,
-          ) / a.services.length
-        const bAvgDist =
-          b.services.reduce(
-            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
-            0,
-          ) / b.services.length
+        // Calculate maximum distance to any service in the shift
+        const aMaxDist = Math.max(
+          ...a.services.map(s => distanceMatrix[s.originalIndex][service.originalIndex]),
+        )
+        const bMaxDist = Math.max(
+          ...b.services.map(s => distanceMatrix[s.originalIndex][service.originalIndex]),
+        )
 
         // Heavily penalize distances beyond MAX_RADIUS_MILES
-        const aDistScore = aAvgDist > MAX_RADIUS_MILES ? 999999 : aAvgDist
-        const bDistScore = bAvgDist > MAX_RADIUS_MILES ? 999999 : bAvgDist
+        const aDistScore = aMaxDist > MAX_RADIUS_MILES ? 999999 : aMaxDist
+        const bDistScore = bMaxDist > MAX_RADIUS_MILES ? 999999 : bMaxDist
 
-        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aDistScore
-        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bDistScore
+        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aDistScore * 2
+        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bDistScore * 2
         return aScore - bScore
       })
 
@@ -251,9 +249,21 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
       // Try each existing service as a potential connection point
       for (const existingService of shift.services) {
-        // Skip if too far
+        // Skip if too far - strict enforcement
         const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
         if (distance > HARD_MAX_RADIUS_MILES) continue
+
+        // Skip if this would violate soft cap and services are in different boroughs
+        if (
+          distance > MAX_RADIUS_MILES &&
+          !areSameBorough(
+            existingService.location.latitude,
+            existingService.location.longitude,
+            service.location.latitude,
+            service.location.longitude,
+          )
+        )
+          continue
 
         // Calculate actual travel time needed
         const travelTime = calculateTravelTime(
@@ -289,7 +299,8 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
         if (!hasConflict) {
           const timeGap = (tryStart.getTime() - new Date(existingService.end).getTime()) / 60000
-          const score = -Math.pow(distance, 1.2) - Math.pow(timeGap, 0.5)
+          // Increase distance penalty to prefer closer services
+          const score = -Math.pow(distance, 1.5) - Math.pow(timeGap, 0.5)
 
           if (score > bestScore) {
             bestScore = score
