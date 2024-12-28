@@ -37,7 +37,6 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
   console.log('\nCluster Details:')
   Object.entries(clusters).forEach(([clusterId, clusterServices]) => {
     console.log(`\nCluster ${clusterId}:`)
-    console.log(`Services in cluster: ${clusterServices.length}`)
 
     // Sort services by time
     const sortedServices = [...clusterServices].sort(
@@ -113,13 +112,14 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
         new Date(firstService.time.range[0]),
         new Date(lastService.time.range[1]),
       )
-      console.log(`\nCluster duration: ${clusterDuration.toFixed(2)} hours`)
 
       // Calculate total distance
       const totalDistance = servicesWithDistance.reduce((acc, service) => {
         return acc + (service.distanceFromPrevious || 0)
       }, 0)
-      console.log(`Total cluster distance: ${totalDistance.toFixed(2)} miles`)
+      console.log(
+        `Duration: ${clusterDuration.toFixed(2)} hours, total distance: ${totalDistance.toFixed(2)} miles`,
+      )
     }
   })
 
@@ -127,20 +127,28 @@ export function logMapActivity({ services, clusteringInfo, algorithm }) {
   if (distanceViolations.length > 0) {
     console.log('\nDistance Cap Violations:')
     distanceViolations.forEach(violation => {
-      console.log(`\nCluster ${violation.cluster}:`)
+      const service = violation.to
+      const scheduledStart = new Date(service.start)
+      const scheduledEnd = new Date(service.end)
+      const rangeStart = new Date(service.time.range[0])
+      const rangeEnd = new Date(service.time.range[1])
+
+      const scheduledTime = `${formatTime(scheduledStart)}-${formatTime(scheduledEnd)}`
+      const timeRange = `${formatTime(rangeStart)}-${formatTime(rangeEnd)}`
+      const distance = `(${violation.distance.toFixed(2)} mi from ${violation.from.company})`
+
       console.log(
-        `From: ${violation.from.company} (${violation.from.location.latitude}, ${violation.from.location.longitude})`,
-      )
-      console.log(
-        `To: ${violation.to.company} (${violation.to.location.latitude}, ${violation.to.location.longitude})`,
-      )
-      console.log(
-        `Distance: ${violation.distance.toFixed(2)} miles (exceeds ${HARD_MAX_RADIUS_MILES} mile cap)`,
+        `Cluster ${violation.cluster} service ${service.sequenceNumber} - ${formatDate(scheduledStart)}, ${scheduledTime}, ` +
+          `${service.company} (${service.location.latitude}, ${service.location.longitude}) ` +
+          `(range: ${timeRange}) ${distance}`,
       )
     })
   }
 
-  console.log('\n-------------------\n')
+  // Log timing information
+  if (clusteringInfo?.performanceDuration) {
+    console.log(`\nResponse Time: ${clusteringInfo.performanceDuration}ms`)
+  }
 }
 
 // Add borough-specific logging

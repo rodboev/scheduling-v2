@@ -187,7 +187,7 @@ const MapTools = ({
         <div className="grid grid-cols-1 gap-4">
           <div>
             <label htmlFor="startDate" className="mb-1 block text-sm font-bold">
-              Start Date:
+              Start Date/Time:
             </label>
             <input
               id="startDate"
@@ -201,7 +201,7 @@ const MapTools = ({
           </div>
           <div>
             <label htmlFor="endDate" className="mb-1 block text-sm font-bold">
-              End Date:
+              End Date/Time:
             </label>
             <input
               id="endDate"
@@ -231,7 +231,7 @@ const MapTools = ({
             className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
             type="button"
           >
-            Previous day
+            {'<'} Prev day
           </button>
 
           <button
@@ -239,7 +239,7 @@ const MapTools = ({
             className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
             type="button"
           >
-            Next day
+            Next day {'>'}
           </button>
         </div>
       </div>

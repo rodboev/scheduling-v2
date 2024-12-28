@@ -224,7 +224,7 @@ const MapView = () => {
       const servicesWithDistance = await addDistanceInfo(filteredServices)
 
       // Add debug logging
-      console.log('=== Debug Logging ===')
+      console.log('======================')
       console.log('Services with distance:', servicesWithDistance.length)
       console.log('Sample service:', servicesWithDistance[0])
       console.log(
