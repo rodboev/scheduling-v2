@@ -17,6 +17,7 @@ const MapTools = ({
   isLoading,
   activeShift,
   setActiveShift,
+  clearServices,
 }) => {
   /**
    * Date handling utilities
@@ -107,6 +108,41 @@ const MapTools = ({
     }
   }, [])
 
+  const [statusMessage, setStatusMessage] = useState(null)
+  const statusTimeoutRef = useRef(null)
+  const isRefreshingRef = useRef(false)
+
+  const showStatus = (message, isRefreshing = false) => {
+    // Clear any existing timeout
+    if (statusTimeoutRef.current) {
+      clearTimeout(statusTimeoutRef.current)
+    }
+    setStatusMessage(message)
+    isRefreshingRef.current = isRefreshing
+
+    // Set new timeout
+    statusTimeoutRef.current = setTimeout(() => {
+      setStatusMessage(null)
+      isRefreshingRef.current = false
+    }, 5000)
+  }
+
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (statusTimeoutRef.current) {
+        clearTimeout(statusTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  // Only clear status message when loading state changes if we're not refreshing distances
+  useEffect(() => {
+    if (isLoading && !isRefreshingRef.current) {
+      setStatusMessage(null)
+    }
+  }, [isLoading])
+
   const formatStatusDate = date => {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'numeric',
@@ -116,12 +152,14 @@ const MapTools = ({
 
   return (
     <div className="absolute right-4 top-4 z-[1000] space-y-4 overflow-hidden">
-      {isLoading && (
+      {(isLoading || statusMessage) && (
         <div className="fixed left-1/2 top-4 -translate-x-1/2 transform rounded bg-white px-6 py-2 shadow">
           <p>
-            {startDate && activeShift
-              ? `Loading ${formatStatusDate(startDate)} shift ${activeShift}...`
-              : 'Loading...'}
+            {isLoading && !isRefreshingRef.current
+              ? startDate && activeShift
+                ? `Loading ${formatStatusDate(startDate)} shift ${activeShift}...`
+                : 'Loading...'
+              : statusMessage}
           </p>
         </div>
       )}
@@ -208,12 +246,30 @@ const MapTools = ({
       <button
         onClick={async () => {
           try {
-            await fetch('/api/distance/refresh', { method: 'POST' })
-            if (typeof fetchClusteredServices === 'function') {
-              fetchClusteredServices()
+            showStatus(
+              `Refreshing distance for ${formatStatusDate(startDate)} shift ${activeShift}...`,
+              true,
+            )
+
+            // Clear existing services before refresh
+            clearServices()
+
+            const response = await fetch('/api/distance/refresh', { method: 'POST' })
+            const data = await response.json()
+
+            if (!response.ok) {
+              throw new Error(data.error || 'Failed to refresh distances')
             }
+
+            if (typeof fetchClusteredServices === 'function') {
+              await fetchClusteredServices()
+            }
+
+            showStatus(data.message || 'Distances refreshed successfully', true)
           } catch (error) {
             console.error('Failed to refresh distances:', error)
+            showStatus(`Error: ${error.message}`, true)
+            // On error, we don't restore previous services - they'll stay cleared
           }
         }}
         className="leading-tighter float-right mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"

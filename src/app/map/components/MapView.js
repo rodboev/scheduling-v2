@@ -39,6 +39,11 @@ const MapView = () => {
   const [isLoading, setIsLoading] = useState(true) // Add isLoading state
   const [activeShift, setActiveShift] = useState(1) // Add activeShift state
 
+  const clearServices = useCallback(() => {
+    setClusteredServices([])
+    setClusteringInfo(null)
+  }, [])
+
   // UI state
   const [activePopup, setActivePopup] = useState(null)
   const [startDate, setStartDate] = useState(() => {
@@ -461,6 +466,7 @@ const MapView = () => {
         isLoading={isLoading}
         activeShift={activeShift}
         setActiveShift={setActiveShift}
+        clearServices={clearServices}
       />
       {!isClient ? (
         <div className="h-full w-full bg-gray-100" /> // Loading placeholder
