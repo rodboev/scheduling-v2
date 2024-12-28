@@ -7,6 +7,41 @@ import { HARD_MAX_RADIUS_MILES } from './constants.js'
 let redis
 const memoryCache = new NodeCache({ stdTTL: 3600 }) // Cache for 1 hour
 
+// Add a centralized distance calculation function
+async function getVerifiedDistance(redis, id1, id2) {
+  const [geopos, distance] = await Promise.all([
+    redis.geopos('locations', id1, id2),
+    redis.geodist('locations', id1, id2, 'mi'),
+  ])
+
+  if (!distance || !geopos?.[0] || !geopos?.[1]) {
+    return null
+  }
+
+  const redisDistance = Number.parseFloat(distance)
+  const [[lon1, lat1], [lon2, lat2]] = geopos
+  const haversineDistance = calculateHaversineDistance(
+    Number(lat1),
+    Number(lon1),
+    Number(lat2),
+    Number(lon2),
+  )
+
+  // Always use Haversine if Redis distance exceeds cap
+  if (redisDistance > HARD_MAX_RADIUS_MILES || haversineDistance > HARD_MAX_RADIUS_MILES) {
+    if (Math.abs(redisDistance - haversineDistance) > 0.1) {
+      console.log(`Distance discrepancy for ${id1},${id2}:`, {
+        redis: redisDistance,
+        haversine: haversineDistance,
+        difference: Math.abs(redisDistance - haversineDistance),
+      })
+    }
+    return haversineDistance
+  }
+
+  return redisDistance
+}
+
 export function getRedisClient() {
   if (!redis) {
     const redisUrl = process.env.REDISCLOUD_URL || 'redis://localhost:6379'
@@ -70,58 +105,16 @@ export async function closeRedisConnection() {
 
 export async function getDistances(pairs) {
   const client = getRedisClient()
-  const pipeline = client.pipeline()
-
-  for (const [id1, id2] of pairs) {
-    pipeline.geodist('locations', id1, id2, 'mi')
-    // Also get coordinates for Haversine verification
-    pipeline.geopos('locations', id1, id2)
-  }
-
-  const results = await pipeline.exec()
   const distances = []
 
-  for (let i = 0; i < pairs.length; i++) {
-    const [distErr, distance] = results[i * 2]
-    const [posErr, positions] = results[i * 2 + 1]
-
-    if (distErr) {
-      console.error('Error getting distance:', distErr)
-      distances.push(null)
-      continue
-    }
-
-    if (!distance || posErr || !positions?.[0] || !positions?.[1]) {
-      distances.push(null)
-      continue
-    }
-
-    let finalDistance = Number.parseFloat(distance)
-
-    // Verify with Haversine if Redis distance exceeds cap
-    if (finalDistance > HARD_MAX_RADIUS_MILES) {
-      const [[lon1, lat1], [lon2, lat2]] = positions
-      const haversineDistance = calculateHaversineDistance(
-        Number(lat1),
-        Number(lon1),
-        Number(lat2),
-        Number(lon2),
-      )
-
-      // console.log(`Distance verification for ${pairs[i][0]},${pairs[i][1]}:`, {
-      //   redis: finalDistance,
-      //   haversine: haversineDistance,
-      //   difference: Math.abs(finalDistance - haversineDistance),
-      // })
-
-      // Use Haversine distance if it's significantly different
-      if (Math.abs(finalDistance - haversineDistance) > 0.1) {
-        console.log(`Using Haversine distance instead of Redis for ${pairs[i][0]},${pairs[i][1]}`)
-        finalDistance = haversineDistance
-      }
-    }
-
-    distances.push(finalDistance)
+  // Process in smaller batches to avoid overwhelming Redis
+  const BATCH_SIZE = 10
+  for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
+    const batch = pairs.slice(i, Math.min(i + BATCH_SIZE, pairs.length))
+    const batchDistances = await Promise.all(
+      batch.map(([id1, id2]) => getVerifiedDistance(client, id1, id2)),
+    )
+    distances.push(...batchDistances)
   }
 
   return distances
@@ -298,15 +291,19 @@ function formatNumber(num, precision = 14) {
 }
 
 export async function calculateDistance(id1, id2, redis) {
-  // Get all required data in parallel
-  const [geopos, companies, distance] = await Promise.all([
+  const distance = await getVerifiedDistance(redis, id1, id2)
+  if (!distance) {
+    console.error(`Location not found in Redis: ${!id1 ? id1 : id2}`)
+    return null
+  }
+
+  // Get location info for the response
+  const [geopos, companies] = await Promise.all([
     redis.geopos('locations', id1, id2),
     redis.hmget('company_names', id1, id2),
-    redis.geodist('locations', id1, id2, 'mi'),
   ])
 
   if (!geopos?.[0] || !geopos?.[1]) {
-    console.error(`Location not found in Redis: ${!geopos?.[0] ? id1 : id2}`)
     return null
   }
 
@@ -317,7 +314,7 @@ export async function calculateDistance(id1, id2, redis) {
   return {
     pair: {
       id: `${id1},${id2}`,
-      distance: formatNumber(Number.parseFloat(distance)),
+      distance: formatNumber(distance),
       points: [
         {
           id: id1,
