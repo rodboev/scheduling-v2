@@ -1,6 +1,8 @@
 import axios from 'axios'
 import Redis from 'ioredis'
 import NodeCache from 'node-cache'
+import { calculateHaversineDistance } from '../map/utils/distance.js'
+import { HARD_MAX_RADIUS_MILES } from './constants.js'
 
 let redis
 const memoryCache = new NodeCache({ stdTTL: 3600 }) // Cache for 1 hour
@@ -72,16 +74,57 @@ export async function getDistances(pairs) {
 
   for (const [id1, id2] of pairs) {
     pipeline.geodist('locations', id1, id2, 'mi')
+    // Also get coordinates for Haversine verification
+    pipeline.geopos('locations', id1, id2)
   }
 
   const results = await pipeline.exec()
-  return results.map(([err, result]) => {
-    if (err) {
-      console.error('Error getting distance:', err)
-      return null
+  const distances = []
+
+  for (let i = 0; i < pairs.length; i++) {
+    const [distErr, distance] = results[i * 2]
+    const [posErr, positions] = results[i * 2 + 1]
+
+    if (distErr) {
+      console.error('Error getting distance:', distErr)
+      distances.push(null)
+      continue
     }
-    return result ? Number.parseFloat(result) : null
-  })
+
+    if (!distance || posErr || !positions?.[0] || !positions?.[1]) {
+      distances.push(null)
+      continue
+    }
+
+    let finalDistance = Number.parseFloat(distance)
+
+    // Verify with Haversine if Redis distance exceeds cap
+    if (finalDistance > HARD_MAX_RADIUS_MILES) {
+      const [[lon1, lat1], [lon2, lat2]] = positions
+      const haversineDistance = calculateHaversineDistance(
+        Number(lat1),
+        Number(lon1),
+        Number(lat2),
+        Number(lon2),
+      )
+
+      // console.log(`Distance verification for ${pairs[i][0]},${pairs[i][1]}:`, {
+      //   redis: finalDistance,
+      //   haversine: haversineDistance,
+      //   difference: Math.abs(finalDistance - haversineDistance),
+      // })
+
+      // Use Haversine distance if it's significantly different
+      if (Math.abs(finalDistance - haversineDistance) > 0.1) {
+        console.log(`Using Haversine distance instead of Redis for ${pairs[i][0]},${pairs[i][1]}`)
+        finalDistance = haversineDistance
+      }
+    }
+
+    distances.push(finalDistance)
+  }
+
+  return distances
 }
 
 export async function getLocationInfo(ids) {
