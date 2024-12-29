@@ -451,6 +451,31 @@ const MapView = () => {
     })
   }, [clusteredServices])
 
+  async function createDistanceMatrix(services) {
+    const matrix = {}
+    const serviceIds = services.map(s => s.id)
+
+    for (const [i, id1] of serviceIds.entries()) {
+      matrix[id1] = {}
+      for (const [j, id2] of serviceIds.entries()) {
+        if (i === j) {
+          matrix[id1][id2] = 0
+          continue
+        }
+
+        const result = await calculateDistance(id1, id2)
+        if (!result || result.pair.distance > HARD_MAX_RADIUS_MILES) {
+          matrix[id1][id2] = null
+          continue
+        }
+
+        matrix[id1][id2] = result.pair.distance
+      }
+    }
+
+    return matrix
+  }
+
   return (
     <div className="relative h-screen w-screen">
       <MapTools

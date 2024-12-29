@@ -80,55 +80,23 @@ function findBestNextService(
   for (const { service, flexibility, duration } of serviceFlexibility) {
     const distance = distanceMatrix[currentIndex][service.originalIndex]
 
-    // Check hard distance cap
-    if (distance > HARD_MAX_RADIUS_MILES) continue
+    // Skip if distance exceeds HARD_MAX_RADIUS_MILES or is null
+    if (!distance || distance > HARD_MAX_RADIUS_MILES) {
+      continue
+    }
 
     // Check distances between this service and ALL scheduled services
     let hasDistanceViolation = false
     for (const scheduled of scheduledServices) {
       const scheduledDistance = distanceMatrix[scheduled.originalIndex][service.originalIndex]
-      if (scheduledDistance > HARD_MAX_RADIUS_MILES) {
-        hasDistanceViolation = true
-        break
-      }
-      // Check borough boundaries for MAX_RADIUS_MILES_ACROSS_BOROUGHS
-      if (
-        scheduledDistance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
-        !areSameBorough(
-          scheduled.location.latitude,
-          scheduled.location.longitude,
-          service.location.latitude,
-          service.location.longitude,
-        )
-      ) {
+      if (!scheduledDistance || scheduledDistance > HARD_MAX_RADIUS_MILES) {
         hasDistanceViolation = true
         break
       }
     }
     if (hasDistanceViolation) continue
 
-    // Calculate if there are closer services with tighter time windows
-    const closerServicesWithTighterWindows = remainingServices.filter(other => {
-      if (other === service) return false
-      const otherDistance = distanceMatrix[currentIndex][other.originalIndex]
-      if (otherDistance >= distance) return false
-
-      const otherStart = new Date(other.time.range[0])
-      const otherEnd = new Date(other.time.range[1])
-      const otherFlexibility = (otherEnd - otherStart) / (60 * 1000)
-
-      // Only consider services that would be valid for the current shift
-      const travelTime = calculateTravelTime(distanceMatrix, currentIndex, other.originalIndex)
-      const earliestStart = new Date(currentService.end)
-      earliestStart.setMinutes(earliestStart.getMinutes() + travelTime)
-
-      return (
-        otherFlexibility < flexibility &&
-        otherEnd >= earliestStart &&
-        otherDistance <= HARD_MAX_RADIUS_MILES
-      )
-    })
-
+    // Calculate travel time based on validated distance
     const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
     if (travelTime > MAX_TRAVEL_TIME) continue
 
@@ -156,37 +124,17 @@ function findBestNextService(
       if (!hasConflict) {
         const timeGap = (tryStart - new Date(currentService.end)) / 60000
 
-        // Distance scoring based on borough boundaries
-        let distanceScore
-        if (
-          distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
-          !areSameBorough(
-            currentService.location.latitude,
-            currentService.location.longitude,
-            service.location.latitude,
-            service.location.longitude,
-          )
-        ) {
-          distanceScore = -999999 // Strongly discourage exceeding MAX_RADIUS_MILES_ACROSS_BOROUGHS between boroughs
-        } else {
-          distanceScore = -Math.pow(distance, 2) // Normal distance penalty within borough
-        }
+        // Distance scoring - heavily penalize distances near the cap
+        const distanceScore = -Math.pow(distance / HARD_MAX_RADIUS_MILES, 3) * 100
 
-        // Time window flexibility penalty - reduced for short duration services
-        const flexibilityScore = -Math.log(flexibility + 1) * (duration > 30 ? 2 : 1)
+        // Time window flexibility penalty
+        const flexibilityScore = -Math.log(flexibility + 1)
 
-        // Increased penalty for having closer services with tighter windows
-        const lookaheadPenalty = closerServicesWithTighterWindows.length * -20
+        // Time gap penalty
+        const timeGapScore = -Math.pow(timeGap / 30, 1.5)
 
-        // Time gap penalty - reduced for flexible services
-        const timeGapScore = -Math.pow(timeGap / (flexibility > 120 ? 60 : 30), 1.5)
-
-        // Bonus for short duration services with flexible windows
-        const shortServiceBonus = duration <= 30 && flexibility > 120 ? 20 : 0
-
-        // Combined score with higher weight on lookahead and short service bonus
-        const score =
-          distanceScore + flexibilityScore + timeGapScore + lookaheadPenalty + shortServiceBonus
+        // Combined score with higher weight on distance
+        const score = distanceScore * 2 + flexibilityScore + timeGapScore
 
         if (score > bestScore) {
           bestScore = score
@@ -266,7 +214,7 @@ function verifyShiftDistances(shift, service, distanceMatrix) {
   // First verify the new service against all existing services
   for (const existingService of shift.services) {
     const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-    if (distance > HARD_MAX_RADIUS_MILES) return false
+    if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
     if (
       distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
       !areSameBorough(
@@ -284,7 +232,7 @@ function verifyShiftDistances(shift, service, distanceMatrix) {
     for (let j = i + 1; j < shift.services.length; j++) {
       const distance =
         distanceMatrix[shift.services[i].originalIndex][shift.services[j].originalIndex]
-      if (distance > HARD_MAX_RADIUS_MILES) return false
+      if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
       if (
         distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
         !areSameBorough(
@@ -333,17 +281,20 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         // Check distance to ALL services in the shift
         for (const existingService of s.services) {
           const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-          if (distance > HARD_MAX_RADIUS_MILES) return false
+          if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
+
+          // Check borough boundaries for cross-borough services
           if (
-            distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
             !areSameBorough(
               existingService.location.latitude,
               existingService.location.longitude,
               service.location.latitude,
               service.location.longitude,
-            )
-          )
+            ) &&
+            distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
+          ) {
             return false
+          }
         }
 
         // Calculate actual shift duration if we were to add this service
@@ -366,15 +317,15 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
         // Calculate average distances
         const aAvgDist =
-          aServices.reduce(
-            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
-            0,
-          ) / aServices.length
+          aServices.reduce((sum, s) => {
+            const dist = distanceMatrix[s.originalIndex][service.originalIndex]
+            return sum + (dist || HARD_MAX_RADIUS_MILES) // Penalize missing distances
+          }, 0) / aServices.length
         const bAvgDist =
-          bServices.reduce(
-            (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
-            0,
-          ) / bServices.length
+          bServices.reduce((sum, s) => {
+            const dist = distanceMatrix[s.originalIndex][service.originalIndex]
+            return sum + (dist || HARD_MAX_RADIUS_MILES) // Penalize missing distances
+          }, 0) / bServices.length
 
         // Calculate time gaps
         const aLastEnd = Math.max(...aServices.map(s => new Date(s.end).getTime()))
@@ -395,13 +346,15 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         // More lenient with time gaps (up to 3 hours) if distances are good
         // Prefer shifts that are already longer (up to 7 hours) to maximize route efficiency
         const aScore =
-          aAvgDist * 2 + // Distance weight reduced
+          -Math.pow(aAvgDist / HARD_MAX_RADIUS_MILES, 2) * 10 + // Quadratic distance penalty
           Math.min(180, aTimeGap) / 60 + // More tolerant of time gaps
           Math.max(0, aShiftDuration - 7) * 10 // Only penalize shifts over 7 hours
         const bScore =
-          bAvgDist * 2 + Math.min(180, bTimeGap) / 60 + Math.max(0, bShiftDuration - 7) * 10
+          -Math.pow(bAvgDist / HARD_MAX_RADIUS_MILES, 2) * 10 +
+          Math.min(180, bTimeGap) / 60 +
+          Math.max(0, bShiftDuration - 7) * 10
 
-        return aScore - bScore
+        return bScore - aScore // Higher score is better
       })
 
     // Try each compatible shift
@@ -412,18 +365,20 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
       // Try each existing service as a potential connection point
       for (const existingService of shift.services) {
         const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-        if (distance > HARD_MAX_RADIUS_MILES) continue
+        if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
 
+        // Check borough boundaries for cross-borough services
         if (
-          distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS &&
           !areSameBorough(
             existingService.location.latitude,
             existingService.location.longitude,
             service.location.latitude,
             service.location.longitude,
-          )
-        )
+          ) &&
+          distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
+        ) {
           continue
+        }
 
         const travelTime = calculateTravelTime(
           distanceMatrix,
@@ -460,20 +415,15 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
 
           // Calculate average distance to all services in the shift
           const avgDistance =
-            shift.services.reduce(
-              (sum, s) => sum + distanceMatrix[s.originalIndex][service.originalIndex],
-              0,
-            ) / shift.services.length
+            shift.services.reduce((sum, s) => {
+              const dist = distanceMatrix[s.originalIndex][service.originalIndex]
+              return sum + (dist || HARD_MAX_RADIUS_MILES) // Penalize missing distances
+            }, 0) / shift.services.length
 
-          // Score calculation:
-          // - Distance penalty reduced
-          // - Much more tolerant of time gaps (up to 3 hours)
-          // - Only penalize shift duration over 7 hours
-          const distanceScore = -Math.pow(avgDistance, 1.2) // Reduced penalty
-          const timeGapScore = -Math.pow(Math.min(180, timeGap) / 120, 1.1) // More tolerant of gaps
-          const durationScore = -Math.pow(Math.max(0, newShiftDuration - 420) / 60, 2) // Only penalize after 7 hours
-
-          // Bonus for filling up shifts (up to 7 hours)
+          // Score calculation with stronger distance penalties
+          const distanceScore = -Math.pow(avgDistance / HARD_MAX_RADIUS_MILES, 2) * 10
+          const timeGapScore = -Math.pow(Math.min(180, timeGap) / 120, 1.1)
+          const durationScore = -Math.pow(Math.max(0, newShiftDuration - 420) / 60, 2)
           const utilizationBonus = Math.min(newShiftDuration, 420) / 60
 
           const score = distanceScore + timeGapScore + durationScore + utilizationBonus
@@ -533,6 +483,38 @@ function getTimeWindowOverlapScore(service, shiftServices) {
   }
 
   return maxOverlap / 10 // Convert to score bonus
+}
+
+function getNextService(currentService, remainingServices, distanceMatrix) {
+  let bestScore = -Infinity
+  let bestService = null
+
+  // Sort remaining services by time flexibility
+  const sortedServices = [...remainingServices].sort((a, b) => {
+    const aFlexibility = getTimeFlexibility(a)
+    const bFlexibility = getTimeFlexibility(b)
+    return aFlexibility - bFlexibility
+  })
+
+  for (const service of sortedServices) {
+    const distance = distanceMatrix[currentService.id][service.id]
+
+    // Skip if distance is null (exceeds HARD_MAX_RADIUS_MILES)
+    if (distance === null) {
+      continue
+    }
+
+    const timeScore = getTimeScore(service, currentService)
+    const distanceScore = getDistanceScore(distance)
+    const score = timeScore + distanceScore
+
+    if (score > bestScore) {
+      bestScore = score
+      bestService = service
+    }
+  }
+
+  return bestService
 }
 
 parentPort.on('message', async ({ services, distanceMatrix }) => {

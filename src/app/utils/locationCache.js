@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { calculateHaversineDistance } from '../map/utils/distance.js'
+import { HARD_MAX_RADIUS_MILES } from './constants.js'
 
 // In-memory cache
 const locationCache = new Map()
@@ -166,6 +167,11 @@ export async function calculateDistance(id1, id2) {
     Number(pos2[1]),
     Number(pos2[0]),
   )
+
+  // Always validate against HARD_MAX_RADIUS_MILES
+  if (distance > HARD_MAX_RADIUS_MILES) {
+    return null
+  }
 
   return {
     pair: {
