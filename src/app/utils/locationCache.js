@@ -283,15 +283,28 @@ export function setCachedData(key, data, ttl = 300) {
 
 // Delete cached data
 export function deleteCachedData(key) {
+  console.log('Clearing cache for key pattern:', key)
+  let deletedCount = 0
+
   // If key contains wildcard, clear all matching keys
   if (key.includes('*')) {
     const pattern = new RegExp(key.replace('*', '.*'))
     for (const cacheKey of memoryCache.keys()) {
       if (pattern.test(cacheKey)) {
         memoryCache.delete(cacheKey)
+        deletedCount++
       }
     }
   } else {
     memoryCache.delete(key)
+    deletedCount = 1
+  }
+
+  console.log(`Cleared ${deletedCount} cache entries`)
+
+  // Also clear location cache if it's a distance-related key
+  if (key.includes('distance')) {
+    console.log('Also clearing location cache')
+    locationCache.clear()
   }
 }
