@@ -155,25 +155,23 @@ const MapTools = ({
     try {
       setIsRefreshing(true)
       isRefreshingRef.current = true
-      setStatusMessage(
-        `Refreshing distance for ${formatStatusDate(startDate)} shift ${activeShift}...`,
-      )
+      setStatusMessage(`Refreshing data for ${formatStatusDate(startDate)} shift ${activeShift}...`)
 
       const response = await fetch('/api/distance/refresh')
       const data = await response.json()
 
       if (data.error) {
-        setStatusMessage(`Error refreshing distances: ${data.error}`)
+        setStatusMessage(`Error refreshing data: ${data.error}`)
       } else {
-        setStatusMessage('Distances refreshed successfully')
+        setStatusMessage('Data refreshed successfully')
         // Wait a bit to ensure cache is cleared before refetching
         await new Promise(resolve => setTimeout(resolve, 1000))
         // Refetch services to get updated distances
         await fetchClusteredServices()
       }
     } catch (error) {
-      console.error('Error refreshing distances:', error)
-      setStatusMessage('Error refreshing distances')
+      console.error('Error refreshing data:', error)
+      setStatusMessage('Error refreshing data')
     } finally {
       setIsRefreshing(false)
       isRefreshingRef.current = false
@@ -288,7 +286,7 @@ const MapTools = ({
           }`}
           type="button"
         >
-          {isRefreshing ? 'Refreshing...' : 'Refresh distances'}
+          {isRefreshing ? 'Refreshing data...' : 'Refresh data'}
         </button>
       </div>
     </>
