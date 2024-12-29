@@ -313,12 +313,11 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         )
 
         // Heavily penalize distances beyond MAX_RADIUS_MILES
-        const aDistScore = aMaxDist > MAX_RADIUS_MILES ? 999999 : Math.pow(aMaxDist, 2)
-        const bDistScore = bMaxDist > MAX_RADIUS_MILES ? 999999 : Math.pow(bMaxDist, 2)
+        const aDistScore = aMaxDist > MAX_RADIUS_MILES ? 999999 : aMaxDist
+        const bDistScore = bMaxDist > MAX_RADIUS_MILES ? 999999 : bMaxDist
 
-        // Prioritize distance over time more strongly
-        const aScore = Math.abs(aStart - serviceStart) / 7200000 + aDistScore * 3
-        const bScore = Math.abs(bStart - serviceStart) / 7200000 + bDistScore * 3
+        const aScore = Math.abs(aStart - serviceStart) / 3600000 + aDistScore * 2
+        const bScore = Math.abs(bStart - serviceStart) / 3600000 + bDistScore * 2
         return aScore - bScore
       })
 
@@ -380,7 +379,7 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
         if (!hasConflict) {
           const timeGap = (tryStart.getTime() - new Date(existingService.end).getTime()) / 60000
           // Increase distance penalty to prefer closer services
-          const score = -Math.pow(distance, 2) - Math.pow(timeGap, 0.5)
+          const score = -Math.pow(distance, 1.5) - Math.pow(timeGap, 0.5)
 
           if (score > bestScore) {
             bestScore = score

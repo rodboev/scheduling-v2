@@ -1,10 +1,4 @@
-import {
-  getRedisClient,
-  getLocations,
-  getCachedData,
-  setCachedData,
-  getDistances,
-} from './redisClient.js'
+import { getLocations, getCachedData, setCachedData, getDistances } from './locationCache.js'
 
 async function getDistanceBetweenLocations(fromId, toId) {
   const [distance] = await getDistances([[fromId, toId]])
@@ -27,7 +21,7 @@ export async function createDistanceMatrix(services) {
     return cachedMatrix
   }
 
-  await getLocations() // Ensure locations are loaded in Redis
+  await getLocations() // Ensure locations are loaded
 
   // Initialize matrix with zeros on diagonal
   const distanceMatrix = Array(services.length)

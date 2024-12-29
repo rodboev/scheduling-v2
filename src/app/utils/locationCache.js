@@ -1,0 +1,297 @@
+import fs from 'fs'
+import path from 'path'
+import { calculateHaversineDistance } from '../map/utils/distance.js'
+
+// In-memory cache
+const locationCache = new Map()
+const companyCache = new Map()
+const CACHE_FILE = path.join(process.cwd(), 'data', 'location-cache.json')
+
+// Memory cache for non-location data (like distance matrices)
+const memoryCache = new Map()
+
+// Ensure data directory exists
+if (!fs.existsSync(path.join(process.cwd(), 'data'))) {
+  fs.mkdirSync(path.join(process.cwd(), 'data'))
+}
+
+// Load cache from file on startup
+try {
+  if (fs.existsSync(CACHE_FILE)) {
+    const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'))
+    for (const [id, location] of Object.entries(data.locations)) {
+      locationCache.set(id, location)
+    }
+    for (const [id, company] of Object.entries(data.companies)) {
+      companyCache.set(id, company)
+    }
+    console.log(`Loaded ${locationCache.size} locations from cache file`)
+  }
+} catch (error) {
+  console.error('Error loading cache file:', error)
+}
+
+// Save cache to file
+function saveCache() {
+  try {
+    const data = {
+      locations: Object.fromEntries(locationCache),
+      companies: Object.fromEntries(companyCache),
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2))
+  } catch (error) {
+    console.error('Error saving cache file:', error)
+  }
+}
+
+// Clear all data
+export function clearLocations() {
+  locationCache.clear()
+  companyCache.clear()
+  saveCache()
+}
+
+// Store locations
+export async function storeLocations(serviceSetups) {
+  console.log('Starting location storage process...')
+  console.log(`Total service setups to process: ${serviceSetups.length}`)
+
+  clearLocations()
+
+  let validCount = 0
+  let invalidCount = 0
+  const processedLocations = new Set()
+  const errors = []
+  const storedIds = new Set()
+
+  for (const setup of serviceSetups) {
+    const { location, company, id: setupId } = setup
+
+    if (!location?.id) {
+      console.warn(`Setup ${setupId} missing location ID:`, setup)
+      invalidCount++
+      continue
+    }
+
+    const locationId = location.id.toString()
+
+    if (processedLocations.has(locationId)) {
+      console.log(`Skipping duplicate location ID: ${locationId} (setup ${setupId})`)
+      continue
+    }
+
+    if (location?.latitude != null && location?.longitude != null) {
+      try {
+        locationCache.set(locationId, [location.longitude, location.latitude])
+        companyCache.set(locationId, company || '')
+        validCount++
+        processedLocations.add(locationId)
+        storedIds.add(locationId)
+      } catch (err) {
+        console.error(`Failed to store location ${locationId} (setup ${setupId}):`, err)
+        errors.push({
+          setupId,
+          locationId,
+          error: err.message,
+          location: { lat: location.latitude, lon: location.longitude },
+        })
+        invalidCount++
+      }
+    } else {
+      console.warn(
+        `Invalid coordinates for setup ${setupId}, location ${locationId}:`,
+        `lat=${location?.latitude},`,
+        `lon=${location?.longitude}`,
+      )
+      invalidCount++
+    }
+  }
+
+  // Save to file
+  saveCache()
+
+  console.log('Location storage complete:')
+  console.log(`- Valid locations stored: ${validCount}`)
+  console.log(`- Invalid/skipped: ${invalidCount}`)
+  console.log(`- Final count: ${locationCache.size}`)
+
+  if (errors.length) {
+    console.error('Storage errors:', errors)
+  }
+
+  return {
+    validCount,
+    invalidCount,
+    finalCount: locationCache.size,
+    errors,
+    storedIds: Array.from(storedIds),
+  }
+}
+
+// Get location info
+export async function getLocationInfo(ids) {
+  return ids.map(id => {
+    const pos = locationCache.get(id.toString())
+    const company = companyCache.get(id.toString())
+
+    if (!pos) {
+      console.error(`Location not found for ID ${id}`)
+      return null
+    }
+
+    return {
+      id,
+      company,
+      location: {
+        longitude: Number(pos[0]),
+        latitude: Number(pos[1]),
+      },
+    }
+  })
+}
+
+// Calculate distance between two points
+export async function calculateDistance(id1, id2) {
+  const pos1 = locationCache.get(id1.toString())
+  const pos2 = locationCache.get(id2.toString())
+
+  if (!pos1 || !pos2) {
+    console.error(`Location not found: ${!pos1 ? id1 : id2}`)
+    return null
+  }
+
+  const distance = calculateHaversineDistance(
+    Number(pos1[1]),
+    Number(pos1[0]),
+    Number(pos2[1]),
+    Number(pos2[0]),
+  )
+
+  return {
+    pair: {
+      id: `${id1},${id2}`,
+      distance,
+      points: [
+        {
+          id: id1,
+          company: companyCache.get(id1.toString()),
+          location: {
+            longitude: Number(pos1[0]),
+            latitude: Number(pos1[1]),
+          },
+        },
+        {
+          id: id2,
+          company: companyCache.get(id2.toString()),
+          location: {
+            longitude: Number(pos2[0]),
+            latitude: Number(pos2[1]),
+          },
+        },
+      ],
+    },
+  }
+}
+
+// Get distances for multiple pairs
+export async function getDistances(pairs) {
+  return Promise.all(
+    pairs.map(async ([id1, id2]) => {
+      const result = await calculateDistance(id1, id2)
+      return result?.pair.distance || null
+    }),
+  )
+}
+
+// Get location pairs
+export async function getLocationPairs(idPairs) {
+  console.log(`Processing ${idPairs.length} location pairs...`)
+
+  // First verify all IDs exist
+  const allLocationIds = new Set(idPairs.flatMap(pair => pair.split(',')))
+  console.log(`Checking ${allLocationIds.size} unique locations...`)
+
+  const missingLocationIds = Array.from(allLocationIds).filter(id => !locationCache.has(id))
+
+  if (missingLocationIds.length > 0) {
+    console.error('Missing locations:', missingLocationIds)
+    return {
+      error: 'missing_locations',
+      missingLocationIds,
+      totalLocationsInCache: locationCache.size,
+    }
+  }
+
+  // Process all pairs
+  const results = await Promise.all(
+    idPairs.map(async pair => {
+      const [locationId1, locationId2] = pair.split(',')
+      return calculateDistance(locationId1, locationId2)
+    }),
+  )
+
+  return { results: results.filter(Boolean) }
+}
+
+// Check if locations are loaded
+export async function getLocations(forceRefresh = false) {
+  if (locationCache.size === 0 || forceRefresh) {
+    console.log(forceRefresh ? 'Forcing refresh...' : 'Loading locations...')
+
+    // Load service setups
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+    console.log(`Fetching service setups from: ${baseUrl}/api/serviceSetups`)
+
+    const response = await fetch(`${baseUrl}/api/serviceSetups`)
+    const services = await response.json()
+
+    if (!Array.isArray(services)) {
+      throw new Error(`Invalid services data: ${typeof services}`)
+    }
+
+    console.log(`Loaded ${services.length} services for location data`)
+
+    const result = await storeLocations(services)
+
+    if (result.finalCount === 0) {
+      throw new Error('Failed to store any locations')
+    }
+
+    return result.finalCount
+  }
+
+  return locationCache.size
+}
+
+// Get cached data
+export function getCachedData(key) {
+  return memoryCache.get(key)
+}
+
+// Set cached data with TTL
+export function setCachedData(key, data, ttl = 300) {
+  memoryCache.set(key, data)
+
+  // Set up expiration
+  setTimeout(() => {
+    if (memoryCache.get(key) === data) {
+      memoryCache.delete(key)
+    }
+  }, ttl * 1000)
+}
+
+// Delete cached data
+export function deleteCachedData(key) {
+  // If key contains wildcard, clear all matching keys
+  if (key.includes('*')) {
+    const pattern = new RegExp(key.replace('*', '.*'))
+    for (const cacheKey of memoryCache.keys()) {
+      if (pattern.test(cacheKey)) {
+        memoryCache.delete(cacheKey)
+      }
+    }
+  } else {
+    memoryCache.delete(key)
+  }
+}

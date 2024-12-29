@@ -109,17 +109,14 @@ const MapView = () => {
     const distancePromises = chunkedPairs.map(pairChunk =>
       axios.get('/api/distance', {
         params: {
-          id: pairChunk,
-        },
-        paramsSerializer: params => {
-          return params.id.map(pair => `id=${pair}`).join('&')
+          pairs: pairChunk.join(';'),
         },
       }),
     )
 
     const responses = await Promise.all(distancePromises)
     const distanceResults = responses.flatMap(response =>
-      response.data.error ? [] : response.data,
+      response.data.error ? [] : response.data.results,
     )
 
     // Now process each cluster with the complete distance results

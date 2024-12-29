@@ -1,11 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads'
-import { closeRedisConnection } from '../utils/redisClient.js'
 import { scheduleService, scheduleEnforcedService } from './scheduler.js'
-import {
-  filterInvalidServices,
-  prepareServicesToSchedule,
-  sortServices,
-} from './servicePrep.js'
+import { filterInvalidServices, prepareServicesToSchedule, sortServices } from './servicePrep.js'
 
 async function runScheduling() {
   try {
@@ -66,7 +61,9 @@ async function runScheduling() {
     console.log(`Total services processed: ${processedCount}`)
     console.log('Tech schedules:', Object.keys(techSchedules).length)
     for (const [techId, schedule] of Object.entries(techSchedules)) {
-      console.log(`  ${techId}: ${schedule.shifts.reduce((sum, shift) => sum + shift.services.length, 0)} services`)
+      console.log(
+        `  ${techId}: ${schedule.shifts.reduce((sum, shift) => sum + shift.services.length, 0)} services`,
+      )
     }
     console.log('Unassigned services summary:')
     for (const [reason, count] of Object.entries(unassignedReasons)) {
@@ -88,8 +85,6 @@ async function runScheduling() {
       error: error.message,
       stack: error.stack,
     })
-  } finally {
-    await closeRedisConnection()
   }
 }
 
@@ -100,4 +95,9 @@ runScheduling().catch(error => {
     error: error.message,
     stack: error.stack,
   })
+})
+
+parentPort.on('terminate', () => {
+  console.log('Worker received terminate signal')
+  process.exit(0)
 })

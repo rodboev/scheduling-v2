@@ -111,6 +111,7 @@ const MapTools = ({
   const [statusMessage, setStatusMessage] = useState(null)
   const statusTimeoutRef = useRef(null)
   const isRefreshingRef = useRef(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const showStatus = (message, isRefreshing = false) => {
     // Clear any existing timeout
@@ -148,6 +149,39 @@ const MapTools = ({
       month: 'numeric',
       day: 'numeric',
     })
+  }
+
+  const handleRefreshDistances = async () => {
+    try {
+      setIsRefreshing(true)
+      isRefreshingRef.current = true
+      setStatusMessage(
+        `Refreshing distance for ${formatStatusDate(startDate)} shift ${activeShift}...`,
+      )
+
+      const response = await fetch('/api/distance/refresh')
+      const data = await response.json()
+
+      if (data.error) {
+        setStatusMessage(`Error refreshing distances: ${data.error}`)
+      } else {
+        setStatusMessage('Distances refreshed successfully')
+        // Wait a bit to ensure cache is cleared before refetching
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        // Refetch services to get updated distances
+        await fetchClusteredServices()
+      }
+    } catch (error) {
+      console.error('Error refreshing distances:', error)
+      setStatusMessage('Error refreshing distances')
+    } finally {
+      setIsRefreshing(false)
+      isRefreshingRef.current = false
+      // Clear status message after 5 seconds
+      setTimeout(() => {
+        setStatusMessage('')
+      }, 5000)
+    }
   }
 
   return (
@@ -245,41 +279,16 @@ const MapTools = ({
           </div>
         </div>
         <button
-          onClick={async () => {
-            try {
-              showStatus(
-                `Refreshing distances for ${formatStatusDate(startDate)} shift ${activeShift}...`,
-                true,
-              )
-
-              // Clear existing services before refresh
-              clearServices()
-
-              const response = await fetch('/api/distance/refresh', { method: 'POST' })
-              const data = await response.json()
-
-              if (!response.ok) {
-                throw new Error(data.error || 'Failed to refresh distances')
-              }
-
-              // Wait a bit to ensure Redis has updated before fetching new services
-              await new Promise(resolve => setTimeout(resolve, 1000))
-
-              if (typeof fetchClusteredServices === 'function') {
-                await fetchClusteredServices()
-              }
-
-              showStatus(data.message || 'Distances refreshed successfully', true)
-            } catch (error) {
-              console.error('Failed to refresh distances:', error)
-              showStatus(`Error: ${error.message}`, true)
-              // On error, we don't restore previous services - they'll stay cleared
-            }
-          }}
-          className="leading-tighter relative left-1/2 mt-4 -translate-x-1/2 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+          onClick={handleRefreshDistances}
+          disabled={isRefreshing}
+          className={`leading-tighter relative left-1/2 mt-4 -translate-x-1/2 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold ${
+            isRefreshing
+              ? 'cursor-not-allowed border-gray-400 text-gray-400'
+              : 'text-blue-600 hover:bg-blue-600 hover:text-white'
+          }`}
           type="button"
         >
-          Refresh distances
+          {isRefreshing ? 'Refreshing...' : 'Refresh distances'}
         </button>
       </div>
     </>
