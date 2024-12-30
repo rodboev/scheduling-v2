@@ -1,141 +1,278 @@
+import { createDistanceMatrix } from '@/app/utils/distance'
 import axios from 'axios'
+import path from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { NextResponse } from 'next/server'
-import { scheduleServices } from '../../scheduling/index.js'
 
-const SHIFTS = {
-  1: { start: '08:00', end: '16:00' }, // 8am-4pm
-  2: { start: '16:00', end: '00:00' }, // 4pm-12am
-  3: { start: '00:00', end: '08:00' }, // 12am-8am
+let currentWorker = null
+let currentAbortController = null
+let currentRequestId = 0
+const WORKER_TIMEOUT = 5000 // 5 second timeout
+
+// Cache for service data
+const serviceCache = new Map()
+
+// Helper to get cache key
+function getCacheKey(start, end) {
+  const startDate = new Date(start).toISOString().split('T')[0]
+  const endDate = new Date(end).toISOString().split('T')[0]
+  return `${startDate}_${endDate}`
 }
 
-function getShiftForTime(time) {
-  const hour = new Date(time).getUTCHours()
-  if (hour >= 8 && hour < 16) return 1
-  if (hour >= 16) return 2
-  return 3
+async function fetchServices(params, requestId) {
+  const cacheKey = getCacheKey(params.start, params.end)
+  const cachedData = serviceCache.get(cacheKey)
+
+  // Check if we have valid cached data
+  if (
+    cachedData?.data &&
+    Date.now() - cachedData.timestamp < 300000 // Cache for 5 minutes
+  ) {
+    console.log('Using cached services data for', cacheKey)
+    return cachedData.data
+  }
+
+  console.log('Fetching services with params:', {
+    start: params.start,
+    end: params.end,
+    requestId,
+  })
+
+  const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
+    params: {
+      start: params.start,
+      end: params.end,
+    },
+  })
+
+  const services = response.data.filter(
+    service => service.time.range[0] !== null && service.time.range[1] !== null,
+  )
+
+  // Update cache
+  serviceCache.set(cacheKey, {
+    data: services,
+    timestamp: Date.now(),
+  })
+
+  // Clean up old cache entries
+  const now = Date.now()
+  for (const [key, value] of serviceCache.entries()) {
+    if (now - value.timestamp > 300000) {
+      serviceCache.delete(key)
+    }
+  }
+
+  return services
 }
 
-async function fetchServices(start, end) {
+async function processRequest(params, requestId) {
+  if (currentWorker) {
+    console.log(`Terminating existing worker for request ${currentRequestId}`)
+    if (currentAbortController) currentAbortController.abort()
+    await terminateWorker()
+  }
+
+  currentRequestId = requestId
+  currentAbortController = new AbortController()
+
   try {
-    const response = await axios.get(`http://localhost:${process.env.PORT}/api/services`, {
-      params: { start, end },
+    const services = await fetchServices(params, requestId)
+    console.log(`Found ${services.length} services for request ${requestId}`)
+
+    if (!services.length) {
+      return {
+        scheduledServices: [],
+        unassignedServices: [],
+        clusteringInfo: {
+          totalClusters: 0,
+          connectedPointsCount: 0,
+          outlierCount: 0,
+          performanceDuration: 0,
+        },
+      }
+    }
+
+    // Create distance matrix in parallel with worker initialization
+    const distanceMatrixPromise = createDistanceMatrix(services)
+    currentWorker = new Worker(path.resolve(process.cwd(), 'src/app/api/schedule/worker.js'))
+
+    const distanceMatrix = await distanceMatrixPromise
+    if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
+      console.warn(`Invalid distance matrix for request ${requestId}`)
+      return { scheduledServices: services }
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(async () => {
+        if (currentRequestId === requestId) {
+          console.log(`Worker timeout (${WORKER_TIMEOUT}ms) for request ${requestId}, terminating`)
+          await terminateWorker()
+          resolve({
+            scheduledServices: services,
+            unassignedServices: [],
+            clusteringInfo: {
+              totalClusters: 1,
+              connectedPointsCount: services.length,
+              outlierCount: 0,
+              performanceDuration: WORKER_TIMEOUT,
+            },
+          })
+        }
+      }, WORKER_TIMEOUT)
+
+      currentWorker.on('message', async result => {
+        if (currentRequestId === requestId) {
+          clearTimeout(timeoutId)
+          await terminateWorker()
+
+          if (!result?.scheduledServices) {
+            console.error('Invalid worker result structure:', result)
+            resolve({
+              scheduledServices: services.map(service => ({
+                ...service,
+                cluster: -1,
+              })),
+              unassignedServices: [],
+              clusteringInfo: {
+                totalClusters: 0,
+                connectedPointsCount: 0,
+                outlierCount: services.length,
+                performanceDuration: 0,
+              },
+            })
+            return
+          }
+
+          const clusteredCount = result.scheduledServices.filter(s => s.cluster >= 0).length
+          const clusters = new Set(result.scheduledServices.map(s => s.cluster).filter(c => c >= 0))
+
+          resolve({
+            scheduledServices: result.scheduledServices,
+            unassignedServices: result.unassignedServices || [],
+            clusteringInfo: {
+              totalClusters: clusters.size,
+              connectedPointsCount: clusteredCount,
+              outlierCount: result.scheduledServices.length - clusteredCount,
+              performanceDuration: result.performanceDuration || 0,
+            },
+          })
+        }
+      })
+
+      currentWorker.on('error', async error => {
+        if (currentRequestId === requestId) {
+          console.error(`Worker error for request ${requestId}:`, error)
+          clearTimeout(timeoutId)
+          await terminateWorker()
+          resolve({
+            scheduledServices: services,
+            unassignedServices: [],
+            clusteringInfo: {
+              totalClusters: 1,
+              connectedPointsCount: services.length,
+              outlierCount: 0,
+              performanceDuration: 0,
+            },
+          })
+        }
+      })
+
+      currentAbortController.signal.addEventListener('abort', async () => {
+        if (currentRequestId === requestId) {
+          console.log(`Request ${requestId} aborted`)
+          clearTimeout(timeoutId)
+          await terminateWorker()
+          reject(new Error('Worker aborted'))
+        }
+      })
+
+      currentWorker.postMessage({
+        services,
+        distanceMatrix,
+      })
     })
-    return response.data
   } catch (error) {
-    console.error('Error fetching services:', error)
+    console.error(`Error in processRequest for request ${requestId}:`, error)
     throw error
   }
 }
 
-export async function GET(request) {
-  console.log('Schedule API route called')
-
-  const { searchParams } = new URL(request.url)
-  const start = searchParams.get('start') || '2024-09-03T02:30:00.000Z'
-  const end = searchParams.get('end') || '2024-09-03T12:30:00.999Z'
-
-  try {
-    const services = await fetchServices(start, end)
-    console.log(`Fetched ${services.length} services for scheduling`)
-
-    // Process all services at once
-    let result = null
-    for await (const update of scheduleServices(services)) {
-      if (update.type === 'result') {
-        result = update
-        break
-      }
-    }
-
-    if (!result) {
-      return NextResponse.json({ error: 'No result from scheduling' }, { status: 500 })
-    }
-
-    const { scheduledServices, unassignedServices } = result.data
-
-    // Group services by tech and date
-    const techDayGroups = {}
-    for (const service of scheduledServices) {
-      const date = new Date(service.start).toISOString().split('T')[0]
-      const techId = service.resourceId
-      const shift = getShiftForTime(service.start)
-      const key = `${techId}_${date}_${shift}`
-
-      if (!techDayGroups[key]) {
-        techDayGroups[key] = []
-      }
-      techDayGroups[key].push(service)
-    }
-
-    // Assign cluster numbers and sequence numbers
-    let clusterNum = 0
-    const processedServices = []
-
-    for (const [key, services] of Object.entries(techDayGroups)) {
-      // Sort services by start time within each group
-      services.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-      // Assign cluster and sequence numbers
-      for (let i = 0; i < services.length; i++) {
-        const service = services[i]
-        service.cluster = clusterNum
-        service.sequenceNumber = i + 1
-
-        // Calculate distance from previous service in cluster
-        if (i > 0) {
-          const prevService = services[i - 1]
-          const distance = calculateDistance(
-            prevService.location.latitude,
-            prevService.location.longitude,
-            service.location.latitude,
-            service.location.longitude,
-          )
-          service.distanceFromPrevious = distance
-          service.previousCompany = prevService.company
-        }
-
-        processedServices.push(service)
-      }
-      clusterNum++
-    }
-
-    // Group unassigned services by reason
-    const unassignedGroups = unassignedServices.reduce((acc, service) => {
-      acc[service.reason] = (acc[service.reason] || 0) + 1
-      return acc
-    }, {})
-
-    // Create summary messages for unassigned services
-    const unassignedSummaries = Object.entries(unassignedGroups).map(
-      ([reason, count]) => `${count} services unassigned. Reason: ${reason}`,
-    )
-
-    return NextResponse.json({
-      scheduledServices: processedServices,
-      unassignedServices: unassignedSummaries,
-      clusteringInfo: {
-        totalClusters: clusterNum,
-        connectedPointsCount: processedServices.length,
-        outlierCount: unassignedServices.length,
-        performanceDuration: result.performanceDuration || 0,
-      },
+async function terminateWorker() {
+  if (currentWorker) {
+    await new Promise(resolve => {
+      currentWorker.once('exit', resolve)
+      currentWorker.terminate()
     })
-  } catch (error) {
-    console.error('Error in schedule route:', error)
-    return NextResponse.json({ error: 'Failed to process services' }, { status: 500 })
+    currentWorker = null
   }
+  currentAbortController = null
 }
 
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371 // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLon = ((lon2 - lon1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c // Distance in km converted to miles
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url)
+
+    const params = {
+      start: searchParams.get('start') || '2024-09-03T02:30:00.000Z',
+      end: searchParams.get('end') || '2024-09-03T12:30:00.999Z',
+    }
+
+    const requestId = ++currentRequestId
+    try {
+      const processedResult = await processRequest(params, requestId)
+
+      if (currentRequestId !== requestId) {
+        return NextResponse.json(
+          {
+            error: 'Request superseded',
+            scheduledServices: [],
+            unassignedServices: [],
+            clusteringInfo: {
+              totalClusters: 0,
+              connectedPointsCount: 0,
+              outlierCount: 0,
+              performanceDuration: 0,
+            },
+          },
+          { status: 409 },
+        )
+      }
+
+      return NextResponse.json(processedResult)
+    } catch (error) {
+      console.error('Processing error:', error)
+      return NextResponse.json(
+        {
+          error: 'Processing failed',
+          scheduledServices: [],
+          unassignedServices: [],
+          clusteringInfo: {
+            totalClusters: 0,
+            connectedPointsCount: 0,
+            outlierCount: 0,
+            performanceDuration: 0,
+          },
+        },
+        { status: 500 },
+      )
+    }
+  } catch (error) {
+    console.error('Schedule API error:', error)
+    return NextResponse.json(
+      {
+        error: 'Internal Server Error',
+        details: error.message,
+        scheduledServices: [],
+        unassignedServices: [],
+        clusteringInfo: {
+          totalClusters: 0,
+          connectedPointsCount: 0,
+          outlierCount: 0,
+          performanceDuration: 0,
+        },
+      },
+      { status: 500 },
+    )
+  }
 }
