@@ -171,25 +171,19 @@ function findBestNextService(
 
     // Calculate earliest possible start time after current service
     let tryStart = new Date(currentEnd.getTime() + travelTime * 60000)
-    const serviceRange = service.timeRange || [
-      new Date(service.time.range[0]),
-      new Date(service.time.range[1]),
-    ]
+    const serviceStart = new Date(service.time.range[0])
+    const serviceEnd = new Date(service.time.range[1])
     const serviceDuration = service.time.duration * 60000
 
     // Try different start times within the service's time window
-    while (tryStart <= serviceRange[1]) {
+    while (tryStart <= serviceEnd) {
       const tryEnd = new Date(tryStart.getTime() + serviceDuration)
 
       // Check if this time slot works
-      if (
-        tryStart >= serviceRange[0] &&
-        tryEnd <= serviceRange[1] &&
-        (!shiftEnd || tryEnd <= shiftEnd)
-      ) {
+      if (tryStart >= serviceStart && tryEnd <= serviceEnd && (!shiftEnd || tryEnd <= shiftEnd)) {
         // Calculate score based on multiple factors
         const timeGap = (tryStart - currentEnd) / 60000 // Gap in minutes
-        const timeFlexibility = (serviceRange[1] - serviceRange[0]) / 60000 // Window size in minutes
+        const timeFlexibility = (serviceEnd - serviceStart) / 60000 // Window size in minutes
         const preferredTime = new Date(service.time.preferred)
         const preferredDiff = Math.abs(tryStart - preferredTime) / 60000 // Minutes from preferred time
 
@@ -226,21 +220,19 @@ function processServices(services, distanceMatrix) {
 
     // Sort services by time window and start time, prioritizing overlapping windows
     const sortedServices = services
-      .map((service, index) => {
-        const timeRange = [new Date(service.time.range[0]), new Date(service.time.range[1])]
-        return {
-          ...service,
-          originalIndex: index,
-          borough: getBorough(service.location.latitude, service.location.longitude),
-          timeWindow: timeRange[1] - timeRange[0],
-          timeRange,
-        }
-      })
-      .filter(service => service && isValidTimeRange(service.timeRange[0], service.timeRange[1]))
+      .map((service, index) => ({
+        ...service,
+        originalIndex: index,
+        borough: getBorough(service.location.latitude, service.location.longitude),
+        timeWindow: new Date(service.time.range[1]) - new Date(service.time.range[0]),
+        startTime: new Date(service.time.range[0]),
+        endTime: new Date(service.time.range[1]),
+      }))
+      .filter(service => service && isValidTimeRange(service.startTime, service.endTime))
       .sort((a, b) => {
         // First group by rough time periods (morning/afternoon)
-        const aPeriod = Math.floor(a.timeRange[0].getHours() / 4)
-        const bPeriod = Math.floor(b.timeRange[0].getHours() / 4)
+        const aPeriod = Math.floor(a.startTime.getHours() / 4)
+        const bPeriod = Math.floor(b.startTime.getHours() / 4)
         if (aPeriod !== bPeriod) return aPeriod - bPeriod
 
         // Then by time window flexibility
@@ -250,7 +242,7 @@ function processServices(services, distanceMatrix) {
     // Group services by tech and date
     const techDayGroups = {}
     for (const service of sortedServices) {
-      const date = service.timeRange[0].toISOString().split('T')[0]
+      const date = service.startTime.toISOString().split('T')[0]
       const techId = service.tech.code
       const key = `${techId}_${date}`
 
@@ -301,9 +293,9 @@ function processServices(services, distanceMatrix) {
                 ...service,
                 cluster: clusterNum,
                 sequenceNumber: 1,
-                start: formatDate(service.timeRange[0]),
+                start: formatDate(service.startTime),
                 end: formatDate(
-                  new Date(service.timeRange[0].getTime() + service.time.duration * 60000),
+                  new Date(service.startTime.getTime() + service.time.duration * 60000),
                 ),
                 distanceFromPrevious: 0,
                 previousService: null,

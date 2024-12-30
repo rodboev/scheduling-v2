@@ -49,37 +49,141 @@ export function useSchedule(currentViewRange) {
 
   const processDataBatch = useCallback(startIndex => {
     const { scheduledServices, unassignedServices } = dataRef.current
+    console.log('Processing data batch:', {
+      startIndex,
+      scheduledServices: scheduledServices?.length,
+      unassignedServices: unassignedServices?.length,
+      sample: scheduledServices?.[0],
+    })
+
     const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
 
-    const newAssignedServices = scheduledServices
-      .slice(startIndex, endIndex)
-      .map(service => ({
+    const newAssignedServices = scheduledServices.slice(startIndex, endIndex).map(service => {
+      // Ensure all required fields exist
+      const tech = service.tech || {}
+      const location = service.location || {}
+      const time = service.time || {}
+      const comments = service.comments || {}
+      const route = service.route || {}
+
+      const processedService = {
         ...service,
+        // Calendar fields
+        id: service.id,
+        title: `${service.company} - ${tech.name || 'Unassigned'}`,
         start: new Date(service.start),
         end: new Date(service.end),
-      }))
+        resourceId: tech.code || `Tech ${(service.cluster || 0) + 1}`,
+        // Service component fields
+        tech: {
+          code: tech.code || `Tech ${(service.cluster || 0) + 1}`,
+          name: tech.name || 'Unassigned',
+          enforced: tech.enforced || false,
+        },
+        company: service.company || '',
+        location: {
+          id: location.id || '',
+          code: location.code || '',
+          address: location.address || '',
+          address2: location.address2 || '',
+        },
+        time: {
+          range: [
+            time.range?.[0] ? new Date(time.range[0]) : null,
+            time.range?.[1] ? new Date(time.range[1]) : null,
+          ],
+          preferred: time.preferred ? new Date(time.preferred) : null,
+          duration: time.duration || 0,
+          meta: time.meta || {},
+        },
+        comments: {
+          serviceSetup: comments.serviceSetup || '',
+          location: comments.location || '',
+        },
+        route: {
+          time: route.time || [],
+          days: route.days || '',
+        },
+      }
 
-    setResult(prevResult => ({
-      ...prevResult,
-      assignedServices: [
-        ...prevResult.assignedServices,
-        ...newAssignedServices,
-      ],
-    }))
+      if (startIndex === 0) {
+        console.log('Sample processed service:', processedService)
+      }
+
+      return processedService
+    })
+
+    setResult(prevResult => {
+      const newResult = {
+        ...prevResult,
+        assignedServices: [...prevResult.assignedServices, ...newAssignedServices],
+      }
+      console.log('Updated result:', {
+        assignedServices: newResult.assignedServices.length,
+        resources: newResult.resources.length,
+        sample: newResult.assignedServices[0],
+      })
+      return newResult
+    })
 
     if (endIndex < scheduledServices.length) {
       setTimeout(() => processDataBatch(endIndex), 0)
     } else {
-      // Process unassigned services and resources
-      const filteredUnassignedServices = unassignedServices.map(service => ({
-        ...service,
-        start: new Date(service.start),
-        end: new Date(service.end),
-      }))
+      // Process unassigned services with the same structure
+      const filteredUnassignedServices = unassignedServices.map(service => {
+        const tech = service.tech || {}
+        const location = service.location || {}
+        const time = service.time || {}
+        const comments = service.comments || {}
+        const route = service.route || {}
 
-      const techSet = new Set(
-        scheduledServices.map(service => service.resourceId),
-      )
+        return {
+          ...service,
+          id: service.id,
+          title: `${service.company} - Unassigned`,
+          start: new Date(service.start),
+          end: new Date(service.end),
+          resourceId: 'Unassigned',
+          tech: {
+            code: 'Unassigned',
+            name: 'Unassigned',
+            enforced: tech.enforced || false,
+          },
+          company: service.company || '',
+          location: {
+            id: location.id || '',
+            code: location.code || '',
+            address: location.address || '',
+            address2: location.address2 || '',
+          },
+          time: {
+            range: [
+              time.range?.[0] ? new Date(time.range[0]) : null,
+              time.range?.[1] ? new Date(time.range[1]) : null,
+            ],
+            preferred: time.preferred ? new Date(time.preferred) : null,
+            duration: time.duration || 0,
+            meta: time.meta || {},
+          },
+          comments: {
+            serviceSetup: comments.serviceSetup || '',
+            location: comments.location || '',
+          },
+          route: {
+            time: route.time || [],
+            days: route.days || '',
+          },
+        }
+      })
+
+      // Create resources from both assigned and unassigned services
+      const techSet = new Set([
+        ...scheduledServices.map(
+          service => service.tech?.code || `Tech ${(service.cluster || 0) + 1}`,
+        ),
+        'Unassigned',
+      ])
+
       const resources = Array.from(techSet)
         .map(techId => ({ id: techId, title: techId }))
         .sort((a, b) => {
@@ -87,10 +191,11 @@ export function useSchedule(currentViewRange) {
           const bIsGeneric = b.id.startsWith('Tech ')
           if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
           return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) -
-                Number.parseInt(b.id.split(' ')[1], 10)
+            ? Number.parseInt(a.id.split(' ')[1], 10) - Number.parseInt(b.id.split(' ')[1], 10)
             : a.id.localeCompare(b.id)
         })
+
+      console.log('Final resources:', resources)
 
       setResult(prevResult => ({
         ...prevResult,
@@ -106,45 +211,42 @@ export function useSchedule(currentViewRange) {
   const fetchSchedule = useCallback(async () => {
     setLoading(true)
     setProgress(0)
-    progressRef.current = 0
     setStatus('Initializing...')
 
-    const eventSource = new EventSource(
-      `/api/schedule?start=${dateRange.start}&end=${dateRange.end}`,
-    )
+    try {
+      console.log('Fetching schedule for date range:', dateRange)
+      const response = await fetch(`/api/schedule?start=${dateRange.start}&end=${dateRange.end}`)
 
-    eventSource.onmessage = event => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'progress') {
-        const newProgress = data.data
-        progressRef.current = newProgress
-        if (newProgress === 0 || newProgress === 1) {
-          // Immediately update for first and last progress
-          setProgress(newProgress)
-        } else {
-          debouncedSetProgress(newProgress)
-        }
-        setStatus('Scheduling...')
-      } else if (data.type === 'result') {
-        eventSource.close()
-        dataRef.current = data
-        setStatus('Rendering...')
-        setResult({
-          assignedServices: [],
-          resources: [],
-          filteredUnassignedServices: [],
-        })
-        processDataBatch(0)
+      if (!response.ok) {
+        throw new Error('Failed to fetch schedule')
       }
-    }
 
-    eventSource.onerror = error => {
-      console.error('EventSource failed:', error)
-      eventSource.close()
-      setLoading(false)
+      const data = await response.json()
+      console.log('Schedule API response:', {
+        scheduledServices: data.scheduledServices?.length,
+        unassignedServices: data.unassignedServices?.length,
+        sample: data.scheduledServices?.[0],
+      })
+
+      dataRef.current = {
+        scheduledServices: data.scheduledServices || [],
+        unassignedServices: data.unassignedServices || [],
+      }
+
+      setStatus('Rendering...')
+      setResult({
+        assignedServices: [],
+        resources: [],
+        filteredUnassignedServices: [],
+      })
+      processDataBatch(0)
+    } catch (error) {
+      console.error('Error fetching schedule:', error)
       setStatus('Error occurred')
+    } finally {
+      setLoading(false)
     }
-  }, [dateRange, processDataBatch, debouncedSetProgress])
+  }, [dateRange, processDataBatch])
 
   useEffect(() => {
     fetchSchedule()
@@ -154,11 +256,8 @@ export function useSchedule(currentViewRange) {
     return [...result.assignedServices, ...result.filteredUnassignedServices]
   }, [result])
 
-  const {
-    updateServiceEnforcement,
-    updateAllServicesEnforcement,
-    allServicesEnforced,
-  } = useEnforcement(allServices, fetchSchedule)
+  const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
+    useEnforcement(allServices, fetchSchedule)
 
   return {
     ...result,

@@ -26,14 +26,8 @@ export default function BigCalendar() {
   const defaultDate = new Date(2024, 8, 2)
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now())
 
-  const {
-    date,
-    view,
-    currentViewRange,
-    handleView,
-    handleNavigate,
-    handleRangeChange,
-  } = useCalendar(defaultDate)
+  const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
+    useCalendar(defaultDate)
 
   const {
     assignedServices,
@@ -47,6 +41,17 @@ export default function BigCalendar() {
     allServicesEnforced,
     refetchSchedule,
   } = useSchedule(currentViewRange)
+
+  // Add debugging logs
+  useEffect(() => {
+    console.log('Calendar data:', {
+      assignedServices: assignedServices?.length,
+      resources: resources?.length,
+      unassignedServices: unassignedServices?.length,
+      sample: assignedServices?.[0],
+      currentViewRange,
+    })
+  }, [assignedServices, resources, unassignedServices, currentViewRange])
 
   // Effect to ensure UI updates regularly during scheduling
   useEffect(() => {
@@ -62,19 +67,20 @@ export default function BigCalendar() {
   }, [isScheduling, lastUpdateTime])
 
   const handleForceReschedule = useCallback(() => {
+    console.log('Force reschedule triggered')
     refetchSchedule()
   }, [refetchSchedule])
 
   // Create an absolutely empty event component
   const eventComponent = useCallback(
-    props => (
-      <div className="select-none">
-        <Service
-          service={props.event}
-          updateServiceEnforcement={updateServiceEnforcement}
-        />
-      </div>
-    ),
+    props => {
+      console.log('Rendering event:', props.event)
+      return (
+        <div className="select-none">
+          <Service service={props.event} updateServiceEnforcement={updateServiceEnforcement} />
+        </div>
+      )
+    },
     [updateServiceEnforcement],
   )
 
@@ -94,10 +100,7 @@ export default function BigCalendar() {
   return (
     <div className="flex h-screen">
       {isScheduling && (
-        <ProgressBar
-          schedulingStatus={schedulingStatus}
-          schedulingProgress={schedulingProgress}
-        />
+        <ProgressBar schedulingStatus={schedulingStatus} schedulingProgress={schedulingProgress} />
       )}
       <div className="flex flex-grow flex-col overflow-auto">
         <Header>
@@ -111,10 +114,7 @@ export default function BigCalendar() {
           <Logo />
           <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
-        <div
-          className="flex-grow p-4"
-          onClickCapture={handleClickCapture}
-        >
+        <div className="flex-grow p-4" onClickCapture={handleClickCapture}>
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"

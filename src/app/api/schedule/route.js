@@ -16,6 +16,7 @@ function getCacheKey(start, end) {
 
 export async function GET(request) {
   const params = Object.fromEntries(request.nextUrl.searchParams)
+  console.log('Schedule API called with params:', params)
 
   try {
     const cacheKey = getCacheKey(params.start, params.end)
@@ -37,23 +38,25 @@ export async function GET(request) {
       },
     })
 
+    console.log('Services API response:', {
+      count: response.data.length,
+      sample: response.data[0],
+    })
+
     const services = response.data.filter(
       service => service.time.range[0] !== null && service.time.range[1] !== null,
     )
 
+    console.log('Filtered services:', {
+      count: services.length,
+      sample: services[0],
+    })
+
     if (!services.length) {
+      console.log('No services found')
       return NextResponse.json({
         scheduledServices: [],
         unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          outlierCount: 0,
-          totalClusters: 0,
-          clusterSizes: [],
-          clusterDistribution: [],
-        },
       })
     }
 
@@ -64,19 +67,15 @@ export async function GET(request) {
     const distanceMatrix = await distanceMatrixPromise
     if (!Array.isArray(distanceMatrix) || distanceMatrix.length === 0) {
       console.warn('Invalid distance matrix')
-      return NextResponse.json({
+      const result = {
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          outlierCount: services.length,
-          totalClusters: 0,
-          clusterSizes: [],
-          clusterDistribution: [],
-        },
+      }
+      console.log('Returning unscheduled services:', {
+        count: result.scheduledServices.length,
+        sample: result.scheduledServices[0],
       })
+      return NextResponse.json(result)
     }
 
     const result = await new Promise((resolve, reject) => {
@@ -98,6 +97,12 @@ export async function GET(request) {
       })
 
       worker.postMessage({ services, distanceMatrix })
+    })
+
+    console.log('Worker result:', {
+      scheduledCount: result.scheduledServices?.length,
+      unassignedCount: result.unassignedServices?.length,
+      sample: result.scheduledServices?.[0],
     })
 
     // Update cache for this day
@@ -124,15 +129,6 @@ export async function GET(request) {
         details: error.message,
         scheduledServices: [],
         unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          outlierCount: 0,
-          totalClusters: 0,
-          clusterSizes: [],
-          clusterDistribution: [],
-        },
       },
       { status: 500 },
     )
