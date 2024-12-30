@@ -49,10 +49,18 @@ export function useSchedule(currentViewRange) {
 
   const processDataBatch = useCallback(startIndex => {
     const { scheduledServices, unassignedServices } = dataRef.current
+    const totalServices = scheduledServices?.length || 0
+
+    // Update progress based on how many services we've processed
+    const newProgress = Math.min(startIndex / totalServices, 0.9) // Cap at 90% until final render
+    setProgress(newProgress)
+    setStatus('Rendering services...')
+
     console.log('Processing data batch:', {
       startIndex,
       scheduledServices: scheduledServices?.length,
       unassignedServices: unassignedServices?.length,
+      progress: Math.round(newProgress * 100) + '%',
       sample: scheduledServices?.[0],
     })
 
@@ -118,15 +126,11 @@ export function useSchedule(currentViewRange) {
         ...prevResult,
         assignedServices: [...prevResult.assignedServices, ...newAssignedServices],
       }
-      console.log('Updated result:', {
-        assignedServices: newResult.assignedServices.length,
-        resources: newResult.resources.length,
-        sample: newResult.assignedServices[0],
-      })
       return newResult
     })
 
     if (endIndex < scheduledServices.length) {
+      // Continue processing next batch
       setTimeout(() => processDataBatch(endIndex), 0)
     } else {
       // Process unassigned services with the same structure
@@ -195,16 +199,16 @@ export function useSchedule(currentViewRange) {
             : a.id.localeCompare(b.id)
         })
 
-      console.log('Final resources:', resources)
-
       setResult(prevResult => ({
         ...prevResult,
         filteredUnassignedServices,
         resources,
       }))
 
+      // Final progress update
+      setProgress(1)
+      setStatus('Complete')
       setLoading(false)
-      setStatus('')
     }
   }, [])
 
@@ -215,11 +219,17 @@ export function useSchedule(currentViewRange) {
 
     try {
       console.log('Fetching schedule for date range:', dateRange)
+      setStatus('Fetching services...')
+      setProgress(0.1)
+
       const response = await fetch(`/api/schedule?start=${dateRange.start}&end=${dateRange.end}`)
 
       if (!response.ok) {
         throw new Error('Failed to fetch schedule')
       }
+
+      setProgress(0.3)
+      setStatus('Processing data...')
 
       const data = await response.json()
       console.log('Schedule API response:', {
@@ -227,6 +237,9 @@ export function useSchedule(currentViewRange) {
         unassignedServices: data.unassignedServices?.length,
         sample: data.scheduledServices?.[0],
       })
+
+      setProgress(0.4)
+      setStatus('Preparing services...')
 
       dataRef.current = {
         scheduledServices: data.scheduledServices || [],
@@ -239,11 +252,12 @@ export function useSchedule(currentViewRange) {
         resources: [],
         filteredUnassignedServices: [],
       })
+
+      // Start processing batches
       processDataBatch(0)
     } catch (error) {
       console.error('Error fetching schedule:', error)
       setStatus('Error occurred')
-    } finally {
       setLoading(false)
     }
   }, [dateRange, processDataBatch])

@@ -12,7 +12,7 @@ const MapView = dynamic(() => import('./components/MapView'), {
 
 const MapPage = () => {
   return (
-    <div className={`h-screen w-screen ${inter.className}`}>
+    <div className={`h-screen w-screen bg-[#f7f8f8] ${inter.className}`}>
       <MapView />
     </div>
   )
