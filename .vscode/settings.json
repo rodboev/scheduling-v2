@@ -2,5 +2,7 @@
   "explorer.autoReveal": true,
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
-  "workbench.list.smoothScrolling": true
+  "workbench.list.smoothScrolling": true,
+  "editor.fontSize": 16,
+  "terminal.integrated.fontSize": 15
 }

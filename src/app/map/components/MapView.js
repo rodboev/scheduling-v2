@@ -164,29 +164,27 @@ const MapView = () => {
       setClusteredServices([])
       setClusteringInfo(null)
 
-      const response = await axios.get('/api/cluster-single', {
+      const response = await axios.get('/api/schedule', {
         params: {
           start: startDate,
           end: endDate,
-          clusterUnclustered,
-          minPoints,
-          maxPoints,
-          algorithm,
         },
       })
 
-      if (!response.data?.clusteredServices) {
-        console.error('Invalid response format:', response.data)
+      const data = response.data
+
+      if (!data.scheduledServices) {
+        console.error('Invalid response format:', data)
         return
       }
 
-      if (response.data.clusteredServices.length === 0) {
+      if (data.scheduledServices.length === 0) {
         console.log('No services found for the specified date range')
         return
       }
 
       // Filter services by time window
-      const filteredServices = response.data.clusteredServices.filter(service => {
+      const filteredServices = data.scheduledServices.filter(service => {
         const serviceTimeStart = new Date(service.time.range[0])
         const serviceTimeEnd = new Date(service.time.range[1])
         const scheduledStart = new Date(service.start)
@@ -214,16 +212,14 @@ const MapView = () => {
         start: new Date(startDate).toLocaleString(),
         end: new Date(endDate).toLocaleString(),
       })
-      console.log('Original services:', response.data.clusteredServices.length)
+      console.log('Original services:', data.scheduledServices.length)
       console.log('Filtered services:', filteredServices.length)
       console.log('Sample filtered service:', filteredServices[0])
 
-      const servicesWithDistance = await addDistanceInfo(filteredServices)
-
       // Add debug logging
       console.log('======================')
-      console.log('Services with distance:', servicesWithDistance.length)
-      console.log('Sample service:', servicesWithDistance[0])
+      console.log('Services:', filteredServices.length)
+      console.log('Sample service:', filteredServices[0])
       console.log(
         'Clusters:',
         new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
@@ -234,53 +230,25 @@ const MapView = () => {
 
       // Add logging here - moved after filtering
       try {
-        console.log('Services array type:', Array.isArray(servicesWithDistance))
-        console.log('ClusteringInfo:', {
-          ...response.data.clusteringInfo,
-          totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
-          connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
-          outlierCount: filteredServices.filter(s => s.cluster === -1).length,
-          performanceDuration: response.data.clusteringInfo.performanceDuration,
-        })
+        console.log('Services array type:', Array.isArray(filteredServices))
+        console.log('ClusteringInfo:', data.clusteringInfo)
 
         logMapActivity({
-          services: servicesWithDistance,
-          clusteringInfo: {
-            ...response.data.clusteringInfo,
-            // Update clustering info to reflect filtered services
-            totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
-            connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
-            outlierCount: filteredServices.filter(s => s.cluster === -1).length,
-            performanceDuration: response.data.clusteringInfo.performanceDuration,
-          },
-          algorithm,
+          services: filteredServices,
+          clusteringInfo: data.clusteringInfo,
         })
-        console.log('logMapActivity completed')
       } catch (error) {
         console.error('Error in logMapActivity:', error)
       }
 
-      setClusteredServices(servicesWithDistance)
-      setClusteringInfo({
-        ...response.data.clusteringInfo,
-        // Update clustering info to reflect filtered services
-        totalClusters: new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
-        connectedPointsCount: filteredServices.filter(s => s.cluster >= 0).length,
-        outlierCount: filteredServices.filter(s => s.cluster === -1).length,
-        performanceDuration: response.data.clusteringInfo.performanceDuration,
-      })
+      setClusteredServices(filteredServices)
+      setClusteringInfo(data.clusteringInfo)
+      setIsLoading(false)
     } catch (error) {
-      console.error('Error fetching clustered services:', error)
-      if (error.response) {
-        console.error('Server error:', error.response.data)
-      }
-      // Reset state on error
-      setClusteredServices([])
-      setClusteringInfo(null)
-    } finally {
+      console.error('Error fetching services:', error)
       setIsLoading(false)
     }
-  }, [startDate, endDate, clusterUnclustered, minPoints, maxPoints, algorithm, addDistanceInfo])
+  }, [startDate, endDate])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
