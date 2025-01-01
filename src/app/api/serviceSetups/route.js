@@ -192,12 +192,12 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // Get first 20 techs, filter serviceSetups to only include those techs
-  const numTechs = 10
-  const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, numTechs)
-  console.log(`First ${numTechs} unique techs: ${uniqueTechs.join(', ')}`)
-  serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
-  console.log(`Filtered to first ${numTechs} techs, total setups:`, serviceSetups.length)
+  // // Get first 20 techs, filter serviceSetups to only include those techs
+  // const numTechs = 10
+  // const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, numTechs)
+  // console.log(`First ${numTechs} unique techs: ${uniqueTechs.join(', ')}`)
+  // serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
+  // console.log(`Filtered to first ${numTechs} techs, total setups:`, serviceSetups.length)
 
   // Filter by specific IDs if idParam is present
   if (idParam) {

@@ -212,14 +212,41 @@ export async function GET(request) {
         return new Response(
           JSON.stringify({
             error: 'Request superseded',
-            clusteredServices: [],
+            scheduledServices: [],
           }),
           { status: 409 },
         )
       }
 
+      // Group services by cluster
+      const clusters = processedResult.clusteredServices
+        .filter(service => service.cluster >= 0 && service.start)
+        .reduce((acc, service) => {
+          if (!acc[service.cluster]) acc[service.cluster] = []
+          acc[service.cluster].push(service)
+          return acc
+        }, {})
+
+      // Sort and assign sequence numbers within each cluster
+      const servicesWithSequence = Object.values(clusters).flatMap(clusterServices => {
+        return clusterServices
+          .sort((a, b) => new Date(a.start) - new Date(b.start))
+          .map((service, index) => ({
+            ...service,
+            sequenceNumber: index + 1,
+          }))
+      })
+
+      // Add back any services without clusters or start times
+      const unscheduledServices = processedResult.clusteredServices
+        .filter(service => service.cluster < 0 || !service.start)
+        .map(service => ({
+          ...service,
+          sequenceNumber: null,
+        }))
+
       const finalResult = {
-        clusteredServices: processedResult.clusteredServices,
+        scheduledServices: [...servicesWithSequence, ...unscheduledServices],
         clusteringInfo: {
           performanceDuration: processedResult.performanceDuration || 0,
           connectedPointsCount: processedResult.clusteredServices.length || 0,
@@ -240,7 +267,7 @@ export async function GET(request) {
       return new Response(
         JSON.stringify({
           error: 'Processing failed',
-          clusteredServices: [],
+          scheduledServices: [],
         }),
         { status: 500 },
       )
@@ -249,9 +276,8 @@ export async function GET(request) {
     console.error('Clustering API error:', error)
     return new Response(
       JSON.stringify({
-        error: 'Internal Server Error',
-        details: error.message,
-        clusteredServices: [],
+        error: error.message,
+        scheduledServices: [],
       }),
       { status: 500 },
     )
