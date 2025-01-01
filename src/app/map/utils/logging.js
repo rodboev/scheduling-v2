@@ -11,7 +11,6 @@ export async function logMapActivity({ services, clusteringInfo }) {
     console.log(`Runtime: ${clusteringInfo.performanceDuration}ms`)
     console.log(`Total clusters: ${clusteringInfo.totalClusters}`)
     console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
-    console.log(`Outliers: ${clusteringInfo.outlierCount}`)
 
     // Log cluster statistics
     const clusters = new Set(services.map(s => s.cluster).filter(c => c >= 0))

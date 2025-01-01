@@ -401,7 +401,6 @@ function processServices(services, distanceMatrix) {
         algorithm: 'shifts',
         performanceDuration: Number.parseInt(duration),
         connectedPointsCount: processedServices.length,
-        outlierCount: services.length - processedServices.length,
         totalClusters: clusters.size,
         clusterSizes,
         clusterDistribution: Array.from(clusters).map(c => ({
@@ -436,7 +435,6 @@ parentPort.on('message', async ({ services, distanceMatrix }) => {
         algorithm: 'shifts',
         performanceDuration: 0,
         connectedPointsCount: 0,
-        outlierCount: services.length,
         totalClusters: 0,
         clusterSizes: [],
         clusterDistribution: [],
