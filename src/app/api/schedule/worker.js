@@ -254,7 +254,6 @@ function processServices(services, distanceMatrix) {
 
     // Process each tech-day group
     const processedServices = []
-    const unscheduledServices = []
     let clusterNum = 0
 
     for (const [key, groupServices] of Object.entries(techDayGroups)) {
@@ -398,7 +397,6 @@ function processServices(services, distanceMatrix) {
 
     return {
       scheduledServices: processedServices,
-      unassignedServices: unscheduledServices,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: Number.parseInt(duration),
