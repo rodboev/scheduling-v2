@@ -1,30 +1,164 @@
 // src/app/components/Service.js
+'use client'
+
 import React, { useState, useRef } from 'react'
 import EnforceSwitch from '@/app/calendar/EnforceSwitch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
+import { TECH_SPEED_MPH } from '@/app/utils/constants'
 import dayjs from 'dayjs'
 import { Car, Clock } from 'lucide-react'
+import { Popup } from 'react-leaflet'
 
-export default function Service({ service, updateServiceEnforcement }) {
+function getClusterLabel(cluster, reason) {
+  if (cluster >= 0) return `${cluster}`
+  return `${cluster} (${reason || 'unclustered'})`
+}
+
+function formatBorough(borough) {
+  if (!borough) return 'Unknown'
+  if (borough === 'NJ') return 'New Jersey'
+  return capitalize(borough)
+}
+
+function calculateTravelTime(distance) {
+  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
+}
+
+export default function Service({ service, updateServiceEnforcement, variant = 'calendar' }) {
   const [isOpen, setIsOpen] = useState(false)
-  const timeoutRef = useRef(null)
   const [offset, setOffset] = useState(0)
-
   const pageHeight = document.documentElement.scrollHeight
 
   const handleMouseEnter = e => {
-    const cursorY = e.clientY + window.scrollY
-    setOffset(pageHeight - cursorY)
-    clearTimeout(timeoutRef.current)
+    if (variant === 'calendar') {
+      const cursorY = e.clientY + window.scrollY
+      setOffset(pageHeight - cursorY)
+    }
     setIsOpen(true)
   }
 
   const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
-      setIsOpen(false)
-    }, 300)
+    setIsOpen(false)
+  }
+
+  const ServiceContent = () => (
+    <div className="w-full max-w-sm text-sm leading-relaxed">
+      {updateServiceEnforcement && (
+        <div className="float-right mb-2 ml-4">
+          <EnforceSwitch
+            id={`enforce-service-setup-${service.id}`}
+            checked={service.tech.enforced}
+            onCheckedChange={checked => updateServiceEnforcement(service.id.split('-')[0], checked)}
+          >
+            Enforce tech
+          </EnforceSwitch>
+          <div className="text-center">Tech: {service.tech.code}</div>
+        </div>
+      )}
+
+      <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
+        <a
+          href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
+          target="_new"
+        >
+          <div>{capitalize(service.company)}</div>
+          <div className="text-sm font-semibold">#{service.location.code}</div>
+        </a>
+      </h3>
+
+      {service.borough && (
+        <div className="mb-2 font-semibold">Borough: {formatBorough(service.borough)}</div>
+      )}
+
+      {/* Format time display based on available data */}
+      {service?.start && service?.end && (
+        <div className="my-2 flex items-center gap-x-2 font-semibold">
+          <Clock strokeWidth={2.5} className="h-4 w-4" />
+          <span className="leading-none">
+            {dayjs(service.time.range[0]).format('M/D')} {formatTime(service.start)} -{' '}
+            {formatTime(service.end)}
+          </span>
+        </div>
+      )}
+
+      {/* Distance from previous point */}
+      {service.distanceFromPrevious && (
+        <div className="mb-2">
+          <div className="flex items-center gap-x-2">
+            <Car size={32} strokeWidth={2.5} className="h-4 w-4" />
+            <span className="whitespace-nowrap font-semibold">
+              {service.distanceFromPrevious.toFixed(2)} mi
+            </span>
+          </div>
+          {service.previousCompany && (
+            <div className="text-xs text-gray-600">
+              {calculateTravelTime(service.distanceFromPrevious)} min from {service.previousCompany}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mb-2">
+        {service.location.address}
+        <br />
+        {service.location.address2}
+      </div>
+
+      <div className="whitespace-nowrap">
+        Preferred Time: {dayjs(service.time.preferred).format('M/D h:mma')}
+      </div>
+      <div>Duration: {service.time.duration} min</div>
+      <div>
+        Time Range: {dayjs(service.time.range[0]).format('M/D h:mma')} -{' '}
+        {dayjs(service.time.range[1]).format('h:mma')}
+      </div>
+
+      {service.route && (
+        <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
+          <div>Route Time: {service.route?.time.join(' - ')}</div>
+          <div>Route Days: {service.route?.days}</div>
+        </div>
+      )}
+
+      {service.cluster !== undefined && (
+        <div className="mt-3 font-bold">
+          Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
+          {service.wasStatus && service.cluster !== service.wasStatus
+            ? ` (was ${service.wasStatus})`
+            : ''}
+        </div>
+      )}
+
+      {/* Comments */}
+      {/* {service.comments && (
+        <div className="space-y-2">
+          <div className="">
+            <p className="break-words text-sm">
+              <span className="block font-semibold">Service Setup comments:</span>
+              {service.comments.serviceSetup}
+            </p>
+          </div>
+          {service.comments.location && service.comments.location.trim() !== '' && (
+            <div className="my-2">
+              <p className="break-words text-sm">
+                <span className="block font-semibold">Location comments:</span>
+                {service.comments.location}
+              </p>
+            </div>
+          )}
+        </div>
+      )} */}
+    </div>
+  )
+
+  if (variant === 'map') {
+    return (
+      <Popup>
+        <ServiceContent />
+      </Popup>
+    )
   }
 
   return (
@@ -38,7 +172,7 @@ export default function Service({ service, updateServiceEnforcement }) {
         </div>
       </PopoverTrigger>
       <PopoverContent
-        className="w-full max-w-sm text-sm leading-relaxed"
+        className="w-full max-w-sm text-sm leading-relaxed transition-opacity duration-150"
         side="top"
         align="right"
         sideOffset={offset < 300 ? -50 : -300}
@@ -46,96 +180,7 @@ export default function Service({ service, updateServiceEnforcement }) {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="float-right mb-2 ml-4">
-          <EnforceSwitch
-            id={`enforce-service-setup-${service.id}`}
-            checked={service.tech.enforced}
-            onCheckedChange={checked => updateServiceEnforcement(service.id.split('-')[0], checked)}
-          >
-            Enforce tech
-          </EnforceSwitch>
-          <div className="text-center">Tech: {service.tech.code}</div>
-        </div>
-
-        <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
-          <a
-            href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
-            target="_new"
-          >
-            <div>{capitalize(service.company)}</div>
-            <div className="text-sm font-semibold">#{service.location.code}</div>
-          </a>
-        </h3>
-
-        {/* Format time display based on available data */}
-        {service?.start && service?.end && (
-          <div className="my-2 flex items-center gap-x-2 font-semibold">
-            <Clock strokeWidth={2.5} className="h-4 w-4" />
-            <span className="leading-none">
-              {dayjs(service.start).format('M/D')} {formatTime(service.start)}-
-              {formatTime(service.end)}
-            </span>
-          </div>
-        )}
-
-        {/* Distance from previous point */}
-        {service.distanceFromPrevious && (
-          <div className="mb-2">
-            <div className="flex items-center gap-x-2">
-              <Car size={32} strokeWidth={2.5} className="h-4 w-4" />
-              <span className="whitespace-nowrap font-semibold">
-                {service.distanceFromPrevious.toFixed(2)} mi
-              </span>
-            </div>
-            {service.previousCompany && (
-              <div className="text-xs text-gray-600">from {service.previousCompany}</div>
-            )}
-          </div>
-        )}
-
-        <p className="mb-2">
-          {service.location.address}
-          <br />
-          {service.location.address2}
-        </p>
-
-        <p className="whitespace-nowrap">
-          {dayjs(service.start).format('M/D')} {formatTime(service.start)} -{' '}
-          {dayjs(service.end).format('M/D')} {formatTime(service.end)}
-        </p>
-        <p className="whitespace-nowrap">
-          Preferred Time: {dayjs(service.time?.preferred).format('h:mma')}
-        </p>
-        <p>Duration: {service.time.duration} min</p>
-        <p>
-          Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
-          {dayjs(service.time.range[0]).format('h:mma')} -{' '}
-          {dayjs(service.time.range[1]).format('h:mma')} (from "{service.time.meta.originalRange}")
-        </p>
-
-        <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
-          <p>Route Time: {service.route?.time.join(' - ')}</p>
-          <p>Route Days: {service.route?.days}</p>
-        </div>
-
-        {service.comments && (
-          <div className="space-y-2">
-            <div className="">
-              <p className="break-words text-sm">
-                <span className="block font-semibold">Service Setup comments:</span>
-                {service.comments.serviceSetup}
-              </p>
-            </div>
-            {service.comments.location && service.comments.location.trim() !== '' && (
-              <div className="my-2">
-                <p className="break-words text-sm">
-                  <span className="block font-semibold">Location comments:</span>
-                  {service.comments.location}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+        <ServiceContent />
       </PopoverContent>
     </Popover>
   )

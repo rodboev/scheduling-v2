@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { scheduleServices } from '@/app/api/cluster/scheduling'
 import MapMarker from '@/app/map/components/MapMarker'
-import MapPopup from '@/app/map/components/MapPopup'
+import Service from '@/app/components/Service'
 import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
@@ -509,10 +509,7 @@ const MapView = () => {
                     setActivePopup={setActivePopup}
                     index={index}
                   >
-                    <MapPopup
-                      service={service}
-                      updateServiceEnforcement={updateServiceEnforcement}
-                    />
+                    <Service service={service} variant="map" />
                   </MapMarker>,
                 )
                 if (service.cluster >= 0) {
