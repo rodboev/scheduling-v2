@@ -1,4 +1,3 @@
-import { logSchedule } from './scheduleLogger'
 import { formatTime } from '@/app/utils/dateHelpers'
 
 export async function logMapActivity({ services, clusteringInfo }) {
@@ -6,10 +5,6 @@ export async function logMapActivity({ services, clusteringInfo }) {
     console.log('Logging map activity...')
     console.log('Services:', services.length)
     console.log('Clustering info:', clusteringInfo)
-
-    // Log the schedule details
-    const scheduleLog = logSchedule(services)
-    console.log(scheduleLog)
 
     // Log clustering performance metrics
     console.log('\nClustering Performance:')

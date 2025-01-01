@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useMemo, useCallback, useEffect, useState } from 'react'
-import EnforceSwitch from '@/app/components/EnforceSwitch'
+import EnforceSwitch from '@/app/calendar/EnforceSwitch'
 import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
 import ProgressBar from '@/app/components/ProgressBar'

@@ -1,7 +1,7 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import BigCalendar from '@/app/components/BigCalendar'
+import BigCalendar from '@/app/calendar/BigCalendar'
 
 const queryClient = new QueryClient({
   defaultOptions: {

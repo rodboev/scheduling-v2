@@ -1,11 +1,7 @@
 // src/app/components/Service.js
 import React, { useState, useRef } from 'react'
-import EnforceSwitch from '@/app/components/EnforceSwitch'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/app/components/ui/popover'
+import EnforceSwitch from '@/app/calendar/EnforceSwitch'
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
 import dayjs from 'dayjs'
@@ -32,15 +28,9 @@ export default function Service({ service, updateServiceEnforcement }) {
   }
 
   return (
-    <Popover
-      open={isOpen}
-      onOpenChange={setIsOpen}
-    >
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <div
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
+        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
           <span className="inline-block text-sm leading-none">
             {formatTimeRange(service.start, service.end)} —
           </span>
@@ -60,9 +50,7 @@ export default function Service({ service, updateServiceEnforcement }) {
           <EnforceSwitch
             id={`enforce-service-setup-${service.id}`}
             checked={service.tech.enforced}
-            onCheckedChange={checked =>
-              updateServiceEnforcement(service.id.split('-')[0], checked)
-            }
+            onCheckedChange={checked => updateServiceEnforcement(service.id.split('-')[0], checked)}
           >
             Enforce tech
           </EnforceSwitch>
@@ -75,19 +63,14 @@ export default function Service({ service, updateServiceEnforcement }) {
             target="_new"
           >
             <div>{capitalize(service.company)}</div>
-            <div className="text-sm font-semibold">
-              #{service.location.code}
-            </div>
+            <div className="text-sm font-semibold">#{service.location.code}</div>
           </a>
         </h3>
 
         {/* Format time display based on available data */}
         {service?.start && service?.end && (
           <div className="my-2 flex items-center gap-x-2 font-semibold">
-            <Clock
-              strokeWidth={2.5}
-              className="h-4 w-4"
-            />
+            <Clock strokeWidth={2.5} className="h-4 w-4" />
             <span className="leading-none">
               {dayjs(service.start).format('M/D')} {formatTime(service.start)}-
               {formatTime(service.end)}
@@ -99,19 +82,13 @@ export default function Service({ service, updateServiceEnforcement }) {
         {service.distanceFromPrevious && (
           <div className="mb-2">
             <div className="flex items-center gap-x-2">
-              <Car
-                size={32}
-                strokeWidth={2.5}
-                className="h-4 w-4"
-              />
+              <Car size={32} strokeWidth={2.5} className="h-4 w-4" />
               <span className="whitespace-nowrap font-semibold">
                 {service.distanceFromPrevious.toFixed(2)} mi
               </span>
             </div>
             {service.previousCompany && (
-              <div className="text-xs text-gray-600">
-                from {service.previousCompany}
-              </div>
+              <div className="text-xs text-gray-600">from {service.previousCompany}</div>
             )}
           </div>
         )}
@@ -133,8 +110,7 @@ export default function Service({ service, updateServiceEnforcement }) {
         <p>
           Calc Range: {dayjs(service.time.range[0]).format('M/D')}{' '}
           {dayjs(service.time.range[0]).format('h:mma')} -{' '}
-          {dayjs(service.time.range[1]).format('h:mma')} (from "
-          {service.time.meta.originalRange}")
+          {dayjs(service.time.range[1]).format('h:mma')} (from "{service.time.meta.originalRange}")
         </p>
 
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
@@ -146,23 +122,18 @@ export default function Service({ service, updateServiceEnforcement }) {
           <div className="space-y-2">
             <div className="">
               <p className="break-words text-sm">
-                <span className="block font-semibold">
-                  Service Setup comments:
-                </span>
+                <span className="block font-semibold">Service Setup comments:</span>
                 {service.comments.serviceSetup}
               </p>
             </div>
-            {service.comments.location &&
-              service.comments.location.trim() !== '' && (
-                <div className="my-2">
-                  <p className="break-words text-sm">
-                    <span className="block font-semibold">
-                      Location comments:
-                    </span>
-                    {service.comments.location}
-                  </p>
-                </div>
-              )}
+            {service.comments.location && service.comments.location.trim() !== '' && (
+              <div className="my-2">
+                <p className="break-words text-sm">
+                  <span className="block font-semibold">Location comments:</span>
+                  {service.comments.location}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </PopoverContent>
