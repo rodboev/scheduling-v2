@@ -38,13 +38,23 @@ export async function logMapActivity({ services, clusteringInfo }) {
 }
 
 function logClusterServices(clusterServices) {
-  console.log(
-    `Cluster ${clusterServices[0].cluster} (${formatTime(clusterServices[0].start)} - ${formatTime(clusterServices[clusterServices.length - 1].end)}):`,
-  )
+  const firstService = clusterServices[0]
+  const lastService = clusterServices[clusterServices.length - 1]
+  const startTime = new Date(firstService.start).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  const endTime = new Date(lastService.end).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  console.log(`\nCluster ${firstService.cluster} (${startTime} - ${endTime}):`)
 
   // Log cluster services
   for (const [i, service] of clusterServices.entries()) {
-    const start = new Date(service.start)
     const distance = service.distanceFromPrevious || 0
     const travelTime = service.travelTimeFromPrevious || 0
 
@@ -67,9 +77,8 @@ function logClusterServices(clusterServices) {
   const totalDistance = distances.length > 0 ? distances.reduce((sum, d) => sum + d, 0) : 0
   const totalTravelTime = travelTimes.length > 0 ? travelTimes.reduce((sum, t) => sum + t, 0) : 0
 
-  console.log('\nCluster Stats:')
-  console.log(`  Total Distance: ${totalDistance.toFixed(2)} mi`)
-  console.log(`  Total Travel Time: ${totalTravelTime} min`)
+  console.log(`Distance: ${totalDistance.toFixed(2)} mi`)
+  console.log(`Travel time: ${totalTravelTime} min\n`)
 }
 
 // Format service time for logging
@@ -80,24 +89,24 @@ const formatServiceTime = service => {
   const startTime = start.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   })
   const endTime = end.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   })
   const rangeStart = new Date(service.time.range[0])
   const rangeEnd = new Date(service.time.range[1])
   const rangeStartTime = rangeStart.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   })
   const rangeEndTime = rangeEnd.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   })
-  return `${date} ${startTime}-${endTime}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${rangeStartTime}-${rangeEndTime})`
+  return `(${service.sequenceNumber || '?'}) ${date} ${startTime}-${endTime}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${rangeStartTime}-${rangeEndTime})`
 }

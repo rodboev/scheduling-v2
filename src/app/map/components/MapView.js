@@ -18,6 +18,7 @@ import { COLORS } from '@/app/map/utils/colors'
 import 'leaflet-polylinedecorator'
 import PolylineWithArrow from './PolylineWithArrow'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import MapService from '@/app/map/components/MapService'
 
 // Add debug logging for import
 console.log('logMapActivity imported:', typeof logMapActivity)
@@ -437,7 +438,7 @@ const MapView = () => {
                     setActivePopup={setActivePopup}
                     index={index}
                   >
-                    <Service service={service} variant="map" />
+                    <MapService service={service} />
                   </MapMarker>,
                 )
                 if (service.cluster >= 0) {
