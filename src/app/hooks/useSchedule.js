@@ -77,13 +77,13 @@ export function useSchedule(currentViewRange) {
         ...service,
         // Calendar fields
         id: service.id,
-        title: `${service.company} - ${tech.name || 'Unassigned'}`,
+        title: `${service.company} - ${service.techId || 'Unassigned'}`,
         start: new Date(service.start),
         end: new Date(service.end),
-        resourceId: tech.code || `Tech ${(service.cluster || 0) + 1}`,
+        resourceId: service.techId || 'Unassigned',
         // Service component fields
         tech: {
-          code: tech.code || `Tech ${(service.cluster || 0) + 1}`,
+          code: tech.code || 'Unassigned',
           name: tech.name || 'Unassigned',
           enforced: tech.enforced || false,
         },
@@ -133,21 +133,16 @@ export function useSchedule(currentViewRange) {
       setTimeout(() => processDataBatch(endIndex), 0)
     } else {
       // Create resources from assigned services only
-      const techSet = new Set(
-        scheduledServices.map(
-          service => service.tech?.code || `Tech ${(service.cluster || 0) + 1}`,
-        ),
-      )
+      const techSet = new Set(scheduledServices.map(service => service.techId || 'Unassigned'))
 
       const resources = Array.from(techSet)
         .map(techId => ({ id: techId, title: techId }))
         .sort((a, b) => {
-          const aIsGeneric = a.id.startsWith('Tech ')
-          const bIsGeneric = b.id.startsWith('Tech ')
-          if (aIsGeneric !== bIsGeneric) return aIsGeneric ? -1 : 1
-          return aIsGeneric
-            ? Number.parseInt(a.id.split(' ')[1], 10) - Number.parseInt(b.id.split(' ')[1], 10)
-            : a.id.localeCompare(b.id)
+          if (a.id === 'Unassigned') return 1
+          if (b.id === 'Unassigned') return -1
+          const aNum = Number.parseInt(a.id.split(' ')[1], 10)
+          const bNum = Number.parseInt(b.id.split(' ')[1], 10)
+          return aNum - bNum
         })
 
       setResult(prevResult => ({

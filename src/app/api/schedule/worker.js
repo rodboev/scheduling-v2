@@ -10,10 +10,18 @@ import {
 } from '../../utils/constants.js'
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
+import dayjs from 'dayjs'
 
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_MERGE_ATTEMPTS = 3 // Limit merge attempts per shift
 const SCORE_CACHE = new Map() // Cache for service compatibility scores
+
+// Tech assignment and scheduling constants
+const TECH_START_TIME_VARIANCE = 2 * 60 * 60 * 1000 // 2 hours in milliseconds
+const MAX_TECHS = 10 // Maximum number of techs to assign
+
+// Track tech start times across days
+const techStartTimes = new Map()
 
 function parseDate(dateStr) {
   const date = new Date(dateStr)
@@ -171,6 +179,103 @@ function createNewShift(service, clusterIndex) {
     cluster: clusterIndex,
     mergeAttempts: 0,
   }
+}
+
+function assignTechsToShifts(shifts, dateStr) {
+  // Group shifts by date
+  const shiftsByDate = new Map()
+  const techAssignmentsByDate = new Map() // Track tech assignments per day
+
+  for (const shift of shifts) {
+    const shiftDate = dayjs(shift.services[0].start).format('YYYY-MM-DD')
+    if (!shiftsByDate.has(shiftDate)) {
+      shiftsByDate.set(shiftDate, [])
+      techAssignmentsByDate.set(shiftDate, new Set())
+    }
+    shiftsByDate.get(shiftDate).push(shift)
+  }
+
+  // For each date, assign techs to shifts
+  for (const [date, dateShifts] of shiftsByDate) {
+    // Sort shifts by start time and size (prioritize larger clusters)
+    dateShifts.sort((a, b) => {
+      const timeCompare = new Date(a.services[0].start) - new Date(b.services[0].start)
+      if (timeCompare !== 0) return timeCompare
+      return b.services.length - a.services.length
+    })
+
+    // Assign techs to shifts
+    for (let i = 0; i < dateShifts.length; i++) {
+      const shift = dateShifts[i]
+      const shiftStartTime = new Date(shift.services[0].start).getTime()
+      const assignedTechs = techAssignmentsByDate.get(date)
+
+      // Find the best tech for this shift
+      let bestTech = null
+      let bestVariance = Infinity
+
+      // First, try to find a tech that's already working on this day
+      if (assignedTechs.size < MAX_TECHS) {
+        for (let techNum = 1; techNum <= MAX_TECHS; techNum++) {
+          const techId = `Tech ${techNum}`
+
+          // Skip if tech is already assigned today
+          if (assignedTechs.has(techId)) continue
+
+          const techPrefStartTime = techStartTimes.get(techId)
+
+          // If this tech doesn't have a preferred start time yet, they're a candidate
+          if (!techPrefStartTime) {
+            bestTech = techId
+            break
+          }
+
+          // Calculate how well this shift's start time matches the tech's preferred time
+          const variance = Math.abs((shiftStartTime % (24 * 60 * 60 * 1000)) - techPrefStartTime)
+          if (variance < bestVariance && variance <= TECH_START_TIME_VARIANCE) {
+            bestTech = techId
+            bestVariance = variance
+          }
+        }
+      }
+
+      // If no suitable tech found, find the tech with the least work
+      if (!bestTech) {
+        const techWorkload = new Map()
+        for (const [d, shifts] of shiftsByDate) {
+          for (const s of shifts) {
+            if (s.techId) {
+              techWorkload.set(s.techId, (techWorkload.get(s.techId) || 0) + 1)
+            }
+          }
+        }
+
+        // Find the tech with the least work who isn't assigned today
+        const availableTechs = Array.from(techWorkload.entries())
+          .filter(([techId]) => !assignedTechs.has(techId))
+          .sort((a, b) => a[1] - b[1])
+
+        bestTech =
+          availableTechs.length > 0 ? availableTechs[0][0] : `Tech ${assignedTechs.size + 1}`
+      }
+
+      // Assign the tech to the shift
+      shift.techId = bestTech
+      assignedTechs.add(bestTech)
+
+      // Update the tech's preferred start time if not set
+      if (!techStartTimes.has(bestTech)) {
+        techStartTimes.set(bestTech, shiftStartTime % (24 * 60 * 60 * 1000))
+      }
+
+      // Update all services in the shift with the tech ID
+      for (const service of shift.services) {
+        service.techId = bestTech
+      }
+    }
+  }
+
+  return shifts
 }
 
 function processServices(services, distanceMatrix) {
@@ -410,9 +515,9 @@ function processServices(services, distanceMatrix) {
       }
     } while (merged)
 
-    const processedServices = shifts.flatMap(shift => shift.services)
-    const endTime = performance.now()
-    const duration = endTime - startTime
+    // Assign techs to shifts
+    const shiftsWithTechs = assignTechsToShifts(shifts)
+    const processedServices = shiftsWithTechs.flatMap(shift => shift.services)
 
     // Calculate clustering info
     const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
@@ -424,13 +529,22 @@ function processServices(services, distanceMatrix) {
       scheduledServices: processedServices,
       clusteringInfo: {
         algorithm: 'shifts',
-        performanceDuration: Number.parseInt(duration),
+        performanceDuration: Number.parseInt(performance.now() - startTime),
         connectedPointsCount: processedServices.length,
         totalClusters: clusters.size,
         clusterSizes,
         clusterDistribution: Array.from(clusters).map(c => ({
           [c]: processedServices.filter(s => s.cluster === c).length,
         })),
+        techAssignments: Object.fromEntries(
+          Array.from(new Set(processedServices.map(s => s.techId))).map(techId => [
+            techId,
+            {
+              services: processedServices.filter(s => s.techId === techId).length,
+              startTime: techStartTimes.get(techId),
+            },
+          ]),
+        ),
       },
     }
   } catch (error) {
