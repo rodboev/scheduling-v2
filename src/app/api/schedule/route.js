@@ -47,35 +47,8 @@ export async function GET(request) {
       // Check if service is within the requested range
       const isInRange = serviceDate.isBetween(start, end, null, '[)')
 
-      if (!isInRange) {
-        console.log(
-          'Service outside range:',
-          JSON.stringify(
-            {
-              serviceDate: service.date,
-              start: start.format(),
-              end: end.format(),
-            },
-            null,
-            2,
-          ),
-        )
-      }
-
       return isInRange
     })
-
-    console.log(
-      'Filtered services:',
-      JSON.stringify(
-        {
-          count: services.length,
-          dates: services.map(s => s.date),
-        },
-        null,
-        2,
-      ),
-    )
 
     if (!services.length) {
       console.log('No services found')
