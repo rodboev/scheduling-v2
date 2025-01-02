@@ -36,7 +36,7 @@ export function useSchedule(currentViewRange) {
   const dateRange = useMemo(
     () => ({
       start: dayjs(currentViewRange.start).startOf('day').toISOString(),
-      end: dayjs(currentViewRange.end).endOf('day').toISOString(),
+      end: dayjs(currentViewRange.end).add(1, 'day').startOf('day').toISOString(),
     }),
     [currentViewRange],
   )
