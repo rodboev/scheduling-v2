@@ -199,7 +199,7 @@ export async function GET(request) {
     console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
     // Get first 10 techs with services and filter services to only include those techs
-    const numTechs = 10
+    const numTechs = 20
     const selectedTechs = [
       ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
     ].slice(0, numTechs)

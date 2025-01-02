@@ -156,7 +156,10 @@ function createScheduledService(service, shift, matchInfo) {
 }
 
 function createNewShift(service, clusterIndex) {
-  const shiftStart = new Date(service.time.range[0])
+  // Use preferred time if available, otherwise use earliest possible time
+  const shiftStart = service.time.preferred
+    ? new Date(service.time.preferred)
+    : new Date(service.time.range[0])
   const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION * 60000)
 
   return {

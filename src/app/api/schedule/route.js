@@ -4,6 +4,7 @@ import path from 'node:path'
 import axios from 'axios'
 import { createDistanceMatrix } from '@/app/utils/distance'
 import { startOfDay, endOfDay, dayjsInstance } from '@/app/utils/dayjs'
+import { getFullDistanceMatrix } from '@/app/utils/locationCache'
 
 export async function GET(request) {
   const params = Object.fromEntries(request.nextUrl.searchParams)
@@ -64,33 +65,7 @@ export async function GET(request) {
       const locationIds = [
         ...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean)),
       ]
-      const matrixResponse = await axios.get(
-        `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/distance-matrix`,
-        {
-          params: { ids: locationIds.join(',') },
-        },
-      )
-      const distanceData = matrixResponse.data
-
-      // Convert to matrix format
-      const matrix = Array(services.length)
-        .fill()
-        .map((_, i) => Array(services.length).fill(0))
-
-      for (let i = 0; i < services.length; i++) {
-        for (let j = i + 1; j < services.length; j++) {
-          const fromId = services[i].location?.id?.toString()
-          const toId = services[j].location?.id?.toString()
-          if (fromId && toId) {
-            const key = `${fromId},${toId}`
-            const distance = distanceData[key] || null
-            if (distance !== null) {
-              matrix[i][j] = distance
-              matrix[j][i] = distance // Mirror the distance
-            }
-          }
-        }
-      }
+      const matrix = await getFullDistanceMatrix(locationIds, { format: 'array', force: true })
       return matrix
     })()
     const worker = new Worker(path.resolve(process.cwd(), 'src/app/api/schedule/worker.js'))
