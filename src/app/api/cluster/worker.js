@@ -1,13 +1,15 @@
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
-import { areSameBorough, getBorough } from '@/app/utils/boroughs.js'
+import { areSameBorough } from '../../utils/boroughs.js'
 import {
   MAX_RADIUS_MILES_ACROSS_BOROUGHS,
   HARD_MAX_RADIUS_MILES,
   SHIFT_DURATION,
   ENFORCE_BOROUGH_BOUNDARIES,
   TECH_SPEED_MPH,
-} from '@/app/utils/constants.js'
+} from '../../utils/constants.js'
+import { getBorough } from '../../utils/boroughs.js'
+import { calculateTravelTime } from '../../map/utils/travelTime.js'
 
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
@@ -492,8 +494,13 @@ function tryExtendShift(currentService, remainingServices, currentShift, distanc
   const newShift = [...shift]
   const serviceToAdd = {
     ...nextService,
-    start: nextStart.toISOString(),
-    end: new Date(nextStart.getTime() + nextService.time.duration * 60000).toISOString(),
+    cluster: bestShift.cluster,
+    sequenceNumber: bestShift.services.length + 1,
+    start: formatDate(bestStart),
+    end: formatDate(new Date(bestStart.getTime() + service.time.duration * 60000)),
+    distanceFromPrevious: distance || 0,
+    travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+    previousService: previousService.id,
   }
 
   // Calculate shift metrics

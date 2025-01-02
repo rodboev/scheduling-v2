@@ -9,18 +9,11 @@ import {
   TECH_SPEED_MPH,
 } from '../../utils/constants.js'
 import { getBorough } from '../../utils/boroughs.js'
+import { calculateTravelTime } from '../../map/utils/travelTime.js'
 
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
-
-function calculateTravelTime(distanceMatrix, fromIndex, toIndex) {
-  const distance = distanceMatrix[fromIndex][toIndex]
-  if (!distance) return 30 // Default to 30 minutes if no distance available
-
-  // Calculate travel time in minutes based on distance and speed
-  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
-}
 
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
   if (
@@ -297,7 +290,9 @@ function processServices(services, distanceMatrix) {
                   new Date(service.startTime.getTime() + service.time.duration * 60000),
                 ),
                 distanceFromPrevious: 0,
+                travelTimeFromPrevious: 0, // No travel time for first service
                 previousService: null,
+                previousCompany: null, // No previous company for first service
               },
             ],
             cluster: clusterNum,
@@ -315,7 +310,9 @@ function processServices(services, distanceMatrix) {
             start: formatDate(bestStart),
             end: formatDate(new Date(bestStart.getTime() + service.time.duration * 60000)),
             distanceFromPrevious: distance || 0,
+            travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
             previousService: previousService.id,
+            previousCompany: previousService.company,
           }
 
           bestShift.services.push(serviceToAdd)
@@ -366,7 +363,9 @@ function processServices(services, distanceMatrix) {
                         )
                       : service.end,
                   distanceFromPrevious: distance || 0,
+                  travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
                   previousService: previousService.id,
+                  previousCompany: previousService.company,
                 })
               }
 
@@ -419,6 +418,67 @@ function getShiftForTime(time) {
   if (hour >= 8 && hour < 16) return 1
   if (hour >= 16) return 2
   return 3
+}
+
+function addServiceToShift(service, shift, distanceMatrix) {
+  // If this is the first service in the shift
+  if (shift.services.length === 0) {
+    return {
+      ...service,
+      cluster: shift.cluster,
+      start: shift.startTime.toISOString(),
+      end: new Date(shift.startTime.getTime() + service.time.duration * 60000).toISOString(),
+      previousService: null,
+      previousCompany: null,
+      distanceFromPrevious: null,
+      travelTimeFromPrevious: null,
+    }
+  }
+
+  // Get the previous service and calculate distance
+  const previousService = shift.services[shift.services.length - 1]
+  const distance = distanceMatrix[previousService.originalIndex][service.originalIndex]
+
+  return {
+    ...service,
+    cluster: shift.cluster,
+    start: shift.startTime.toISOString(),
+    end: new Date(shift.startTime.getTime() + service.time.duration * 60000).toISOString(),
+    previousService: previousService.id,
+    previousCompany: previousService.company,
+    distanceFromPrevious: distance,
+    travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+  }
+}
+
+function mergeServices(services, distanceMatrix) {
+  const mergedServices = []
+
+  for (const service of services) {
+    if (mergedServices.length === 0) {
+      mergedServices.push({
+        ...service,
+        previousService: null,
+        previousCompany: null,
+        distanceFromPrevious: null,
+        travelTimeFromPrevious: null,
+      })
+      continue
+    }
+
+    const previousService = mergedServices[mergedServices.length - 1]
+    const distance = distanceMatrix[previousService.originalIndex][service.originalIndex]
+
+    mergedServices.push({
+      ...service,
+      previousService: previousService.id,
+      previousCompany: previousService.company,
+      distanceFromPrevious: distance,
+      travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+    })
+  }
+
+  return mergedServices
 }
 
 // Handle messages from the main thread

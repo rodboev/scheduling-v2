@@ -4,35 +4,11 @@ import path from 'node:path'
 import axios from 'axios'
 import { createDistanceMatrix } from '@/app/utils/distance'
 
-// Cache for service data with multiple days
-const serviceCache = new Map()
-
-// Helper to get cache key
-function getCacheKey(start, end) {
-  const startDate = new Date(start).toISOString().split('T')[0]
-  const endDate = new Date(end).toISOString().split('T')[0]
-  return `${startDate}_${endDate}`
-}
-
 export async function GET(request) {
   const params = Object.fromEntries(request.nextUrl.searchParams)
   console.log('Schedule API called with params:', params)
 
   try {
-    const cacheKey = getCacheKey(params.start, params.end)
-    const cachedData = serviceCache.get(cacheKey)
-
-    // Check if we have valid cached data
-    if (
-      cachedData?.data &&
-      Date.now() - cachedData.timestamp < 300000 // Cache for 5 minutes
-    ) {
-      console.log('Using cached services data for', cacheKey)
-      return new Response(JSON.stringify(cachedData.data, null, 2), {
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
     const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
       params: {
         start: params.start,
@@ -117,21 +93,6 @@ export async function GET(request) {
       unassignedCount: result.unassignedServices?.length,
       sample: result.scheduledServices?.[0],
     })
-
-    // Update cache for this day
-    serviceCache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now(),
-    })
-
-    // Clean up old cache entries
-    const now = Date.now()
-    for (const [key, value] of serviceCache.entries()) {
-      if (now - value.timestamp > 300000) {
-        // 5 minutes
-        serviceCache.delete(key)
-      }
-    }
 
     return new Response(JSON.stringify(result, null, 2), {
       headers: { 'Content-Type': 'application/json' },

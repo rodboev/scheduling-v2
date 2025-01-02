@@ -1,14 +1,8 @@
-export function calculateTravelTime(lat1, lon1, lat2, lon2) {
-  const R = 3959 // Earth's radius in miles
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLon = (lon2 - lon1) * Math.PI / 180
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-  const distance = R * c
-  
-  // Assuming 20mph average speed
-  return (distance / 20) * 60 // Returns travel time in minutes
+import { TECH_SPEED_MPH } from '../../utils/constants.js'
+
+export function calculateTravelTime(distance) {
+  if (!distance) return 15 // Default to 15 minutes if no distance available
+
+  // Calculate travel time in minutes based on distance and speed
+  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
 }

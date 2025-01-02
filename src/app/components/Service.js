@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/pop
 import { capitalize } from '@/app/utils/capitalize'
 import { formatTime, formatTimeRange } from '@/app/utils/timeRange'
 import { TECH_SPEED_MPH } from '@/app/utils/constants'
+import { calculateTravelTime } from '@/app/map/utils/travelTime'
 import dayjs from 'dayjs'
 import { Car, Clock } from 'lucide-react'
 import { Popup } from 'react-leaflet'
@@ -20,10 +21,6 @@ function formatBorough(borough) {
   if (!borough) return 'Unknown'
   if (borough === 'NJ') return 'New Jersey'
   return capitalize(borough)
-}
-
-function calculateTravelTime(distance) {
-  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
 }
 
 export default function Service({ service, updateServiceEnforcement, variant = 'calendar' }) {
@@ -92,11 +89,9 @@ export default function Service({ service, updateServiceEnforcement, variant = '
               {service.distanceFromPrevious.toFixed(2)} mi
             </span>
           </div>
-          {service.previousCompany && (
-            <div className="text-xs text-gray-600">
-              {calculateTravelTime(service.distanceFromPrevious)} min from {service.previousCompany}
-            </div>
-          )}
+          <div className="text-xs text-gray-600">
+            {service.travelTimeFromPrevious} min from {service.previousCompany}
+          </div>
         </div>
       )}
 

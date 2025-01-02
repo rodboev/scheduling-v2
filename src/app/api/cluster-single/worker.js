@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
-import { areSameBorough, getBorough } from '../../utils/boroughs.js'
+import { areSameBorough } from '../../utils/boroughs.js'
 import {
   MAX_RADIUS_MILES_ACROSS_BOROUGHS,
   HARD_MAX_RADIUS_MILES,
@@ -8,6 +8,8 @@ import {
   ENFORCE_BOROUGH_BOUNDARIES,
   TECH_SPEED_MPH,
 } from '../../utils/constants.js'
+import { getBorough } from '../../utils/boroughs.js'
+import { calculateTravelTime } from '../../map/utils/travelTime.js'
 
 const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
@@ -26,14 +28,6 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
     (newEnd > existingStart && newEnd <= existingEnd) ||
     (newStart <= existingStart && newEnd >= existingEnd)
   )
-}
-
-function calculateTravelTime(distanceMatrix, fromIndex, toIndex) {
-  const distance = distanceMatrix[fromIndex][toIndex]
-  if (!distance) return 30 // Default to 30 minutes if no distance available
-
-  // Calculate travel time in minutes based on distance and speed
-  return Math.ceil((distance / TECH_SPEED_MPH) * 60)
 }
 
 function roundToNearestInterval(date) {
@@ -552,8 +546,12 @@ function createShifts(services, distanceMatrix, maxPoints = 14) {
       const serviceToAdd = {
         ...service,
         cluster: bestShift.cluster,
-        start: bestStart.toISOString(),
-        end: new Date(bestStart.getTime() + service.time.duration * 60000).toISOString(),
+        sequenceNumber: bestShift.services.length + 1,
+        start: formatDate(bestStart),
+        end: formatDate(new Date(bestStart.getTime() + service.time.duration * 60000)),
+        distanceFromPrevious: distance || 0,
+        travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+        previousService: previousService.id,
       }
 
       bestShift.services.push(serviceToAdd)
