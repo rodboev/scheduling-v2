@@ -342,11 +342,10 @@ export function deleteCachedData(key) {
 
   console.log(`Cleared ${deletedCount} cache entries`)
 
-  // Also clear location and distance matrix caches if it's a distance-related key
+  // Also clear location cache if it's a distance-related key
   if (key.includes('distance')) {
-    console.log('Also clearing location and distance matrix caches')
+    console.log('Also clearing location cache')
     locationCache.clear()
-    clearDistanceMatrix() // Clear the distance matrix cache
   }
 }
 
