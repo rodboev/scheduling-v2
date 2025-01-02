@@ -177,48 +177,36 @@ const MapView = () => {
           return
         }
 
-        // Add debug logging
-        console.log('Time window:', {
-          start: startDate.toLocaleString(),
-          end: endDate.toLocaleString(),
+        // Add distance information to services
+        const servicesWithDistance = await addDistanceInfo(data.scheduledServices)
+
+        // Update state with the processed services
+        setClusteredServices(servicesWithDistance)
+        setClusteringInfo(data.clusteringInfo)
+
+        // Add logging
+        console.log('Services loaded:', {
+          total: servicesWithDistance.length,
+          clusters: new Set(servicesWithDistance.map(s => s.cluster).filter(c => c >= 0)).size,
+          connected: servicesWithDistance.filter(s => s.cluster >= 0).length,
+          outliers: servicesWithDistance.filter(s => s.cluster === -1).length,
         })
-        console.log('Original services:', data.scheduledServices.length)
-        console.log('Sample service:', data.scheduledServices[0])
 
-        // Add debug logging
-        console.log('======================')
-        console.log('Services:', data.scheduledServices.length)
-        console.log('Sample service:', data.scheduledServices[0])
-        console.log(
-          'Clusters:',
-          new Set(data.scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size,
-        )
-        console.log('Connected points:', data.scheduledServices.filter(s => s.cluster >= 0).length)
-        console.log('Outliers:', data.scheduledServices.filter(s => s.cluster === -1).length)
-        console.log('About to call logMapActivity...')
-
-        // Add logging here - moved after filtering
         try {
-          console.log('Services array type:', Array.isArray(data.scheduledServices))
-          console.log('ClusteringInfo:', data.clusteringInfo)
-
           logMapActivity({
-            services: data.scheduledServices,
+            services: servicesWithDistance,
             clusteringInfo: data.clusteringInfo,
           })
         } catch (error) {
           console.error('Error in logMapActivity:', error)
         }
-
-        setClusteredServices(data.scheduledServices)
-        setClusteringInfo(data.clusteringInfo)
       } catch (error) {
         console.error('Error fetching services:', error)
       } finally {
         setIsLoading(false)
       }
     },
-    [date],
+    [date, addDistanceInfo],
   )
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>

@@ -167,7 +167,7 @@ const MapTools = ({
               className="leading-tighter mt-4 flex rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
               type="button"
             >
-              <ChevronLeft /> Prev
+              <ChevronLeft className="-ml-2" /> Prev
             </button>
 
             <button
@@ -183,7 +183,7 @@ const MapTools = ({
               className="leading-tighter mt-4 flex rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
               type="button"
             >
-              Next <ChevronRight />
+              Next <ChevronRight className="-mr-2" />
             </button>
           </div>
         </div>

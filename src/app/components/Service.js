@@ -1,7 +1,7 @@
 // src/app/components/Service.js
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, Suspense } from 'react'
 import EnforceSwitch from '@/app/calendar/EnforceSwitch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { capitalize } from '@/app/utils/capitalize'
@@ -10,6 +10,7 @@ import { TECH_SPEED_MPH } from '@/app/utils/constants'
 import { calculateTravelTime } from '@/app/map/utils/travelTime'
 import dayjs from 'dayjs'
 import { Car, Clock } from 'lucide-react'
+import { Popup } from 'react-leaflet'
 
 function getClusterLabel(cluster, reason) {
   if (cluster >= 0) return `${cluster}`
@@ -128,11 +129,10 @@ export default function Service({ service, updateServiceEnforcement, variant = '
   )
 
   if (variant === 'map') {
-    const MapPopup = React.lazy(() => import('@/app/components/MapPopup'))
     return (
-      <MapPopup>
+      <Popup>
         <ServiceContent />
-      </MapPopup>
+      </Popup>
     )
   }
 
