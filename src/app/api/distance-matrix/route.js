@@ -1,4 +1,4 @@
-import { calculateDistance } from '@/app/utils/locationCache'
+import { getFullDistanceMatrix } from '@/app/utils/locationCache'
 import { NextResponse } from 'next/server'
 
 export async function GET(request) {
@@ -10,22 +10,22 @@ export async function GET(request) {
   }
 
   try {
-    // Create distance matrix for all location pairs
-    const matrix = {}
-    for (const id1 of locationIds) {
-      for (const id2 of locationIds) {
-        if (id1 === id2) continue
-        const key = `${id1},${id2}`
-        if (!matrix[key]) {
-          const result = await calculateDistance(id1, id2)
-          if (result?.pair) {
-            matrix[key] = result.pair.distance
-          }
+    // Get or update the full distance matrix
+    const matrix = await getFullDistanceMatrix(locationIds)
+
+    // Return only the requested pairs
+    const requestedMatrix = {}
+    for (let i = 0; i < locationIds.length; i++) {
+      for (let j = 0; j < locationIds.length; j++) {
+        if (i === j) continue
+        const key = `${locationIds[i]},${locationIds[j]}`
+        if (matrix[key] !== undefined) {
+          requestedMatrix[key] = matrix[key]
         }
       }
     }
 
-    return NextResponse.json(matrix)
+    return NextResponse.json(requestedMatrix)
   } catch (error) {
     console.error('Error getting distance matrix:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

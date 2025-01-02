@@ -300,28 +300,48 @@ const MapView = () => {
   async function getDistanceMatrix(services) {
     if (!services?.length) return {}
 
+    // Only get distances for services in the same cluster
     const locationIds = [...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean))]
-    const response = await axios.get('/api/distance-matrix', {
-      params: { ids: locationIds.join(',') },
-    })
-    return response.data
+
+    // If we have too many locations, split into smaller requests
+    const MAX_LOCATIONS_PER_REQUEST = 20
+    const matrices = {}
+
+    for (let i = 0; i < locationIds.length; i += MAX_LOCATIONS_PER_REQUEST) {
+      const batchIds = locationIds.slice(i, i + MAX_LOCATIONS_PER_REQUEST)
+      const response = await axios.get('/api/distance-matrix', {
+        params: { ids: batchIds.join(',') },
+      })
+      Object.assign(matrices, response.data)
+    }
+
+    return matrices
   }
 
   // Function to update distances for a cluster
   async function updateClusterDistances(cluster) {
     if (!cluster?.length) return cluster
 
-    const matrix = await getDistanceMatrix(cluster)
-    let totalDistance = 0
-    let totalTravelTime = 0
-
-    // Sort services by sequence number or start time
+    // Sort services by sequence number or start time first
     const sortedServices = [...cluster].sort((a, b) => {
       if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
         return a.sequenceNumber - b.sequenceNumber
       }
       return new Date(a.start) - new Date(b.start)
     })
+
+    // Only get distances between consecutive services
+    const locationPairs = []
+    for (let i = 1; i < sortedServices.length; i++) {
+      const prev = sortedServices[i - 1]
+      const curr = sortedServices[i]
+      locationPairs.push([prev.location.id, curr.location.id])
+    }
+
+    // Get distances only for the pairs we need
+    const matrix = await getDistanceMatrix(sortedServices)
+    let totalDistance = 0
+    let totalTravelTime = 0
 
     // Update distances and travel times
     for (let i = 1; i < sortedServices.length; i++) {
@@ -366,12 +386,7 @@ const MapView = () => {
     )
 
     // Combine all processed services
-    const processedServices = []
-    for (const { services } of processedClusters) {
-      processedServices.push(...services)
-    }
-
-    return processedServices
+    return processedClusters.flatMap(cluster => cluster.services)
   }
 
   const optimizeSchedule = useCallback(
