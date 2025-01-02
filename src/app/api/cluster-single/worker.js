@@ -11,9 +11,24 @@ import {
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
 
-const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
-const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
+const MAX_MERGE_ATTEMPTS = 3 // Limit merge attempts per shift
+const SCORE_CACHE = new Map() // Cache for service compatibility scores
+
+function parseDate(dateStr) {
+  const date = new Date(dateStr)
+  return isNaN(date.getTime()) ? null : date
+}
+
+function formatDate(date) {
+  if (!date || isNaN(date.getTime())) return null
+  return date.toISOString()
+}
+
+function isValidTimeRange(start, end) {
+  if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return false
+  return start < end && end - start <= SHIFT_DURATION * 60 * 60 * 1000
+}
 
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
   if (
@@ -28,245 +43,6 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
     (newEnd > existingStart && newEnd <= existingEnd) ||
     (newStart <= existingStart && newEnd >= existingEnd)
   )
-}
-
-function roundToNearestInterval(date) {
-  const minutes = date.getMinutes()
-  const roundedMinutes = Math.ceil(minutes / TIME_INCREMENT) * TIME_INCREMENT
-  const newDate = new Date(date)
-  newDate.setMinutes(roundedMinutes)
-  return newDate
-}
-
-function findBestNextService(
-  currentService,
-  remainingServices,
-  distanceMatrix,
-  shiftEnd,
-  scheduledServices,
-) {
-  let bestService = null
-  let bestScore = -Infinity
-  let bestStart = null
-
-  const currentIndex = currentService.originalIndex
-  const currentEnd = new Date(currentService.end)
-
-  // Calculate current shift duration
-  const shiftStart = Math.min(...scheduledServices.map(s => new Date(s.start).getTime()))
-  const shiftDuration = (currentEnd.getTime() - shiftStart) / (60 * 1000)
-
-  // Sort remaining services by time flexibility and start time
-  const sortedServices = [...remainingServices].sort((a, b) => {
-    const aStart = new Date(a.time.range[0])
-    const bStart = new Date(b.time.range[0])
-    const timeCompare = aStart - bStart
-    if (timeCompare !== 0) return timeCompare
-
-    const aFlex = new Date(a.time.range[1]) - aStart
-    const bFlex = new Date(b.time.range[1]) - bStart
-    return aFlex - bFlex
-  })
-
-  for (const service of sortedServices) {
-    const distance = distanceMatrix[currentIndex][service.originalIndex]
-    if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
-
-    // Check distances between this service and ALL scheduled services
-    let hasDistanceViolation = false
-    for (const scheduled of scheduledServices) {
-      const scheduledDistance = distanceMatrix[scheduled.originalIndex][service.originalIndex]
-      if (!scheduledDistance || scheduledDistance > HARD_MAX_RADIUS_MILES) {
-        hasDistanceViolation = true
-        break
-      }
-    }
-    if (hasDistanceViolation) continue
-
-    const travelTime = calculateTravelTime(distanceMatrix, currentIndex, service.originalIndex)
-    const rangeStart = new Date(service.time.range[0])
-    const rangeEnd = new Date(service.time.range[1])
-    let tryStart = new Date(
-      Math.max(rangeStart.getTime(), currentEnd.getTime() + travelTime * 60000),
-    )
-
-    // Be more lenient with time gaps for shorter shifts
-    const maxTimeGap = shiftDuration < 240 ? 180 : 120 // Allow up to 3-hour gaps for shifts under 4 hours
-
-    while (tryStart <= rangeEnd) {
-      tryStart = roundToNearestInterval(tryStart)
-      const serviceEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
-
-      // Check if adding this service would exceed 8 hours
-      const newShiftDuration =
-        (Math.max(serviceEnd.getTime(), currentEnd.getTime()) - shiftStart) / (60 * 1000)
-      if (newShiftDuration > 480) break
-
-      let hasConflict = false
-      for (const scheduled of scheduledServices) {
-        if (
-          checkTimeOverlap(new Date(scheduled.start), new Date(scheduled.end), tryStart, serviceEnd)
-        ) {
-          hasConflict = true
-          break
-        }
-      }
-
-      if (!hasConflict) {
-        const timeGap = (tryStart - currentEnd) / (60 * 1000)
-        if (timeGap > maxTimeGap) {
-          tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
-          continue
-        }
-
-        // Enhanced scoring system
-        const distanceScore = -Math.pow(distance / HARD_MAX_RADIUS_MILES, 2) * 50
-        const timeGapScore = -Math.pow(timeGap / 60, 1.5) // Less penalty for time gaps
-        const durationBonus = Math.min(newShiftDuration, 480) / 60 // Bonus for longer shifts
-        const flexibilityPenalty = -Math.log((rangeEnd - rangeStart) / (60 * 60 * 1000))
-
-        const score = distanceScore + timeGapScore + durationBonus + flexibilityPenalty
-
-        if (score > bestScore) {
-          bestScore = score
-          bestService = service
-          bestStart = tryStart
-        }
-        break
-      }
-
-      tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
-    }
-  }
-
-  return bestService ? { service: bestService, start: bestStart } : null
-}
-
-function canAddServiceToShift(service, shift, distanceMatrix) {
-  // First verify that the service can be added without violating distance constraints
-  for (const existingService of shift.services) {
-    const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-    if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
-
-    // Check borough boundaries for cross-borough services
-    if (
-      !areSameBorough(
-        existingService.location.latitude,
-        existingService.location.longitude,
-        service.location.latitude,
-        service.location.longitude,
-      ) &&
-      distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
-    ) {
-      return false
-    }
-  }
-
-  // Calculate time window overlap with existing services
-  const overlapScore = getTimeWindowOverlapScore(service, shift.services)
-
-  // If there's significant overlap, be more lenient with time gaps
-  const timeGapThreshold = overlapScore > 60 ? 180 : 120 // minutes
-
-  // Then check if it can be scheduled after any existing service
-  for (const existingService of shift.services) {
-    const travelTime = calculateTravelTime(
-      distanceMatrix,
-      existingService.originalIndex,
-      service.originalIndex,
-    )
-    const timeGap = (new Date(service.time.range[0]) - new Date(existingService.end)) / (60 * 1000)
-
-    if (timeGap <= timeGapThreshold) {
-      const next = findBestNextService(
-        existingService,
-        [service],
-        distanceMatrix,
-        shift.endTime,
-        shift.services,
-      )
-      if (next) return { next, existingService }
-    }
-  }
-  return false
-}
-
-function createScheduledService(service, shift, matchInfo) {
-  return {
-    ...service,
-    cluster: shift.cluster,
-    start: matchInfo.start.toISOString(),
-    end: new Date(matchInfo.start.getTime() + service.time.duration * 60000).toISOString(),
-  }
-}
-
-function createNewShift(service, clusterIndex) {
-  const shiftStart = new Date(service.time.range[0])
-  const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION * 60000)
-
-  return {
-    services: [
-      {
-        ...service,
-        cluster: clusterIndex,
-        start: shiftStart.toISOString(),
-        end: new Date(shiftStart.getTime() + service.time.duration * 60000).toISOString(),
-      },
-    ],
-    startTime: shiftStart,
-    endTime: shiftEnd,
-    cluster: clusterIndex,
-  }
-}
-
-function verifyShiftDistances(shift, service, distanceMatrix) {
-  // First verify the new service against all existing services
-  for (const existingService of shift.services) {
-    const distance = distanceMatrix[existingService.originalIndex][service.originalIndex]
-    if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
-
-    // Check borough boundaries for cross-borough services
-    if (
-      !areSameBorough(
-        existingService.location.latitude,
-        existingService.location.longitude,
-        service.location.latitude,
-        service.location.longitude,
-      ) &&
-      distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
-    ) {
-      return false
-    }
-  }
-
-  // Calculate time window overlap
-  const overlapScore = getTimeWindowOverlapScore(service, shift.services)
-
-  // Be more lenient with distance checks if there's significant time window overlap
-  const distanceThreshold =
-    overlapScore > 60 ? HARD_MAX_RADIUS_MILES : MAX_RADIUS_MILES_ACROSS_BOROUGHS
-
-  // Also verify all existing services against each other
-  for (let i = 0; i < shift.services.length; i++) {
-    for (let j = i + 1; j < shift.services.length; j++) {
-      const distance =
-        distanceMatrix[shift.services[i].originalIndex][shift.services[j].originalIndex]
-      if (!distance || distance > distanceThreshold) return false
-
-      if (
-        !areSameBorough(
-          shift.services[i].location.latitude,
-          shift.services[i].location.longitude,
-          shift.services[j].location.latitude,
-          shift.services[j].location.longitude,
-        ) &&
-        distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
-      ) {
-        return false
-      }
-    }
-  }
-  return true
 }
 
 function getTimeWindowOverlapScore(service, shiftServices) {
@@ -288,460 +64,396 @@ function getTimeWindowOverlapScore(service, shiftServices) {
     }
   }
 
-  // Increase the weight of overlap score to encourage combining shifts
-  return maxOverlap / 5 // Doubled the weight from previous value
+  return maxOverlap / (SHIFT_DURATION / 2)
 }
 
-function findCompatibleServices(
+function getCacheKey(service1, service2) {
+  return `${service1.originalIndex}-${service2.originalIndex}`
+}
+
+function calculateServiceScore(
   service,
+  lastService,
+  distance,
+  travelTime,
+  scheduledServices,
   remainingServices,
   distanceMatrix,
-  currentShiftServices = [],
 ) {
-  const compatibleServices = []
-  const serviceStart = new Date(service.time.range[0])
-  const serviceEnd = new Date(service.time.range[1])
+  const cacheKey = getCacheKey(service, lastService)
+  if (SCORE_CACHE.has(cacheKey)) {
+    return SCORE_CACHE.get(cacheKey)
+  }
 
-  for (const candidate of remainingServices) {
-    if (candidate.originalIndex === service.originalIndex) continue
+  // Quick distance check
+  if (!distance || distance > HARD_MAX_RADIUS_MILES) {
+    return -Infinity
+  }
 
-    // Check distance constraints
-    let isCompatible = true
-    for (const existing of [service, ...currentShiftServices]) {
-      const distance = distanceMatrix[existing.originalIndex][candidate.originalIndex]
-      if (!distance || distance > HARD_MAX_RADIUS_MILES) {
-        isCompatible = false
-        break
+  // Distance score - penalize longer distances exponentially
+  const distanceScore = -Math.pow(distance / HARD_MAX_RADIUS_MILES, 2) * 50
+
+  // Time window overlap score
+  const timeWindowOverlap = getTimeWindowOverlapScore(service, scheduledServices)
+
+  // Preferred time score
+  const tryStart = new Date(lastService.end)
+  const preferredTime = new Date(service.time.preferred)
+  const preferredDiff = Math.abs(tryStart - preferredTime) / 60000
+  const preferredScore = -Math.log(preferredDiff + 1)
+
+  // Simplified future compatibility - only check immediate next service
+  let futureScore = 0
+  if (remainingServices.length > 0) {
+    const nextService = remainingServices[0]
+    const nextDistance = distanceMatrix[lastService.originalIndex][nextService.originalIndex]
+
+    if (nextDistance && nextDistance <= HARD_MAX_RADIUS_MILES) {
+      const nextTravelTime = calculateTravelTime(nextDistance)
+      const serviceEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
+      const earliestNextStart = new Date(serviceEnd.getTime() + nextTravelTime * 60000)
+      const nextRangeStart = new Date(nextService.time.range[0])
+      const nextRangeEnd = new Date(nextService.time.range[1])
+
+      if (earliestNextStart <= nextRangeEnd) {
+        const fitScore = nextRangeStart >= earliestNextStart ? 1 : 0.5
+        futureScore = (1 - nextDistance / HARD_MAX_RADIUS_MILES) * fitScore
       }
-
-      // Check borough boundaries
-      if (
-        !areSameBorough(
-          existing.location.latitude,
-          existing.location.longitude,
-          candidate.location.latitude,
-          candidate.location.longitude,
-        ) &&
-        distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS
-      ) {
-        isCompatible = false
-        break
-      }
-    }
-
-    if (!isCompatible) continue
-
-    // Check time window overlap
-    const candidateStart = new Date(candidate.time.range[0])
-    const candidateEnd = new Date(candidate.time.range[1])
-
-    // Calculate overlap score
-    const overlapStart = Math.max(serviceStart, candidateStart)
-    const overlapEnd = Math.min(serviceEnd, candidateEnd)
-    const overlapDuration = Math.max(0, (overlapEnd - overlapStart) / (60 * 1000))
-
-    // Add to compatible services with overlap score
-    if (overlapDuration > 0) {
-      compatibleServices.push({
-        service: candidate,
-        overlapScore: overlapDuration,
-      })
     }
   }
 
-  // Sort by overlap score descending
-  return compatibleServices.sort((a, b) => b.overlapScore - a.overlapScore)
+  const score =
+    distanceScore * 0.4 + timeWindowOverlap * 0.3 + preferredScore * 0.2 + futureScore * 0.1
+  SCORE_CACHE.set(cacheKey, score)
+  return score
 }
 
-function tryExtendShift(shift, remainingServices, distanceMatrix) {
-  const currentDuration =
-    (Math.max(...shift.services.map(s => new Date(s.end).getTime())) -
-      Math.min(...shift.services.map(s => new Date(s.start).getTime()))) /
-    (60 * 1000)
-
-  if (currentDuration >= 480) return false // Already at max duration
-
-  // Try to find services that can extend the shift
+function createScheduledService(service, shift, matchInfo) {
   const lastService = shift.services[shift.services.length - 1]
-  const compatibleServices = findCompatibleServices(
-    lastService,
-    remainingServices,
-    distanceMatrix,
-    shift.services,
-  )
+  const distance = lastService
+    ? distanceMatrix[lastService.originalIndex][service.originalIndex]
+    : 0
+  const travelTime = distance ? calculateTravelTime(distance) : 0
 
-  for (const { service } of compatibleServices) {
-    const tryStart = new Date(
-      Math.max(
-        new Date(service.time.range[0]).getTime(),
-        new Date(lastService.end).getTime() +
-          calculateTravelTime(distanceMatrix, lastService.originalIndex, service.originalIndex) *
-            60000,
-      ),
-    )
-    const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
+  return {
+    ...service,
+    cluster: shift.cluster,
+    start: formatDate(matchInfo.start),
+    end: formatDate(new Date(matchInfo.start.getTime() + service.time.duration * 60000)),
+    distanceFromPrevious: distance || 0,
+    travelTimeFromPrevious: travelTime,
+    previousService: lastService ? lastService.id : null,
+    previousCompany: lastService ? lastService.company : null,
+  }
+}
 
-    // Calculate new shift duration
-    const newShiftStart = Math.min(
-      ...shift.services.map(s => new Date(s.start).getTime()),
-      tryStart.getTime(),
-    )
-    const newShiftEnd = Math.max(
-      ...shift.services.map(s => new Date(s.end).getTime()),
-      tryEnd.getTime(),
-    )
-    const newDuration = (newShiftEnd - newShiftStart) / (60 * 1000)
+function createNewShift(service, clusterIndex) {
+  const shiftStart = new Date(service.time.range[0])
+  const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION * 60000)
 
-    if (newDuration <= 480) {
-      // Check for time conflicts
-      let hasConflict = false
-      for (const existing of shift.services) {
-        if (checkTimeOverlap(new Date(existing.start), new Date(existing.end), tryStart, tryEnd)) {
-          hasConflict = true
+  return {
+    services: [
+      {
+        ...service,
+        cluster: clusterIndex,
+        start: formatDate(shiftStart),
+        end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
+        distanceFromPrevious: 0,
+        travelTimeFromPrevious: 0,
+        previousService: null,
+        previousCompany: null,
+      },
+    ],
+    startTime: shiftStart,
+    endTime: shiftEnd,
+    cluster: clusterIndex,
+    mergeAttempts: 0,
+  }
+}
+
+function processServices(services, distanceMatrix) {
+  try {
+    const startTime = performance.now()
+    SCORE_CACHE.clear()
+
+    // Pre-filter invalid services
+    const validServices = services.filter(
+      service =>
+        service &&
+        service.time &&
+        service.time.range &&
+        service.time.range[0] &&
+        service.time.range[1],
+    )
+
+    // Sort services by time window and start time
+    const sortedServices = validServices
+      .map((service, index) => ({
+        ...service,
+        originalIndex: index,
+        borough: getBorough(service.location.latitude, service.location.longitude),
+        timeWindow: new Date(service.time.range[1]) - new Date(service.time.range[0]),
+        startTime: new Date(service.time.range[0]),
+        endTime: new Date(service.time.range[1]),
+      }))
+      .filter(service => service && isValidTimeRange(service.startTime, service.endTime))
+      .sort((a, b) => {
+        // Sort by start time first
+        const timeCompare = a.startTime - b.startTime
+        if (timeCompare !== 0) return timeCompare
+        // Then by time window flexibility
+        return a.timeWindow - b.timeWindow
+      })
+
+    const shifts = []
+    let clusterIndex = 0
+    let remainingServices = [...sortedServices]
+
+    // Process services until none remain
+    while (remainingServices.length > 0) {
+      const anchor = remainingServices[0]
+      remainingServices = remainingServices.slice(1)
+
+      const shift = createNewShift(anchor, clusterIndex)
+      shifts.push(shift)
+
+      // Try to extend shift with compatible services
+      let extended
+      do {
+        extended = false
+        const lastService = shift.services[shift.services.length - 1]
+        const lastEnd = new Date(lastService.end)
+        const shiftStart = new Date(shift.services[0].start)
+
+        // Find best next service
+        let bestMatch = null
+
+        // Only consider services that could potentially fit
+        const potentialServices = remainingServices.filter(service => {
+          const rangeEnd = new Date(service.time.range[1])
+          return (
+            rangeEnd > lastEnd &&
+            new Date(service.time.range[0]) < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
+          )
+        })
+
+        for (const service of potentialServices) {
+          const distance = distanceMatrix[lastService.originalIndex][service.originalIndex]
+          if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
+
+          const travelTime = calculateTravelTime(distance)
+          const earliestStart = new Date(lastEnd.getTime() + travelTime * 60000)
+          const rangeStart = new Date(service.time.range[0])
+          const rangeEnd = new Date(service.time.range[1])
+
+          if (earliestStart > rangeEnd) continue
+
+          const tryStart = earliestStart < rangeStart ? rangeStart : earliestStart
+          const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
+
+          const newDuration = (tryEnd.getTime() - shiftStart.getTime()) / (60 * 1000)
+          if (newDuration > SHIFT_DURATION) continue
+
+          let hasConflict = false
+          for (const scheduled of shift.services) {
+            if (
+              checkTimeOverlap(new Date(scheduled.start), new Date(scheduled.end), tryStart, tryEnd)
+            ) {
+              hasConflict = true
+              break
+            }
+          }
+          if (hasConflict) continue
+
+          const score = calculateServiceScore(
+            service,
+            lastService,
+            distance,
+            travelTime,
+            shift.services,
+            remainingServices,
+            distanceMatrix,
+          )
+
+          if (!bestMatch || score > bestMatch.score) {
+            bestMatch = {
+              service,
+              start: tryStart,
+              score,
+              index: remainingServices.indexOf(service),
+            }
+          }
+        }
+
+        if (bestMatch && shift.services.length < 14) {
+          const distance =
+            distanceMatrix[lastService.originalIndex][bestMatch.service.originalIndex]
+          const travelTime = calculateTravelTime(distance)
+
+          shift.services.push({
+            ...bestMatch.service,
+            cluster: clusterIndex,
+            sequenceNumber: shift.services.length + 1,
+            start: formatDate(bestMatch.start),
+            end: formatDate(
+              new Date(bestMatch.start.getTime() + bestMatch.service.time.duration * 60000),
+            ),
+            distanceFromPrevious: distance,
+            travelTimeFromPrevious: travelTime,
+            previousService: lastService.id,
+            previousCompany: lastService.company,
+          })
+
+          remainingServices.splice(bestMatch.index, 1)
+          extended = true
+        }
+      } while (extended && shift.services.length < 14)
+
+      clusterIndex++
+    }
+
+    // Optimized shift merging
+    let merged
+    do {
+      merged = false
+      const shiftsByTime = [...shifts].sort((a, b) => {
+        const aStart = new Date(a.services[0].start).getTime()
+        const bStart = new Date(b.services[0].start).getTime()
+        return aStart - bStart
+      })
+
+      for (let i = 0; i < shiftsByTime.length - 1; i++) {
+        const shift1 = shiftsByTime[i]
+        if (shift1.mergeAttempts >= MAX_MERGE_ATTEMPTS) continue
+
+        const lastService = shift1.services[shift1.services.length - 1]
+        const lastEnd = new Date(lastService.end)
+
+        // Only consider nearby shifts in time
+        const mergeCandidates = shiftsByTime
+          .slice(i + 1)
+          .filter(s => {
+            if (s.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
+            const firstStart = new Date(s.services[0].start)
+            return (
+              firstStart > lastEnd &&
+              firstStart < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
+            )
+          })
+          .slice(0, 3) // Only consider the 3 closest shifts
+
+        for (const shift2 of mergeCandidates) {
+          const firstService = shift2.services[0]
+          const distance = distanceMatrix[lastService.originalIndex][firstService.originalIndex]
+
+          if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
+
+          const travelTime = calculateTravelTime(distance)
+          const earliestStart = new Date(lastEnd.getTime() + travelTime * 60000)
+
+          if (earliestStart > new Date(firstService.time.range[1])) continue
+
+          const totalServices = shift1.services.length + shift2.services.length
+          if (totalServices > 14) continue
+
+          const mergedDuration =
+            (Math.max(
+              new Date(shift1.services[shift1.services.length - 1].end).getTime(),
+              new Date(shift2.services[shift2.services.length - 1].end).getTime(),
+            ) -
+              Math.min(
+                new Date(shift1.services[0].start).getTime(),
+                new Date(shift2.services[0].start).getTime(),
+              )) /
+            (60 * 1000)
+
+          if (mergedDuration > SHIFT_DURATION) continue
+
+          // If we get here, merge is possible
+          const adjustedFirstService = {
+            ...firstService,
+            cluster: shift1.cluster,
+            sequenceNumber: shift1.services.length + 1,
+            start: formatDate(earliestStart),
+            end: formatDate(new Date(earliestStart.getTime() + firstService.time.duration * 60000)),
+            distanceFromPrevious: distance,
+            travelTimeFromPrevious: travelTime,
+            previousService: lastService.id,
+            previousCompany: lastService.company,
+          }
+
+          const remainingServices = shift2.services.slice(1).map((service, index) => {
+            const prev = index === 0 ? adjustedFirstService : shift2.services[index]
+            const dist = distanceMatrix[prev.originalIndex][service.originalIndex]
+            const travel = calculateTravelTime(dist)
+            return {
+              ...service,
+              cluster: shift1.cluster,
+              sequenceNumber: shift1.services.length + 2 + index,
+              distanceFromPrevious: dist,
+              travelTimeFromPrevious: travel,
+              previousService: prev.id,
+              previousCompany: prev.company,
+            }
+          })
+
+          shift1.services = [...shift1.services, adjustedFirstService, ...remainingServices]
+          shift1.mergeAttempts++
+          shift2.mergeAttempts++
+          shifts.splice(shifts.indexOf(shift2), 1)
+          merged = true
           break
         }
+        if (merged) break
       }
+    } while (merged)
 
-      if (!hasConflict) {
-        const serviceToAdd = {
-          ...service,
-          cluster: shift.cluster,
-          start: tryStart.toISOString(),
-          end: tryEnd.toISOString(),
-        }
-
-        if (verifyShiftDistances(shift, serviceToAdd, distanceMatrix)) {
-          shift.services.push(serviceToAdd)
-          return true
-        }
-      }
-    }
-  }
-
-  return false
-}
-
-function createShifts(services, distanceMatrix, maxPoints = 14) {
-  // Sort by time window and start time, but prioritize services with overlapping windows
-  const sortedServices = services
-    .map((service, index) => ({
-      ...service,
-      originalIndex: index,
-      borough: getBorough(service.location.latitude, service.location.longitude),
-      timeWindow: new Date(service.time.range[1]) - new Date(service.time.range[0]),
-      startTime: new Date(service.time.range[0]),
-      endTime: new Date(service.time.range[1]),
-    }))
-    .sort((a, b) => {
-      // First group by rough time periods (morning/afternoon)
-      const aPeriod = Math.floor(a.startTime.getHours() / 4)
-      const bPeriod = Math.floor(b.startTime.getHours() / 4)
-      if (aPeriod !== bPeriod) return aPeriod - bPeriod
-
-      // Then by time window flexibility
-      return a.timeWindow - b.timeWindow
-    })
-
-  let clusterIndex = 0
-  const shifts = []
-  let remainingServices = [...sortedServices]
-
-  // First pass: Create initial shifts with anchor services
-  while (remainingServices.length > 0) {
-    const service = remainingServices[0]
-    let bestShift = null
-    let bestStart = null
-    let bestScore = -Infinity
-
-    // Try to add to existing shifts first
-    for (const shift of shifts) {
-      if (shift.services.length >= maxPoints) continue
-
-      const shiftStartTime = Math.min(...shift.services.map(s => new Date(s.start).getTime()))
-      const shiftEndTime = Math.max(...shift.services.map(s => new Date(s.end).getTime()))
-      const currentDuration = (shiftEndTime - shiftStartTime) / (60 * 1000)
-
-      // Be more lenient with shift duration - allow up to 8 hours
-      if (currentDuration >= 480) continue
-
-      // Find all possible start times within the service's time window
-      const rangeStart = new Date(service.time.range[0])
-      const rangeEnd = new Date(service.time.range[1])
-      let tryStart = rangeStart
-
-      while (tryStart <= rangeEnd) {
-        const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
-        const newShiftStart = Math.min(shiftStartTime, tryStart.getTime())
-        const newShiftEnd = Math.max(shiftEndTime, tryEnd.getTime())
-        const newDuration = (newShiftEnd - newShiftStart) / (60 * 1000)
-
-        if (newDuration <= 480) {
-          // Check distance and time constraints
-          let isCompatible = true
-          let hasTimeConflict = false
-
-          for (const existing of shift.services) {
-            // Check distance
-            const distance = distanceMatrix[existing.originalIndex][service.originalIndex]
-            if (!distance || distance > HARD_MAX_RADIUS_MILES) {
-              isCompatible = false
-              break
-            }
-
-            // More lenient borough boundary check
-            if (distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS) {
-              const sameBorough = areSameBorough(
-                existing.location.latitude,
-                existing.location.longitude,
-                service.location.latitude,
-                service.location.longitude,
-              )
-              if (!sameBorough && distance > HARD_MAX_RADIUS_MILES) {
-                isCompatible = false
-                break
-              }
-            }
-
-            // Check time conflicts
-            if (
-              checkTimeOverlap(new Date(existing.start), new Date(existing.end), tryStart, tryEnd)
-            ) {
-              hasTimeConflict = true
-              break
-            }
-          }
-
-          if (isCompatible && !hasTimeConflict) {
-            // Enhanced scoring system
-            const timeWindowOverlap = getTimeWindowOverlapScore(service, shift.services)
-            const durationScore = newDuration / 480 // Prefer fuller shifts
-            const serviceCount = shift.services.length
-            const countBonus = serviceCount / maxPoints // Prefer adding to shifts with more services
-            const timeGapPenalty = -Math.abs(tryStart.getTime() - shiftEndTime) / (60 * 60 * 1000)
-            const locationBonus = shift.services.some(
-              s =>
-                distanceMatrix[s.originalIndex][service.originalIndex] <
-                MAX_RADIUS_MILES_ACROSS_BOROUGHS,
-            )
-              ? 2
-              : 0
-
-            const score =
-              timeWindowOverlap + durationScore + countBonus + timeGapPenalty + locationBonus
-
-            if (score > bestScore) {
-              bestScore = score
-              bestShift = shift
-              bestStart = tryStart
-            }
-          }
-        }
-
-        tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
-      }
-    }
-
-    if (bestShift && bestStart) {
-      // Add to existing shift
-      const serviceToAdd = {
-        ...service,
-        cluster: bestShift.cluster,
-        sequenceNumber: bestShift.services.length + 1,
-        start: formatDate(bestStart),
-        end: formatDate(new Date(bestStart.getTime() + service.time.duration * 60000)),
-        distanceFromPrevious: distance || 0,
-        travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
-        previousService: previousService.id,
-      }
-
-      bestShift.services.push(serviceToAdd)
-      remainingServices = remainingServices.filter(s => s.originalIndex !== service.originalIndex)
-
-      // Try to extend the shift immediately
-      let extended
-      do {
-        extended = tryExtendShift(bestShift, remainingServices, distanceMatrix)
-        if (extended) {
-          const lastAdded = bestShift.services[bestShift.services.length - 1]
-          remainingServices = remainingServices.filter(
-            s => s.originalIndex !== lastAdded.originalIndex,
-          )
-        }
-      } while (extended && bestShift.services.length < maxPoints)
-    } else {
-      // Create new shift
-      const newShift = createNewShift(service, clusterIndex++)
-      shifts.push(newShift)
-      remainingServices = remainingServices.filter(s => s.originalIndex !== service.originalIndex)
-
-      // Try to fill the new shift immediately
-      let extended
-      do {
-        extended = tryExtendShift(newShift, remainingServices, distanceMatrix)
-        if (extended) {
-          const lastAdded = newShift.services[newShift.services.length - 1]
-          remainingServices = remainingServices.filter(
-            s => s.originalIndex !== lastAdded.originalIndex,
-          )
-        }
-      } while (extended && newShift.services.length < maxPoints)
-    }
-  }
-
-  // More aggressive shift merging
-  for (let i = shifts.length - 1; i >= 0; i--) {
-    const shift = shifts[i]
-    const shiftStart = Math.min(...shift.services.map(s => new Date(s.start).getTime()))
-    const shiftEnd = Math.max(...shift.services.map(s => new Date(s.end).getTime()))
-    const shiftDuration = (shiftEnd - shiftStart) / (60 * 1000)
-
-    // Try to merge with other shifts, prioritizing shorter shifts
-    for (let j = 0; j < i; j++) {
-      const targetShift = shifts[j]
-      if (targetShift.services.length + shift.services.length > maxPoints) continue
-
-      const targetStart = Math.min(...targetShift.services.map(s => new Date(s.start).getTime()))
-      const targetEnd = Math.max(...targetShift.services.map(s => new Date(s.end).getTime()))
-      const targetDuration = (targetEnd - targetStart) / (60 * 1000)
-
-      // Be more aggressive about merging if either shift is short
-      const shouldTryMerge =
-        shiftDuration < 240 || targetDuration < 240 || shiftDuration + targetDuration <= 480
-
-      if (shouldTryMerge) {
-        const mergedStart = Math.min(shiftStart, targetStart)
-        const mergedEnd = Math.max(shiftEnd, targetEnd)
-        const mergedDuration = (mergedEnd - mergedStart) / (60 * 1000)
-
-        if (mergedDuration <= 480) {
-          // Check compatibility with more lenient criteria
-          let canMerge = true
-          for (const service1 of shift.services) {
-            for (const service2 of targetShift.services) {
-              // Check time conflicts
-              if (
-                checkTimeOverlap(
-                  new Date(service1.start),
-                  new Date(service1.end),
-                  new Date(service2.start),
-                  new Date(service2.end),
-                )
-              ) {
-                canMerge = false
-                break
-              }
-
-              // Check distance with more lenient criteria
-              const distance = distanceMatrix[service1.originalIndex][service2.originalIndex]
-              if (!distance || distance > HARD_MAX_RADIUS_MILES) {
-                canMerge = false
-                break
-              }
-
-              // More lenient borough check for short shifts
-              if (distance > MAX_RADIUS_MILES_ACROSS_BOROUGHS) {
-                const sameBorough = areSameBorough(
-                  service1.location.latitude,
-                  service1.location.longitude,
-                  service2.location.latitude,
-                  service2.location.longitude,
-                )
-                if (!sameBorough && distance > HARD_MAX_RADIUS_MILES) {
-                  canMerge = false
-                  break
-                }
-              }
-            }
-            if (!canMerge) break
-          }
-
-          if (canMerge) {
-            // Merge shifts
-            targetShift.services.push(
-              ...shift.services.map(s => ({ ...s, cluster: targetShift.cluster })),
-            )
-            shifts.splice(i, 1)
-            break
-          }
-        }
-      }
-    }
-  }
-
-  return shifts
-}
-
-function getNextService(currentService, remainingServices, distanceMatrix) {
-  let bestScore = -Infinity
-  let bestService = null
-
-  // Sort remaining services by time flexibility
-  const sortedServices = [...remainingServices].sort((a, b) => {
-    const aFlexibility = getTimeFlexibility(a)
-    const bFlexibility = getTimeFlexibility(b)
-    return aFlexibility - bFlexibility
-  })
-
-  for (const service of sortedServices) {
-    const distance = distanceMatrix[currentService.id][service.id]
-
-    // Skip if distance is null (exceeds HARD_MAX_RADIUS_MILES)
-    if (distance === null) {
-      continue
-    }
-
-    const timeScore = getTimeScore(service, currentService)
-    const distanceScore = getDistanceScore(distance)
-    const score = timeScore + distanceScore
-
-    if (score > bestScore) {
-      bestScore = score
-      bestService = service
-    }
-  }
-
-  return bestService
-}
-
-parentPort.on('message', async ({ services, distanceMatrix }) => {
-  const startTime = performance.now()
-
-  try {
-    const shifts = createShifts(services, distanceMatrix)
-
-    // Flatten all services from all shifts
-    const clusteredServices = shifts.flatMap(shift => shift.services)
-
+    const processedServices = shifts.flatMap(shift => shift.services)
     const endTime = performance.now()
     const duration = endTime - startTime
 
-    const clusteringInfo = {
-      algorithm: 'shifts',
-      performanceDuration: Number.parseInt(duration),
-      connectedPointsCount: services.length,
-      outlierCount: 0,
-      totalClusters: shifts.length,
-      clusterSizes: shifts.map(shift => shift.services.length),
-      clusterDistribution: shifts.map((shift, index) => ({
-        [index]: shift.services.length,
-      })),
-      shifts: shifts.map(shift => ({
-        startTime: shift.startTime,
-        endTime: shift.endTime,
-        serviceCount: shift.services.length,
-      })),
-    }
+    // Calculate clustering info
+    const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
+    const clusterSizes = Array.from(clusters).map(
+      c => processedServices.filter(s => s.cluster === c).length,
+    )
 
-    parentPort.postMessage({
-      clusteredServices,
-      clusteringInfo,
-    })
+    return {
+      clusteredServices: processedServices,
+      clusteringInfo: {
+        algorithm: 'shifts',
+        performanceDuration: Number.parseInt(duration),
+        connectedPointsCount: processedServices.length,
+        totalClusters: clusters.size,
+        clusterSizes,
+        clusterDistribution: Array.from(clusters).map(c => ({
+          [c]: processedServices.filter(s => s.cluster === c).length,
+        })),
+      },
+    }
+  } catch (error) {
+    console.error('Error in worker:', error)
+    throw error
+  }
+}
+
+// Handle messages from the main thread
+parentPort.on('message', async ({ services, distanceMatrix }) => {
+  try {
+    const result = await processServices(services, distanceMatrix)
+    parentPort.postMessage(result)
   } catch (error) {
     console.error('Error in clustering worker:', error)
     parentPort.postMessage({
       error: error.message,
+      clusteredServices: services.map(service => ({ ...service, cluster: -1 })),
       clusteringInfo: {
         algorithm: 'shifts',
+        performanceDuration: 0,
+        connectedPointsCount: 0,
+        totalClusters: 0,
+        clusterSizes: [],
+        clusterDistribution: [],
       },
     })
   }
