@@ -60,7 +60,39 @@ export async function GET(request) {
     }
 
     // Create distance matrix in parallel with worker initialization
-    const distanceMatrixPromise = createDistanceMatrix(services)
+    const distanceMatrixPromise = (async () => {
+      const locationIds = [
+        ...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean)),
+      ]
+      const matrixResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/distance-matrix`,
+        {
+          params: { ids: locationIds.join(',') },
+        },
+      )
+      const distanceData = matrixResponse.data
+
+      // Convert to matrix format
+      const matrix = Array(services.length)
+        .fill()
+        .map((_, i) => Array(services.length).fill(0))
+
+      for (let i = 0; i < services.length; i++) {
+        for (let j = i + 1; j < services.length; j++) {
+          const fromId = services[i].location?.id?.toString()
+          const toId = services[j].location?.id?.toString()
+          if (fromId && toId) {
+            const key = `${fromId},${toId}`
+            const distance = distanceData[key] || null
+            if (distance !== null) {
+              matrix[i][j] = distance
+              matrix[j][i] = distance // Mirror the distance
+            }
+          }
+        }
+      }
+      return matrix
+    })()
     const worker = new Worker(path.resolve(process.cwd(), 'src/app/api/schedule/worker.js'))
 
     const distanceMatrix = await distanceMatrixPromise

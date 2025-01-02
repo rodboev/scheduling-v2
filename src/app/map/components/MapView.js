@@ -296,57 +296,82 @@ const MapView = () => {
     })
   }, [clusteredServices])
 
-  async function createDistanceMatrix(services) {
-    try {
-      // Create pairs of service IDs for batch processing
-      const pairs = []
-      for (let i = 0; i < services.length; i++) {
-        for (let j = i + 1; j < services.length; j++) {
-          pairs.push(`${services[i].location.id},${services[j].location.id}`)
-        }
+  // Function to get distances for a set of services
+  async function getDistanceMatrix(services) {
+    if (!services?.length) return {}
+
+    const locationIds = [...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean))]
+    const response = await axios.get('/api/distance-matrix', {
+      params: { ids: locationIds.join(',') },
+    })
+    return response.data
+  }
+
+  // Function to update distances for a cluster
+  async function updateClusterDistances(cluster) {
+    if (!cluster?.length) return cluster
+
+    const matrix = await getDistanceMatrix(cluster)
+    let totalDistance = 0
+    let totalTravelTime = 0
+
+    // Sort services by sequence number or start time
+    const sortedServices = [...cluster].sort((a, b) => {
+      if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
+        return a.sequenceNumber - b.sequenceNumber
       }
+      return new Date(a.start) - new Date(b.start)
+    })
 
-      // Split pairs into chunks of 500 to avoid too large URLs
-      const chunkedPairs = chunk(pairs, 500)
-      const distanceMatrix = Array(services.length)
-        .fill()
-        .map(() => Array(services.length).fill(0))
+    // Update distances and travel times
+    for (let i = 1; i < sortedServices.length; i++) {
+      const prevService = sortedServices[i - 1]
+      const currService = sortedServices[i]
+      const key = `${prevService.location.id},${currService.location.id}`
+      const distance = matrix[key] || 0
 
-      // Fetch distances in batches
-      for (const pairChunk of chunkedPairs) {
-        const response = await axios.get('/api/distance', {
-          params: {
-            id: pairChunk,
-          },
-          paramsSerializer: params => {
-            return params.id.map(pair => `id=${pair}`).join('&')
-          },
-        })
+      currService.distanceFromPrevious = distance
+      currService.travelTimeFromPrevious = Math.ceil((distance / TECH_SPEED_MPH) * 60)
+      currService.previousCompany = prevService.company
 
-        // Populate the distance matrix with results
-        for (const result of response.data) {
-          const [fromId, toId] = result.from.id.split(',')
-          const fromIndex = services.findIndex(s => s.location.id.toString() === fromId)
-          const toIndex = services.findIndex(s => s.location.id.toString() === toId)
-
-          if (result.distance?.[0]?.distance) {
-            const distance = result.distance[0].distance
-            if (distance <= HARD_MAX_RADIUS_MILES) {
-              distanceMatrix[fromIndex][toIndex] = distance
-              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
-            } else {
-              distanceMatrix[fromIndex][toIndex] = null
-              distanceMatrix[toIndex][fromIndex] = null
-            }
-          }
-        }
-      }
-
-      return distanceMatrix
-    } catch (error) {
-      console.error('Error creating distance matrix:', error)
-      return null
+      totalDistance += distance
+      totalTravelTime += currService.travelTimeFromPrevious
     }
+
+    return {
+      services: sortedServices,
+      totalDistance,
+      totalTravelTime,
+    }
+  }
+
+  // Function to process services and update distances
+  async function processServices(services) {
+    if (!services?.length) return []
+
+    // Group services by cluster
+    const clusters = {}
+    for (const service of services) {
+      const cluster = service.cluster ?? -1
+      if (!clusters[cluster]) clusters[cluster] = []
+      clusters[cluster].push(service)
+    }
+
+    // Process each cluster in parallel
+    const processedClusters = await Promise.all(
+      Object.entries(clusters).map(async ([clusterId, clusterServices]) => {
+        const result = await updateClusterDistances(clusterServices)
+        return { clusterId, ...result }
+      }),
+    )
+
+    // Combine all processed services
+    const processedServices = []
+    for (const { services } of processedClusters) {
+      processedServices.push(...services)
+    }
+
+    return processedServices
   }
 
   const optimizeSchedule = useCallback(

@@ -1,46 +1,36 @@
 import axios from 'axios'
+import { HARD_MAX_RADIUS_MILES } from '@/app/utils/constants'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 
-export async function getDistance(fromService, toService) {
-  if (!fromService?.location?.id || !toService?.location?.id) {
-    console.warn('Missing location IDs for distance calculation')
-    return calculateHaversineDistance(
-      fromService.location.latitude,
-      fromService.location.longitude,
-      toService.location.latitude,
-      toService.location.longitude,
-    )
-  }
+// Get distances for a set of locations
+export async function getDistances(locationPairs) {
+  if (!locationPairs?.length) return {}
 
-  try {
-    const response = await axios.get(`${BASE_URL}/api/distance`, {
-      params: {
-        fromId: fromService.location.id.toString(),
-        toId: toService.location.id.toString(),
-      },
-    })
+  // Get unique location IDs
+  const locationIds = [...new Set(locationPairs.flatMap(pair => [pair.from.id, pair.to.id]))]
 
-    return (
-      response.data?.distance ??
-      calculateHaversineDistance(
-        fromService.location.latitude,
-        fromService.location.longitude,
-        toService.location.latitude,
-        toService.location.longitude,
-      )
-    )
-  } catch (error) {
-    console.error('Failed to get distance from API:', error)
-    return calculateHaversineDistance(
-      fromService.location.latitude,
-      fromService.location.longitude,
-      toService.location.latitude,
-      toService.location.longitude,
-    )
-  }
+  // Get the full distance matrix
+  const response = await axios.get(`${BASE_URL}/api/distance-matrix`, {
+    params: { ids: locationIds.join(',') },
+  })
+  const matrix = response.data
+
+  // Map the results back to the original pairs format
+  const results = locationPairs.map(pair => {
+    const key = `${pair.from.id},${pair.to.id}`
+    const distance = matrix[key]
+    return {
+      from: pair.from,
+      to: pair.to,
+      distance: distance !== null && distance <= HARD_MAX_RADIUS_MILES ? distance : null,
+    }
+  })
+
+  return results
 }
 
+// Calculate haversine distance between two points
 export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   const R = 3959 // Earth's radius in miles
   const dLat = ((lat2 - lat1) * Math.PI) / 180

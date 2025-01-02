@@ -23,39 +23,31 @@ export async function createDistanceMatrix(services) {
 
   await getLocations() // Ensure locations are loaded
 
+  // Get all unique location IDs
+  const locationIds = [...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean))]
+
+  // Get the full distance matrix at once
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+  const matrixResponse = await fetch(`${baseUrl}/api/distance-matrix?ids=${locationIds.join(',')}`)
+  const distanceData = await matrixResponse.json()
+
   // Initialize matrix with zeros on diagonal
   const distanceMatrix = Array(services.length)
     .fill()
     .map((_, i) => Array(services.length).fill(0))
 
-  // Create pairs for parallel processing
-  const pairs = []
+  // Fill matrix using the distance data
   for (let i = 0; i < services.length; i++) {
     for (let j = i + 1; j < services.length; j++) {
       const fromId = services[i].location?.id?.toString()
       const toId = services[j].location?.id?.toString()
       if (fromId && toId) {
-        pairs.push({ fromId, toId, i, j })
-      }
-    }
-  }
-
-  // Process in chunks of 50 pairs
-  const CHUNK_SIZE = 50
-  for (let i = 0; i < pairs.length; i += CHUNK_SIZE) {
-    const chunk = pairs.slice(i, i + CHUNK_SIZE)
-    const results = await Promise.all(
-      chunk.map(async ({ fromId, toId, i, j }) => {
-        const distance = await getDistanceBetweenLocations(fromId, toId)
-        return { i, j, distance }
-      }),
-    )
-
-    // Fill matrix with results
-    for (const { i, j, distance } of results) {
-      if (distance !== null) {
-        distanceMatrix[i][j] = distance
-        distanceMatrix[j][i] = distance // Mirror the distance
+        const key = `${fromId},${toId}`
+        const distance = distanceData[key] || null
+        if (distance !== null) {
+          distanceMatrix[i][j] = distance
+          distanceMatrix[j][i] = distance // Mirror the distance
+        }
       }
     }
   }
