@@ -70,46 +70,23 @@ const MapView = () => {
       return acc
     }, {})
 
-    // Collect ALL pairs across ALL clusters first
-    const allPairs = []
-    for (const clusterServices of Object.values(clusters)) {
-      const sortedCluster = clusterServices.sort(
-        (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
-      )
+    // Get all unique location IDs
+    const locationIds = [
+      ...new Set(servicesWithDistance.map(s => s.location?.id?.toString()).filter(Boolean)),
+    ]
 
-      // Create pairs for all sequential services in the cluster
-      for (let i = 1; i < sortedCluster.length; i++) {
-        const fromId = sortedCluster[i - 1].location.id
-        const toId = sortedCluster[i].location.id
-        if (fromId && toId) {
-          allPairs.push(`${fromId},${toId}`)
-        }
-      }
-    }
-
-    // If no pairs need distance calculation, return early
-    if (allPairs.length === 0) {
+    // If no locations need distance calculation, return early
+    if (locationIds.length <= 1) {
       return servicesWithDistance
     }
 
-    // Split ALL pairs into chunks of 50 for more efficient batching
-    const chunkedPairs = chunk(allPairs, 50)
+    // Get the full distance matrix for all locations
+    const response = await axios.get('/api/distance-matrix', {
+      params: { ids: locationIds.join(',') },
+    })
+    const distanceMatrix = response.data
 
-    // Fetch distances for all pairs in parallel
-    const distancePromises = chunkedPairs.map(pairChunk =>
-      axios.get('/api/distance', {
-        params: {
-          pairs: pairChunk.join(';'),
-        },
-      }),
-    )
-
-    const responses = await Promise.all(distancePromises)
-    const distanceResults = responses.flatMap(response =>
-      response.data.error ? [] : response.data.results,
-    )
-
-    // Now process each cluster with the complete distance results
+    // Now process each cluster with the distance matrix
     for (const clusterServices of Object.values(clusters)) {
       const sortedCluster = clusterServices.sort(
         (a, b) => new Date(a.time.visited) - new Date(b.time.visited),
@@ -123,13 +100,11 @@ const MapView = () => {
         if (i > 0) {
           // Only set distance/previous info for non-first services
           const previousService = sortedCluster[i - 1]
-          const pairResult = distanceResults.find(
-            result =>
-              result.pair?.id === `${previousService.location.id},${currentService.location.id}`,
-          )
+          const key = `${previousService.location.id},${currentService.location.id}`
+          const distance = distanceMatrix[key]
 
-          if (pairResult?.pair?.distance) {
-            currentService.distanceFromPrevious = pairResult.pair.distance
+          if (distance) {
+            currentService.distanceFromPrevious = distance
             currentService.previousCompany = previousService.company
           }
         }
