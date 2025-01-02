@@ -111,19 +111,6 @@ export async function GET(request) {
       worker.postMessage({ services, distanceMatrix })
     })
 
-    console.log(
-      'Worker result:',
-      JSON.stringify(
-        {
-          scheduledCount: result.scheduledServices?.length,
-          unassignedCount: result.unassignedServices?.length,
-          sample: result.scheduledServices?.[0],
-        },
-        null,
-        2,
-      ),
-    )
-
     return new Response(JSON.stringify(result, null, 2), {
       headers: {
         'Content-Type': 'application/json',

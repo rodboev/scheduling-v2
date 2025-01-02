@@ -10,6 +10,7 @@ const CACHE_FILE = path.join(process.cwd(), 'data', 'location-cache.json')
 
 // Memory cache for non-location data (like distance matrices)
 const memoryCache = new Map()
+const missingLocationsCache = new Set()
 
 // Ensure data directory exists
 if (!fs.existsSync(path.join(process.cwd(), 'data'))) {
@@ -49,6 +50,7 @@ function saveCache() {
 export function clearLocations() {
   locationCache.clear()
   companyCache.clear()
+  missingLocationsCache.clear()
   saveCache()
 }
 
@@ -131,12 +133,13 @@ export async function storeLocations(serviceSetups) {
 
 // Get location info
 export async function getLocationInfo(ids) {
-  return ids.map(id => {
+  const missingIds = []
+  const results = ids.map(id => {
     const pos = locationCache.get(id.toString())
     const company = companyCache.get(id.toString())
 
     if (!pos) {
-      console.error(`Location not found for ID ${id}`)
+      missingIds.push(id)
       return null
     }
 
@@ -149,6 +152,17 @@ export async function getLocationInfo(ids) {
       },
     }
   })
+
+  if (missingIds.length > 0) {
+    // Only log new missing locations
+    const newMissingIds = missingIds.filter(id => !missingLocationsCache.has(id))
+    if (newMissingIds.length > 0) {
+      console.error(`Locations not found: ${newMissingIds.join(', ')}`)
+      newMissingIds.forEach(id => missingLocationsCache.add(id))
+    }
+  }
+
+  return results
 }
 
 // Calculate distance between two points
@@ -157,7 +171,19 @@ export async function calculateDistance(id1, id2) {
   const pos2 = locationCache.get(id2.toString())
 
   if (!pos1 || !pos2) {
-    console.error(`Location not found: ${!pos1 ? id1 : id2}`)
+    // Only log new missing locations
+    const missingIds = []
+    if (!pos1 && !missingLocationsCache.has(id1)) {
+      missingIds.push(id1)
+      missingLocationsCache.add(id1)
+    }
+    if (!pos2 && !missingLocationsCache.has(id2)) {
+      missingIds.push(id2)
+      missingLocationsCache.add(id2)
+    }
+    if (missingIds.length > 0) {
+      console.error(`Locations not found: ${missingIds.join(', ')}`)
+    }
     return null
   }
 
