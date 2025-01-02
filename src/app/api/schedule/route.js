@@ -28,18 +28,6 @@ export async function GET(request) {
       },
     })
 
-    console.log(
-      'Services API response:',
-      JSON.stringify(
-        {
-          count: response.data.length,
-          dateRange: response.data.map(s => s.date),
-        },
-        null,
-        2,
-      ),
-    )
-
     const services = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) return false
 
