@@ -18,6 +18,7 @@ const distanceMatrixCache = {
   locationIds: new Set(),
   lastUpdated: null,
   TTL: 5 * 60 * 1000, // 5 minutes in milliseconds
+  format: 'object', // 'object' or 'array'
 }
 
 // Ensure data directory exists
@@ -342,80 +343,114 @@ export function deleteCachedData(key) {
 
   console.log(`Cleared ${deletedCount} cache entries`)
 
-  // Also clear location and distance matrix caches if it's a distance-related key
+  // Also clear location cache and distance matrix if it's a distance-related key
   if (key.includes('distance')) {
     console.log('Also clearing location and distance matrix caches')
     locationCache.clear()
-    clearDistanceMatrix() // Clear the distance matrix cache
+    clearDistanceMatrix()
   }
 }
 
-// Function to get or create the full distance matrix
-export async function getFullDistanceMatrix(newLocationIds = []) {
-  const now = Date.now()
+/**
+ * Get or create a full distance matrix for a set of locations
+ * @param {string[]} newLocationIds - Array of location IDs to include in the matrix
+ * @param {Object} options - Options for matrix creation
+ * @param {string} [options.format='object'] - Format of the matrix ('object' or 'array')
+ * @param {boolean} [options.force=false] - Force recreation of matrix even if cached
+ * @returns {Promise<Object|Array>} Distance matrix in requested format
+ */
+export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
+  const { format = 'object', force = false } = options
+  const currentTime = Date.now()
 
-  // If matrix exists and isn't expired
-  if (
-    distanceMatrixCache.matrix &&
-    distanceMatrixCache.lastUpdated &&
-    now - distanceMatrixCache.lastUpdated < distanceMatrixCache.TTL
-  ) {
-    // Check if we need to add new locations
-    const newIds = newLocationIds.filter(id => !distanceMatrixCache.locationIds.has(id))
-    if (newIds.length === 0) {
-      return distanceMatrixCache.matrix
-    }
+  // Check if we need to update the cache
+  const needsUpdate =
+    force ||
+    !distanceMatrixCache.matrix ||
+    currentTime - distanceMatrixCache.lastUpdated > distanceMatrixCache.TTL ||
+    !newLocationIds.every(id => distanceMatrixCache.locationIds.has(id)) ||
+    format !== distanceMatrixCache.format
 
-    // Add new locations to existing matrix
-    for (const id1 of newIds) {
-      for (const id2 of [...distanceMatrixCache.locationIds, ...newIds]) {
-        if (id1 === id2) continue
-        const result = await calculateDistance(id1, id2)
-        if (result?.pair) {
-          const key = `${id1},${id2}`
-          distanceMatrixCache.matrix[key] = result.pair.distance
-          distanceMatrixCache.matrix[`${id2},${id1}`] = result.pair.distance
-        }
-      }
-      distanceMatrixCache.locationIds.add(id1)
-    }
-    distanceMatrixCache.lastUpdated = now
+  if (!needsUpdate) {
     return distanceMatrixCache.matrix
   }
 
-  // Create new matrix
-  const matrix = {}
-  const allIds = [...new Set([...distanceMatrixCache.locationIds, ...newLocationIds])]
+  console.log('Creating new distance matrix...')
+  const locationIds = [...new Set(newLocationIds)]
 
-  for (let i = 0; i < allIds.length; i++) {
-    for (let j = i + 1; j < allIds.length; j++) {
-      const id1 = allIds[i]
-      const id2 = allIds[j]
-      const result = await calculateDistance(id1, id2)
-      if (result?.pair) {
-        const key = `${id1},${id2}`
-        matrix[key] = result.pair.distance
-        matrix[`${id2},${id1}`] = result.pair.distance
+  // Create the matrix in the requested format
+  if (format === 'array') {
+    const matrix = Array(locationIds.length)
+      .fill()
+      .map(() => Array(locationIds.length).fill(null))
+
+    // Fill the matrix
+    for (let i = 0; i < locationIds.length; i++) {
+      for (let j = i + 1; j < locationIds.length; j++) {
+        const distance = await calculateDistance(locationIds[i], locationIds[j])
+        if (distance?.pair?.distance) {
+          matrix[i][j] = distance.pair.distance
+          matrix[j][i] = distance.pair.distance // Mirror the distance
+        }
       }
     }
+
+    // Update cache
+    distanceMatrixCache.matrix = matrix
+    distanceMatrixCache.format = 'array'
+  } else {
+    // Object format for key-based lookup
+    const matrix = {}
+
+    // Fill the matrix
+    for (let i = 0; i < locationIds.length; i++) {
+      for (let j = i + 1; j < locationIds.length; j++) {
+        const distance = await calculateDistance(locationIds[i], locationIds[j])
+        if (distance?.pair?.distance) {
+          const key = `${locationIds[i]},${locationIds[j]}`
+          const reverseKey = `${locationIds[j]},${locationIds[i]}`
+          matrix[key] = distance.pair.distance
+          matrix[reverseKey] = distance.pair.distance // Mirror the distance
+        }
+      }
+    }
+
+    // Update cache
+    distanceMatrixCache.matrix = matrix
+    distanceMatrixCache.format = 'object'
   }
 
-  // Update cache
-  distanceMatrixCache.matrix = matrix
-  distanceMatrixCache.locationIds = new Set(allIds)
-  distanceMatrixCache.lastUpdated = now
+  // Update cache metadata
+  distanceMatrixCache.locationIds = new Set(locationIds)
+  distanceMatrixCache.lastUpdated = currentTime
 
-  return matrix
+  return distanceMatrixCache.matrix
 }
 
-// Function to get distance between two locations from the matrix
-export async function getMatrixDistance(id1, id2) {
-  const matrix = await getFullDistanceMatrix([id1, id2])
-  const key = `${id1},${id2}`
-  return matrix[key]
+/**
+ * Get distance between two locations from the matrix
+ * @param {string} id1 - First location ID
+ * @param {string} id2 - Second location ID
+ * @returns {number|null} Distance in miles or null if not found
+ */
+export function getMatrixDistance(id1, id2) {
+  if (!distanceMatrixCache.matrix) return null
+
+  if (distanceMatrixCache.format === 'object') {
+    return distanceMatrixCache.matrix[`${id1},${id2}`] || null
+  }
+
+  // For array format, we need to find the indices
+  const idx1 = Array.from(distanceMatrixCache.locationIds).indexOf(id1)
+  const idx2 = Array.from(distanceMatrixCache.locationIds).indexOf(id2)
+  if (idx1 === -1 || idx2 === -1) return null
+
+  return distanceMatrixCache.matrix[idx1][idx2]
 }
 
-// Clear matrix cache
+/**
+ * Clear the distance matrix cache
+ */
 export function clearDistanceMatrix() {
   distanceMatrixCache.matrix = null
   distanceMatrixCache.locationIds.clear()

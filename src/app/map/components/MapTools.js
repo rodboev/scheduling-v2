@@ -104,10 +104,17 @@ const MapTools = ({
       if (data.error) {
         setStatusMessage(`Error refreshing data: ${data.error}`)
       } else {
+        setStatusMessage('Refreshing locations and distances...')
+
+        // Wait a moment for the cache to clear completely
+        await new Promise(resolve => setTimeout(resolve, 500))
+
         // Refetch services to get updated distances
         await fetchClusteredServices()
-        // Only show success message after data is refreshed and rendered
-        setStatusMessage('Data refreshed successfully')
+
+        // Show success message
+        setStatusMessage(`Data refreshed successfully: ${data.locationCount} locations updated`)
+
         // Clear status message after 3 seconds
         setTimeout(() => {
           setStatusMessage('')
