@@ -71,7 +71,7 @@ export default function BigCalendar() {
   // Create an absolutely empty event component
   const eventComponent = useCallback(
     props => {
-      console.log('Rendering event:', props.event)
+      // console.log('Rendering event:', props.event)
       return (
         <div className="select-none">
           <Service service={props.event} updateServiceEnforcement={updateServiceEnforcement} />

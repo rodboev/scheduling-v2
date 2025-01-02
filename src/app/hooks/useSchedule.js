@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import { logScheduleActivity } from '@/app/utils/serviceLogging'
 
 const BATCH_SIZE = 100 // Adjust this value based on performance
 const PROGRESS_UPDATE_INTERVAL = 10 // Update progress every 10ms
@@ -30,6 +31,7 @@ export function useSchedule(currentViewRange) {
   })
   const dataRef = useRef(null)
   const progressRef = useRef(0)
+  const startTimeRef = useRef(null)
 
   const dateRange = useMemo(
     () => ({
@@ -47,21 +49,13 @@ export function useSchedule(currentViewRange) {
   )
 
   const processDataBatch = useCallback(startIndex => {
-    const { scheduledServices, unassignedServices } = dataRef.current
+    const { scheduledServices, unassignedServices, clusteringInfo } = dataRef.current
     const totalServices = scheduledServices?.length || 0
 
     // Update progress based on how many services we've processed
     const newProgress = Math.min(startIndex / totalServices, 0.9) // Cap at 90% until final render
     setProgress(newProgress)
     setStatus('Rendering services...')
-
-    console.log('Processing data batch:', {
-      startIndex,
-      scheduledServices: scheduledServices?.length,
-      unassignedServices: unassignedServices?.length,
-      progress: Math.round(newProgress * 100) + '%',
-      sample: scheduledServices?.[0],
-    })
 
     const endIndex = Math.min(startIndex + BATCH_SIZE, scheduledServices.length)
 
@@ -113,9 +107,9 @@ export function useSchedule(currentViewRange) {
         },
       }
 
-      if (startIndex === 0) {
-        console.log('Sample processed service:', processedService)
-      }
+      // if (startIndex === 0) {
+      //   console.log('Sample processed service:', processedService)
+      // }
 
       return processedService
     })
@@ -134,7 +128,6 @@ export function useSchedule(currentViewRange) {
     } else {
       // Create resources from assigned services only
       const techSet = new Set(scheduledServices.map(service => service.techId || 'Unassigned'))
-
       const resources = Array.from(techSet)
         .map(techId => ({ id: techId, title: techId }))
         .sort((a, b) => {
@@ -144,6 +137,19 @@ export function useSchedule(currentViewRange) {
           const bNum = Number.parseInt(b.id.split(' ')[1], 10)
           return aNum - bNum
         })
+
+      // Update final performance duration
+      const finalPerformanceDuration = Math.round(performance.now() - startTimeRef.current)
+      const finalClusteringInfo = {
+        ...clusteringInfo,
+        performanceDuration: finalPerformanceDuration,
+      }
+
+      // Log schedule activity with complete data
+      logScheduleActivity({
+        services: scheduledServices,
+        clusteringInfo: finalClusteringInfo,
+      })
 
       setResult(prevResult => ({
         ...prevResult,
@@ -161,6 +167,7 @@ export function useSchedule(currentViewRange) {
     setLoading(true)
     setProgress(0)
     setStatus('Initializing...')
+    startTimeRef.current = performance.now()
 
     try {
       console.log('Fetching schedule for date range:', dateRange)
@@ -189,6 +196,10 @@ export function useSchedule(currentViewRange) {
       dataRef.current = {
         scheduledServices: data.scheduledServices || [],
         unassignedServices: data.unassignedServices || [],
+        clusteringInfo: {
+          ...data.clusteringInfo,
+          performanceDuration: Math.round(performance.now() - startTimeRef.current),
+        },
       }
 
       setStatus('Rendering...')

@@ -18,7 +18,6 @@ const SCORE_CACHE = new Map() // Cache for service compatibility scores
 
 // Tech assignment and scheduling constants
 const TECH_START_TIME_VARIANCE = 2 * 60 * 60 * 1000 // 2 hours in milliseconds
-const MAX_TECHS = 10 // Maximum number of techs to assign
 
 // Track tech start times across days
 const techStartTimes = new Map()
@@ -185,6 +184,10 @@ function assignTechsToShifts(shifts, dateStr) {
   // Group shifts by date
   const shiftsByDate = new Map()
   const techAssignmentsByDate = new Map() // Track tech assignments per day
+  const totalClusters = new Set(shifts.map(s => s.cluster)).size // Get total number of unique clusters
+
+  // Reset tech start times for new assignment
+  techStartTimes.clear()
 
   for (const shift of shifts) {
     const shiftDate = dayjs(shift.services[0].start).format('YYYY-MM-DD')
@@ -214,32 +217,23 @@ function assignTechsToShifts(shifts, dateStr) {
       let bestTech = null
       let bestVariance = Infinity
 
-      // First, try to find a tech that's already working on this day
-      if (assignedTechs.size < MAX_TECHS) {
-        for (let techNum = 1; techNum <= MAX_TECHS; techNum++) {
-          const techId = `Tech ${techNum}`
+      // First, try to find an existing tech that matches the start time and isn't assigned today
+      for (const [techId, prefStartTime] of techStartTimes) {
+        if (assignedTechs.has(techId)) continue
 
-          // Skip if tech is already assigned today
-          if (assignedTechs.has(techId)) continue
-
-          const techPrefStartTime = techStartTimes.get(techId)
-
-          // If this tech doesn't have a preferred start time yet, they're a candidate
-          if (!techPrefStartTime) {
-            bestTech = techId
-            break
-          }
-
-          // Calculate how well this shift's start time matches the tech's preferred time
-          const variance = Math.abs((shiftStartTime % (24 * 60 * 60 * 1000)) - techPrefStartTime)
-          if (variance < bestVariance && variance <= TECH_START_TIME_VARIANCE) {
-            bestTech = techId
-            bestVariance = variance
-          }
+        const variance = Math.abs((shiftStartTime % (24 * 60 * 60 * 1000)) - prefStartTime)
+        if (variance <= TECH_START_TIME_VARIANCE && variance < bestVariance) {
+          bestTech = techId
+          bestVariance = variance
         }
       }
 
-      // If no suitable tech found, find the tech with the least work
+      // If no existing tech fits, create a new one (but only if we haven't exceeded total clusters)
+      if (!bestTech && techStartTimes.size < totalClusters) {
+        bestTech = `Tech ${techStartTimes.size + 1}`
+      }
+
+      // If still no tech, find the tech with the least work who isn't assigned today
       if (!bestTech) {
         const techWorkload = new Map()
         for (const [d, shifts] of shiftsByDate) {
@@ -250,13 +244,22 @@ function assignTechsToShifts(shifts, dateStr) {
           }
         }
 
-        // Find the tech with the least work who isn't assigned today
         const availableTechs = Array.from(techWorkload.entries())
           .filter(([techId]) => !assignedTechs.has(techId))
           .sort((a, b) => a[1] - b[1])
 
-        bestTech =
-          availableTechs.length > 0 ? availableTechs[0][0] : `Tech ${assignedTechs.size + 1}`
+        bestTech = availableTechs[0]?.[0]
+      }
+
+      // If we still don't have a tech, use the first available tech number
+      if (!bestTech) {
+        for (let techNum = 1; techNum <= totalClusters; techNum++) {
+          const techId = `Tech ${techNum}`
+          if (!assignedTechs.has(techId)) {
+            bestTech = techId
+            break
+          }
+        }
       }
 
       // Assign the tech to the shift
