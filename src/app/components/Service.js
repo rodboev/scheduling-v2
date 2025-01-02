@@ -81,7 +81,7 @@ export default function Service({ service, updateServiceEnforcement, variant = '
       )}
 
       {/* Distance from previous point */}
-      {service.distanceFromPrevious && (
+      {service.distanceFromPrevious > 0 && (
         <div className="mb-2">
           <div className="flex items-center gap-x-2">
             <Car size={32} strokeWidth={2.5} className="h-4 w-4" />
