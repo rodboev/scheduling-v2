@@ -10,7 +10,6 @@ import { TECH_SPEED_MPH } from '@/app/utils/constants'
 import { calculateTravelTime } from '@/app/map/utils/travelTime'
 import dayjs from 'dayjs'
 import { Car, Clock } from 'lucide-react'
-import { Popup } from 'react-leaflet'
 
 function getClusterLabel(cluster, reason) {
   if (cluster >= 0) return `${cluster}`
@@ -26,11 +25,11 @@ function formatBorough(borough) {
 export default function Service({ service, updateServiceEnforcement, variant = 'calendar' }) {
   const [isOpen, setIsOpen] = useState(false)
   const [offset, setOffset] = useState(0)
-  const pageHeight = document.documentElement.scrollHeight
+  const pageHeight = typeof document !== 'undefined' ? document.documentElement.scrollHeight : 0
 
   const handleMouseEnter = e => {
     if (variant === 'calendar') {
-      const cursorY = e.clientY + window.scrollY
+      const cursorY = e.clientY + (typeof window !== 'undefined' ? window.scrollY : 0)
       setOffset(pageHeight - cursorY)
     }
     setIsOpen(true)
@@ -125,34 +124,15 @@ export default function Service({ service, updateServiceEnforcement, variant = '
           (was {service.tech.code})
         </div>
       )}
-
-      {/* Comments */}
-      {/* {service.comments && (
-        <div className="space-y-2">
-          <div className="">
-            <p className="break-words text-sm">
-              <span className="block font-semibold">Service Setup comments:</span>
-              {service.comments.serviceSetup}
-            </p>
-          </div>
-          {service.comments.location && service.comments.location.trim() !== '' && (
-            <div className="my-2">
-              <p className="break-words text-sm">
-                <span className="block font-semibold">Location comments:</span>
-                {service.comments.location}
-              </p>
-            </div>
-          )}
-        </div>
-      )} */}
     </div>
   )
 
   if (variant === 'map') {
+    const MapPopup = React.lazy(() => import('@/app/components/MapPopup'))
     return (
-      <Popup>
+      <MapPopup>
         <ServiceContent />
-      </Popup>
+      </MapPopup>
     )
   }
 
