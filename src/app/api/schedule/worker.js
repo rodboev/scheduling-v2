@@ -11,7 +11,6 @@ import {
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
 
-const TIME_INCREMENT = 15 // 15 minute increments
 const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
 const MAX_TRAVEL_TIME = 15 // maximum travel time between services in minutes
 
@@ -28,14 +27,6 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
     (newEnd > existingStart && newEnd <= existingEnd) ||
     (newStart <= existingStart && newEnd >= existingEnd)
   )
-}
-
-function roundToNearestInterval(date) {
-  const minutes = date.getMinutes()
-  const roundedMinutes = Math.ceil(minutes / TIME_INCREMENT) * TIME_INCREMENT
-  const newDate = new Date(date)
-  newDate.setMinutes(roundedMinutes)
-  return newDate
 }
 
 function verifyShiftDistances(shift, service, distanceMatrix) {
@@ -174,79 +165,67 @@ function findBestNextService(
     const travelTime = calculateTravelTime(distance)
     const rangeStart = new Date(service.time.range[0])
     const rangeEnd = new Date(service.time.range[1])
-    let tryStart = new Date(
-      Math.max(rangeStart.getTime(), currentEnd.getTime() + travelTime * 60000),
-    )
 
-    // Be more lenient with time gaps for shorter shifts
-    const maxTimeGap = shiftDuration < 240 ? 180 : 120 // Allow up to 3-hour gaps for shifts under 4 hours
+    // Start time must be exactly travel time after current service end
+    let tryStart = new Date(currentEnd.getTime() + travelTime * 60000)
 
-    while (tryStart <= rangeEnd) {
-      tryStart = roundToNearestInterval(tryStart)
-      const serviceEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
+    // If tryStart is before the service's allowed range, use rangeStart
+    if (tryStart < rangeStart) {
+      tryStart = new Date(rangeStart)
+    }
 
-      // Check if adding this service would exceed 8 hours
-      const newShiftDuration =
-        (Math.max(serviceEnd.getTime(), currentEnd.getTime()) - shiftStart) / (60 * 1000)
-      if (newShiftDuration > SHIFT_DURATION) break
+    const serviceEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
 
-      let hasConflict = false
-      for (const scheduled of scheduledServices) {
-        if (
-          checkTimeOverlap(new Date(scheduled.start), new Date(scheduled.end), tryStart, serviceEnd)
-        ) {
-          hasConflict = true
-          break
-        }
-      }
+    // Check if adding this service would exceed 8 hours
+    const newShiftDuration =
+      (Math.max(serviceEnd.getTime(), currentEnd.getTime()) - shiftStart) / (60 * 1000)
+    if (newShiftDuration > SHIFT_DURATION) continue
 
-      if (!hasConflict) {
-        const timeGap = (tryStart - currentEnd) / (60 * 1000)
-        if (timeGap > maxTimeGap) {
-          tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
-          continue
-        }
-
-        // Enhanced scoring system
-        const distanceScore = -Math.pow(distance / HARD_MAX_RADIUS_MILES, 2) * 50
-        const timeGapScore = -Math.pow(timeGap / 60, 1.5) // Less penalty for time gaps
-        const durationBonus = Math.min(newShiftDuration, SHIFT_DURATION) / 60 // Bonus for longer shifts
-        const flexibilityPenalty = -Math.log((rangeEnd - rangeStart) / (60 * 60 * 1000))
-
-        // Calculate time window overlap score
-        const timeWindowOverlap = getTimeWindowOverlapScore(service, scheduledServices)
-        const preferredTime = new Date(service.time.preferred)
-        const preferredDiff = Math.abs(tryStart - preferredTime) / 60000
-        const preferredScore = -Math.log(preferredDiff + 1)
-
-        // Calculate future compatibility score
-        const futureScore = calculateFutureCompatibilityScore(
-          service,
-          tryStart,
-          serviceEnd,
-          remainingServices,
-          distanceMatrix,
-          3, // Lookahead depth
-        )
-
-        const score =
-          distanceScore * 0.3 +
-          timeGapScore * 0.15 +
-          durationBonus * 0.1 +
-          flexibilityPenalty * 0.1 +
-          timeWindowOverlap * 0.15 +
-          preferredScore * 0.1 +
-          futureScore * 0.1
-
-        if (score > bestScore) {
-          bestScore = score
-          bestService = service
-          bestStart = tryStart
-        }
+    let hasConflict = false
+    for (const scheduled of scheduledServices) {
+      if (
+        checkTimeOverlap(new Date(scheduled.start), new Date(scheduled.end), tryStart, serviceEnd)
+      ) {
+        hasConflict = true
         break
       }
+    }
 
-      tryStart = new Date(tryStart.getTime() + TIME_INCREMENT * 60000)
+    if (!hasConflict) {
+      // Enhanced scoring system
+      const distanceScore = -Math.pow(distance / HARD_MAX_RADIUS_MILES, 2) * 50
+      const durationBonus = Math.min(newShiftDuration, SHIFT_DURATION) / 60 // Bonus for longer shifts
+      const flexibilityPenalty = -Math.log((rangeEnd - rangeStart) / (60 * 60 * 1000))
+
+      // Calculate time window overlap score
+      const timeWindowOverlap = getTimeWindowOverlapScore(service, scheduledServices)
+      const preferredTime = new Date(service.time.preferred)
+      const preferredDiff = Math.abs(tryStart - preferredTime) / 60000
+      const preferredScore = -Math.log(preferredDiff + 1)
+
+      // Calculate future compatibility score
+      const futureScore = calculateFutureCompatibilityScore(
+        service,
+        tryStart,
+        serviceEnd,
+        remainingServices,
+        distanceMatrix,
+        3, // Lookahead depth
+      )
+
+      const score =
+        distanceScore * 0.3 +
+        durationBonus * 0.2 +
+        flexibilityPenalty * 0.1 +
+        timeWindowOverlap * 0.2 +
+        preferredScore * 0.1 +
+        futureScore * 0.1
+
+      if (score > bestScore) {
+        bestScore = score
+        bestService = service
+        bestStart = tryStart
+      }
     }
   }
 
@@ -272,17 +251,17 @@ function calculateFutureCompatibilityScore(
     const distance = distanceMatrix[serviceIndex][nextService.originalIndex]
     if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
 
+    const travelTime = calculateTravelTime(distance)
     const nextStart = new Date(nextService.time.range[0])
     const nextEnd = new Date(nextService.time.range[1])
 
-    // Check if service can be scheduled after current service
-    if (nextStart <= endTime || nextEnd <= endTime) continue
+    // Check if service can be scheduled after current service plus travel time
+    const earliestStart = new Date(endTime.getTime() + travelTime * 60000)
+    if (nextEnd <= earliestStart) continue
 
-    const timeGap = (nextStart - endTime) / (60 * 1000)
-    if (timeGap > 120) continue // Skip if gap is too large
-
-    const compatibilityScore =
-      (1 - distance / HARD_MAX_RADIUS_MILES) * 0.6 + (1 - timeGap / 120) * 0.4
+    // Score based on distance and how well the service fits after travel time
+    const fitScore = nextStart >= earliestStart ? 1 : 0.5
+    const compatibilityScore = (1 - distance / HARD_MAX_RADIUS_MILES) * fitScore
 
     // Recursively calculate compatibility with remaining services
     const futureScore = calculateFutureCompatibilityScore(
@@ -396,15 +375,23 @@ function processServices(services, distanceMatrix) {
         } else {
           const previousService = bestShift.services[bestShift.services.length - 1]
           const distance = distanceMatrix[previousService.originalIndex][service.originalIndex]
+          const travelTime = distance ? calculateTravelTime(distance) : 0
+          const previousEnd = new Date(previousService.end)
+          const serviceStart = new Date(bestStart)
+
+          // Ensure minimum gap equals travel time
+          if (serviceStart - previousEnd < travelTime * 60000) {
+            serviceStart.setTime(previousEnd.getTime() + travelTime * 60000)
+          }
 
           const serviceToAdd = {
             ...service,
             cluster: bestShift.cluster,
             sequenceNumber: bestShift.services.length + 1,
-            start: formatDate(bestStart),
-            end: formatDate(new Date(bestStart.getTime() + service.time.duration * 60000)),
+            start: formatDate(serviceStart),
+            end: formatDate(new Date(serviceStart.getTime() + service.time.duration * 60000)),
             distanceFromPrevious: distance || 0,
-            travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+            travelTimeFromPrevious: travelTime,
             previousService: previousService.id,
             previousCompany: previousService.company,
           }
@@ -443,21 +430,26 @@ function processServices(services, distanceMatrix) {
                 const previousService = mergedServices[mergedServices.length - 1]
                 const distance =
                   distanceMatrix[previousService.originalIndex][service.originalIndex]
+                const travelTime = distance ? calculateTravelTime(distance) : 0
+                const previousEnd = new Date(previousService.end)
+                let serviceStart =
+                  service === firstServiceOther
+                    ? new Date(nextService.start)
+                    : new Date(service.start)
+
+                // Ensure minimum gap equals travel time
+                if (serviceStart - previousEnd < travelTime * 60000) {
+                  serviceStart.setTime(previousEnd.getTime() + travelTime * 60000)
+                }
 
                 mergedServices.push({
                   ...service,
                   cluster: shift.cluster,
                   sequenceNumber: mergedServices.length + 1,
-                  start:
-                    service === firstServiceOther ? formatDate(nextService.start) : service.start,
-                  end:
-                    service === firstServiceOther
-                      ? formatDate(
-                          new Date(nextService.start.getTime() + service.time.duration * 60000),
-                        )
-                      : service.end,
+                  start: formatDate(serviceStart),
+                  end: formatDate(new Date(serviceStart.getTime() + service.time.duration * 60000)),
                   distanceFromPrevious: distance || 0,
-                  travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+                  travelTimeFromPrevious: travelTime,
                   previousService: previousService.id,
                   previousCompany: previousService.company,
                 })
@@ -532,16 +524,21 @@ function addServiceToShift(service, shift, distanceMatrix) {
   // Get the previous service and calculate distance
   const previousService = shift.services[shift.services.length - 1]
   const distance = distanceMatrix[previousService.originalIndex][service.originalIndex]
+  const travelTime = distance ? calculateTravelTime(distance) : 0
+
+  // Calculate start time based on previous service end plus travel time
+  const previousEnd = new Date(previousService.end)
+  const serviceStart = new Date(previousEnd.getTime() + travelTime * 60000)
 
   return {
     ...service,
     cluster: shift.cluster,
-    start: shift.startTime.toISOString(),
-    end: new Date(shift.startTime.getTime() + service.time.duration * 60000).toISOString(),
+    start: serviceStart.toISOString(),
+    end: new Date(serviceStart.getTime() + service.time.duration * 60000).toISOString(),
     previousService: previousService.id,
     previousCompany: previousService.company,
     distanceFromPrevious: distance,
-    travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+    travelTimeFromPrevious: travelTime,
   }
 }
 
@@ -562,13 +559,23 @@ function mergeServices(services, distanceMatrix) {
 
     const previousService = mergedServices[mergedServices.length - 1]
     const distance = distanceMatrix[previousService.originalIndex][service.originalIndex]
+    const travelTime = distance ? calculateTravelTime(distance) : 0
+    const previousEnd = new Date(previousService.end)
+    let serviceStart = new Date(service.start)
+
+    // Ensure minimum gap equals travel time
+    if (serviceStart - previousEnd < travelTime * 60000) {
+      serviceStart.setTime(previousEnd.getTime() + travelTime * 60000)
+    }
 
     mergedServices.push({
       ...service,
+      start: formatDate(serviceStart),
+      end: formatDate(new Date(serviceStart.getTime() + service.time.duration * 60000)),
       previousService: previousService.id,
       previousCompany: previousService.company,
       distanceFromPrevious: distance,
-      travelTimeFromPrevious: distance ? calculateTravelTime(distance) : 15,
+      travelTimeFromPrevious: travelTime,
     })
   }
 

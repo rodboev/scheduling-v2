@@ -30,70 +30,47 @@ export async function logMapActivity({ services, clusteringInfo }) {
 
       if (clusterServices.length === 0) continue
 
-      const firstService = clusterServices[0]
-      const lastService = clusterServices[clusterServices.length - 1]
-      const clusterStart = new Date(firstService.start)
-      const clusterEnd = new Date(lastService.end)
-
-      console.log(`\nCluster ${cluster} (${formatTime(clusterStart)} - ${formatTime(clusterEnd)}):`)
-
-      for (let i = 0; i < clusterServices.length; i++) {
-        const service = clusterServices[i]
-        const start = new Date(service.start)
-        const end = new Date(service.end)
-        const rangeStart = new Date(service.time.range[0])
-        const rangeEnd = new Date(service.time.range[1])
-
-        let line = `- ${formatTime(start)}-${formatTime(end)}, ${service.company} `
-        line += `(${service.location.latitude}, ${service.location.longitude}) `
-        line += `(range: ${formatTime(rangeStart)}-${formatTime(rangeEnd)})`
-
-        if (i > 0) {
-          const distance = service.distanceFromPrevious?.toFixed(2) || 'unknown'
-          const travelTime = service.travelTimeFromPrevious || 'unknown'
-          const timeGap = (start - new Date(clusterServices[i - 1].end)) / (60 * 1000)
-          line += ` (${distance} mi / ${travelTime} min from ${service.previousCompany}, gap: ${timeGap.toFixed(0)} min)`
-        }
-
-        console.log(line)
-      }
-
-      // Calculate cluster statistics
-      const distances = clusterServices
-        .filter(s => s.distanceFromPrevious !== undefined)
-        .map(s => s.distanceFromPrevious)
-
-      const travelTimes = clusterServices
-        .filter(s => s.travelTimeFromPrevious !== undefined)
-        .map(s => s.travelTimeFromPrevious)
-
-      const timeGaps = []
-      for (let i = 1; i < clusterServices.length; i++) {
-        const prevEnd = new Date(clusterServices[i - 1].end)
-        const currentStart = new Date(clusterServices[i].start)
-        if (!isNaN(prevEnd) && !isNaN(currentStart)) {
-          timeGaps.push((currentStart - prevEnd) / (60 * 1000))
-        }
-      }
-
-      const avgDistance =
-        distances.length > 0 ? distances.reduce((sum, d) => sum + d, 0) / distances.length : 0
-
-      const totalTravelTime =
-        travelTimes.length > 0 ? travelTimes.reduce((sum, t) => sum + t, 0) : 0
-
-      const avgTimeGap =
-        timeGaps.length > 0 ? timeGaps.reduce((sum, g) => sum + g, 0) / timeGaps.length : 0
-
-      const clusterDuration = (clusterEnd - clusterStart) / (60 * 60 * 1000)
-
-      console.log('Cluster Statistics:')
-      console.log(`  Average Distance: ${avgDistance.toFixed(2)} mi`)
-      console.log(`  Total Travel Time: ${totalTravelTime} min`)
-      console.log(`  Average Time Gap: ${avgTimeGap.toFixed(0)} min`)
-      console.log(`Cluster duration: ${clusterDuration.toFixed(2)} hours`)
+      logClusterServices(clusterServices)
     }
   } catch (error) {
     console.error('Error logging map activity:', error)
   }
+}
+
+function logClusterServices(clusterServices) {
+  console.log(
+    `Cluster ${clusterServices[0].cluster} (${formatTime(clusterServices[0].start)} - ${formatTime(clusterServices[clusterServices.length - 1].end)}):`,
+  )
+
+  for (let i = 0; i < clusterServices.length; i++) {
+    const service = clusterServices[i]
+    const start = new Date(service.start)
+    const end = new Date(service.end)
+
+    let line = `- ${formatTime(start)}-${formatTime(end)}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${formatTime(service.time.range[0])}-${formatTime(service.time.range[1])})`
+
+    if (i > 0) {
+      const distance = service.distanceFromPrevious || 'unknown'
+      const travelTime = service.travelTimeFromPrevious || 'unknown'
+      line += ` (${distance} mi / ${travelTime} min from ${service.previousCompany})`
+    }
+
+    console.log(line)
+  }
+
+  // Print cluster stats
+  const distances = clusterServices
+    .filter(s => s.distanceFromPrevious !== undefined)
+    .map(s => s.distanceFromPrevious)
+
+  const travelTimes = clusterServices
+    .filter(s => s.travelTimeFromPrevious !== undefined)
+    .map(s => s.travelTimeFromPrevious)
+
+  const totalDistance = distances.length > 0 ? distances.reduce((sum, d) => sum + d, 0) : 0
+  const totalTravelTime = travelTimes.length > 0 ? travelTimes.reduce((sum, t) => sum + t, 0) : 0
+
+  console.log('\nCluster Stats:')
+  console.log(`  Total Distance: ${totalDistance.toFixed(2)} mi`)
+  console.log(`  Total Travel Time: ${totalTravelTime} min`)
 }
