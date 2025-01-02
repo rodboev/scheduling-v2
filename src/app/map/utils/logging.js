@@ -50,7 +50,7 @@ function logClusterServices(clusterServices) {
 
     let line = `- ${formatServiceTime(service)}`
     if (i > 0) {
-      line += ` (${distance} mi / ${travelTime} min from ${service.previousCompany})`
+      line += ` (${distance.toFixed(2)} mi / ${travelTime} min from ${service.previousCompany})`
     }
     console.log(line)
   }

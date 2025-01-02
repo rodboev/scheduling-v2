@@ -118,9 +118,11 @@ export default function Service({ service, updateServiceEnforcement, variant = '
       )}
 
       {service.cluster !== undefined && (
-        <div className="mt-3 font-bold">
-          Cluster: {getClusterLabel(service.cluster, service.clusterReason)} (was{' '}
-          {service.tech.code})
+        <div className="mt-3">
+          <span className="font-semibold">
+            Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
+          </span>{' '}
+          (was {service.tech.code})
         </div>
       )}
 

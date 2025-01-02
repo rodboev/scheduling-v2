@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 /**
  * MapTools provides date selection for services
@@ -163,10 +164,10 @@ const MapTools = ({
                 await setDate(newDate)
                 fetchClusteredServices(newDate)
               }}
-              className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+              className="leading-tighter mt-4 flex rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
               type="button"
             >
-              {'<'} Prev day
+              <ChevronLeft /> Prev
             </button>
 
             <button
@@ -179,10 +180,10 @@ const MapTools = ({
                 await setDate(newDate)
                 fetchClusteredServices(newDate)
               }}
-              className="leading-tighter mt-4 rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
+              className="leading-tighter mt-4 flex rounded-md border-4 border-blue-600 bg-white px-4 py-2 font-bold text-blue-600 no-underline hover:bg-blue-600 hover:text-white"
               type="button"
             >
-              Next day {'>'}
+              Next <ChevronRight />
             </button>
           </div>
         </div>

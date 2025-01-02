@@ -32,7 +32,7 @@ function PolylineWithArrow({ positions, color }) {
           offset: 50,
           repeat: 100,
           symbol: L.Symbol.arrowHead({
-            pixelSize: 10,
+            pixelSize: 7,
             polygon: false,
             pathOptions: {
               stroke: true,
