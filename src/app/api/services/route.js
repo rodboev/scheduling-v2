@@ -113,20 +113,101 @@ export async function GET(request) {
       }
     }
 
-    // Find techs without services in date range
-    const allTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))]
-    console.log('Total techs:', allTechs.length)
+    // Remove techs with overlapping services
+    const techServices = {}
+    const techsWithOverlaps = new Set()
 
-    const techsWithServices = allTechs.filter(code =>
-      services.some(service => service.tech.code === code),
+    // Group services by tech
+    for (const service of services) {
+      const techCode = service.tech.code
+      if (!techServices[techCode]) {
+        techServices[techCode] = []
+      }
+      techServices[techCode].push(service)
+    }
+
+    // Helper function to check if two times are exactly equal
+    function areTimesEqual(time1, time2) {
+      return new Date(time1).getTime() === new Date(time2).getTime()
+    }
+
+    // Check each tech's services for overlaps
+    for (const [techCode, techServiceList] of Object.entries(techServices)) {
+      // Sort services by start time
+      const sortedServices = techServiceList.sort(
+        (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
+      )
+
+      // Check for overlaps
+      for (let i = 0; i < sortedServices.length - 1; i++) {
+        const currentService = sortedServices[i]
+        const nextService = sortedServices[i + 1]
+
+        // Check if both scheduled times and range times are exactly the same
+        const scheduledMatch =
+          areTimesEqual(currentService.start, nextService.start) &&
+          areTimesEqual(currentService.end, nextService.end)
+
+        const rangeMatch =
+          areTimesEqual(currentService.time.range[0], nextService.time.range[0]) &&
+          areTimesEqual(currentService.time.range[1], nextService.time.range[1])
+
+        if (scheduledMatch && rangeMatch) {
+          techsWithOverlaps.add(techCode)
+          console.log(`Exact time match found for tech ${techCode}:`, {
+            service1: {
+              id: currentService.id,
+              scheduled: {
+                start: new Date(currentService.start).toISOString(),
+                end: new Date(currentService.end).toISOString(),
+              },
+              range: {
+                start: new Date(currentService.time.range[0]).toISOString(),
+                end: new Date(currentService.time.range[1]).toISOString(),
+              },
+            },
+            service2: {
+              id: nextService.id,
+              scheduled: {
+                start: new Date(nextService.start).toISOString(),
+                end: new Date(nextService.end).toISOString(),
+              },
+              range: {
+                start: new Date(nextService.time.range[0]).toISOString(),
+                end: new Date(nextService.time.range[1]).toISOString(),
+              },
+            },
+          })
+          break
+        }
+      }
+    }
+
+    console.log('Techs with exactly matching services:', Array.from(techsWithOverlaps))
+
+    // Filter out services from techs with overlaps
+    const servicesWithoutOverlaps = services.filter(
+      service => !techsWithOverlaps.has(service.tech.code),
     )
-    console.log('Techs with services:', techsWithServices.length)
+    console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
-    const techsWithoutServices = allTechs.filter(code => !techsWithServices.includes(code))
-    // console.log(`Techs without services between ${start} and ${end}:`, techsWithoutServices)
+    // Get techs that have services in the date range (excluding those with overlaps)
+    const techsWithServices = [
+      ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
+    ]
+    console.log('Total techs with services (no overlaps):', techsWithServices.length)
+
+    // Get first 10 techs with services and filter services to only include those techs
+    const numTechs = 20
+    const selectedTechs = techsWithServices.slice(0, numTechs)
+    console.log(`First ${numTechs} techs with services: ${selectedTechs.join(', ')}`)
+    const filteredServices = servicesWithoutOverlaps.filter(service =>
+      selectedTechs.includes(service.tech.code),
+    )
+    console.log(`Filtered to first ${numTechs} techs, total services:`, filteredServices.length)
 
     // Apply enforcement state
-    const servicesWithEnforcement = services.map(service => ({
+    const servicesWithEnforcement = filteredServices.map(service => ({
       ...service,
       tech: {
         ...service.tech,

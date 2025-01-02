@@ -192,13 +192,6 @@ export async function GET(request) {
     console.log('Using cached data, total setups:', serviceSetups.length)
   }
 
-  // // Get first 20 techs, filter serviceSetups to only include those techs
-  const numTechs = 10
-  const uniqueTechs = [...new Set(serviceSetups.map(setup => setup.tech.code))].slice(0, numTechs)
-  console.log(`First ${numTechs} unique techs: ${uniqueTechs.join(', ')}`)
-  serviceSetups = serviceSetups.filter(setup => uniqueTechs.includes(setup.tech.code))
-  console.log(`Filtered to first ${numTechs} techs, total setups:`, serviceSetups.length)
-
   // Filter by specific IDs if idParam is present
   if (idParam) {
     const ids = idParam.split(',')
@@ -206,10 +199,13 @@ export async function GET(request) {
     serviceSetups = serviceSetups.filter(
       setup => ids.includes(setup.id.toString()) || ids.includes(setup.location?.id?.toString()),
     )
-    // console.log(
-    //   `Filtered to ${serviceSetups.length} setups for requested IDs (checking both setup and location IDs): ${idParam}`,
-    // )
   }
 
-  return NextResponse.json(serviceSetups)
+  return new Response(JSON.stringify(serviceSetups, null, 2), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  })
 }
