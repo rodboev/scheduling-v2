@@ -28,7 +28,9 @@ export async function GET(request) {
       Date.now() - cachedData.timestamp < 300000 // Cache for 5 minutes
     ) {
       console.log('Using cached services data for', cacheKey)
-      return NextResponse.json(cachedData.data)
+      return new Response(JSON.stringify(cachedData.data, null, 2), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
     const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
@@ -54,10 +56,19 @@ export async function GET(request) {
 
     if (!services.length) {
       console.log('No services found')
-      return NextResponse.json({
-        scheduledServices: [],
-        unassignedServices: [],
-      })
+      return new Response(
+        JSON.stringify(
+          {
+            scheduledServices: [],
+            unassignedServices: [],
+          },
+          null,
+          2,
+        ),
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     // Create distance matrix in parallel with worker initialization
@@ -75,7 +86,9 @@ export async function GET(request) {
         count: result.scheduledServices.length,
         sample: result.scheduledServices[0],
       })
-      return NextResponse.json(result)
+      return new Response(JSON.stringify(result, null, 2), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
     const result = await new Promise((resolve, reject) => {
@@ -120,17 +133,26 @@ export async function GET(request) {
       }
     }
 
-    return NextResponse.json(result)
+    return new Response(JSON.stringify(result, null, 2), {
+      headers: { 'Content-Type': 'application/json' },
+    })
   } catch (error) {
     console.error('Scheduling API error:', error)
-    return NextResponse.json(
+    return new Response(
+      JSON.stringify(
+        {
+          error: 'Internal Server Error',
+          details: error.message,
+          scheduledServices: [],
+          unassignedServices: [],
+        },
+        null,
+        2,
+      ),
       {
-        error: 'Internal Server Error',
-        details: error.message,
-        scheduledServices: [],
-        unassignedServices: [],
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
       },
-      { status: 500 },
     )
   }
 }

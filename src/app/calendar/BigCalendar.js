@@ -23,7 +23,7 @@ const MAX_TIME = new Date(2024, 0, 1, 23, 59, 59) // 11:59 PM
 const localizer = createDayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
-  const defaultDate = new Date(2024, 8, 2)
+  const defaultDate = new Date(2024, 8, 3)
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now())
 
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
@@ -127,7 +127,7 @@ export default function BigCalendar() {
             onNavigate={handleNavigate}
             onRangeChange={handleRangeChange}
             views={['day', 'week', 'month']}
-            defaultView={Views.WEEK}
+            defaultView={Views.DAY}
             step={15}
             timeslots={4}
             toolbar={true}

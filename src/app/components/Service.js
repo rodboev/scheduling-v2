@@ -45,7 +45,7 @@ export default function Service({ service, updateServiceEnforcement, variant = '
 
   const ServiceContent = () => (
     <div className="w-full max-w-sm text-sm leading-relaxed">
-      {updateServiceEnforcement && (
+      {/* {updateServiceEnforcement && (
         <div className="float-right mb-2 ml-4">
           <EnforceSwitch
             id={`enforce-service-setup-${service.id}`}
@@ -56,7 +56,7 @@ export default function Service({ service, updateServiceEnforcement, variant = '
           </EnforceSwitch>
           <div className="text-center">Tech: {service.tech.code}</div>
         </div>
-      )}
+      )} */}
 
       <h3 className="leadng-none flex flex-col items-start py-1 text-base font-bold leading-none">
         <a
@@ -124,10 +124,8 @@ export default function Service({ service, updateServiceEnforcement, variant = '
 
       {service.cluster !== undefined && (
         <div className="mt-3 font-bold">
-          Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
-          {service.wasStatus && service.cluster !== service.wasStatus
-            ? ` (was ${service.wasStatus})`
-            : ''}
+          Cluster: {getClusterLabel(service.cluster, service.clusterReason)} (was{' '}
+          {service.tech.code})
         </div>
       )}
 
