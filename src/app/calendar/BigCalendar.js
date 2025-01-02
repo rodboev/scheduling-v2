@@ -32,7 +32,6 @@ export default function BigCalendar() {
   const {
     assignedServices,
     resources,
-    unassignedServices,
     isScheduling,
     schedulingProgress,
     schedulingStatus,
@@ -47,11 +46,9 @@ export default function BigCalendar() {
     console.log('Calendar data:', {
       assignedServices: assignedServices?.length,
       resources: resources?.length,
-      unassignedServices: unassignedServices?.length,
-      sample: assignedServices?.[0],
       currentViewRange,
     })
-  }, [assignedServices, resources, unassignedServices, currentViewRange])
+  }, [assignedServices, resources, currentViewRange])
 
   // Effect to ensure UI updates regularly during scheduling
   useEffect(() => {

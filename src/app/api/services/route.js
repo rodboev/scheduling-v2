@@ -14,6 +14,7 @@ function createServicesForRange(setup, startDate, endDate) {
   const start = dayjs(startDate)
   const end = dayjs(endDate)
 
+  // Create services for the date range, including the end date
   for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
       // Create the service's time window based on its original range
@@ -59,8 +60,9 @@ function createServicesForRange(setup, startDate, endDate) {
 }
 
 function shouldServiceOccur(scheduleString, date) {
+  // Check if the service should occur on this date based on the schedule string
   const dayOfYear = date.dayOfYear()
-  const scheduleIndex = dayOfYear
+  const scheduleIndex = dayOfYear - 1 // 0-based index
   return scheduleString[scheduleIndex] === '1'
 }
 
@@ -132,12 +134,25 @@ export async function GET(request) {
       },
     }))
 
-    return NextResponse.json(servicesWithEnforcement)
+    return new Response(JSON.stringify(servicesWithEnforcement, null, 2), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
   } catch (error) {
     console.error('Error generating services:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate services: ' + error.message },
-      { status: 500 },
+    return new Response(
+      JSON.stringify({ error: 'Failed to generate services: ' + error.message }, null, 2),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      },
     )
   }
 }

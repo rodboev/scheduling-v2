@@ -27,7 +27,6 @@ export function useSchedule(currentViewRange) {
   const [result, setResult] = useState({
     assignedServices: [],
     resources: [],
-    filteredUnassignedServices: [],
   })
   const dataRef = useRef(null)
   const progressRef = useRef(0)
@@ -133,60 +132,12 @@ export function useSchedule(currentViewRange) {
       // Continue processing next batch
       setTimeout(() => processDataBatch(endIndex), 0)
     } else {
-      // Process unassigned services with the same structure
-      const filteredUnassignedServices = unassignedServices.map(service => {
-        const tech = service.tech || {}
-        const location = service.location || {}
-        const time = service.time || {}
-        const comments = service.comments || {}
-        const route = service.route || {}
-
-        return {
-          ...service,
-          id: service.id,
-          title: `${service.company} - Unassigned`,
-          start: new Date(service.start),
-          end: new Date(service.end),
-          resourceId: 'Unassigned',
-          tech: {
-            code: 'Unassigned',
-            name: 'Unassigned',
-            enforced: tech.enforced || false,
-          },
-          company: service.company || '',
-          location: {
-            id: location.id || '',
-            code: location.code || '',
-            address: location.address || '',
-            address2: location.address2 || '',
-          },
-          time: {
-            range: [
-              time.range?.[0] ? new Date(time.range[0]) : null,
-              time.range?.[1] ? new Date(time.range[1]) : null,
-            ],
-            preferred: time.preferred ? new Date(time.preferred) : null,
-            duration: time.duration || 0,
-            meta: time.meta || {},
-          },
-          comments: {
-            serviceSetup: comments.serviceSetup || '',
-            location: comments.location || '',
-          },
-          route: {
-            time: route.time || [],
-            days: route.days || '',
-          },
-        }
-      })
-
-      // Create resources from both assigned and unassigned services
-      const techSet = new Set([
-        ...scheduledServices.map(
+      // Create resources from assigned services only
+      const techSet = new Set(
+        scheduledServices.map(
           service => service.tech?.code || `Tech ${(service.cluster || 0) + 1}`,
         ),
-        'Unassigned',
-      ])
+      )
 
       const resources = Array.from(techSet)
         .map(techId => ({ id: techId, title: techId }))
@@ -201,7 +152,6 @@ export function useSchedule(currentViewRange) {
 
       setResult(prevResult => ({
         ...prevResult,
-        filteredUnassignedServices,
         resources,
       }))
 
@@ -250,7 +200,6 @@ export function useSchedule(currentViewRange) {
       setResult({
         assignedServices: [],
         resources: [],
-        filteredUnassignedServices: [],
       })
 
       // Start processing batches
@@ -267,14 +216,15 @@ export function useSchedule(currentViewRange) {
   }, [fetchSchedule])
 
   const allServices = useMemo(() => {
-    return [...result.assignedServices, ...result.filteredUnassignedServices]
+    return [...result.assignedServices]
   }, [result])
 
   const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
     useEnforcement(allServices, fetchSchedule)
 
   return {
-    ...result,
+    assignedServices: result.assignedServices,
+    resources: result.resources,
     isScheduling: loading,
     schedulingProgress: progress,
     schedulingStatus: status,

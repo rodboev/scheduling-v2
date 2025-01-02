@@ -8,7 +8,7 @@ import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
 import { logMapActivity } from '@/app/map/utils/logging'
-import { SHIFT_DURATION_MS, SHIFTS } from '@/app/utils/constants'
+import { SHIFT_DURATION_MS } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Polygon, Polyline } from 'react-leaflet'
@@ -17,6 +17,7 @@ import { BOROUGH_BOUNDARIES } from '@/app/utils/boroughs'
 import { COLORS } from '@/app/map/utils/colors'
 import 'leaflet-polylinedecorator'
 import PolylineWithArrow from './PolylineWithArrow'
+import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 
 // Add debug logging for import
 console.log('logMapActivity imported:', typeof logMapActivity)
@@ -36,7 +37,6 @@ const MapView = () => {
   const [minPoints, setMinPoints] = useState(8) // Default min points
   const [maxPoints, setMaxPoints] = useState(14) // Default max points
   const [isLoading, setIsLoading] = useState(true) // Add isLoading state
-  const [activeShift, setActiveShift] = useState(1) // Add activeShift state
 
   const clearServices = useCallback(() => {
     setClusteredServices([])
@@ -45,18 +45,8 @@ const MapView = () => {
 
   // UI state
   const [activePopup, setActivePopup] = useState(null)
-  const [startDate, setStartDate] = useState(() => {
-    const date = new Date('2024-09-03T00:00:00.000Z')
-    const [hours, minutes] = SHIFTS[1].start.split(':').map(Number)
-    date.setUTCHours(hours, minutes, 0, 0)
-    return date.toISOString()
-  })
-  const [endDate, setEndDate] = useState(() => {
-    const date = new Date('2024-09-03T00:00:00.000Z')
-    const [hours, minutes] = SHIFTS[1].start.split(':').map(Number)
-    date.setUTCHours(hours, minutes, 0, 0)
-    date.setTime(date.getTime() + SHIFT_DURATION_MS)
-    return date.toISOString()
+  const [date, setDate] = useState(() => {
+    return dayjs.tz('2024-09-03', 'America/New_York').startOf('day').toISOString()
   })
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
@@ -127,9 +117,10 @@ const MapView = () => {
       // Add sequence numbers and distances to services
       for (let i = 0; i < sortedCluster.length; i++) {
         const currentService = sortedCluster[i]
-        currentService.sequenceNumber = i + 1
+        currentService.sequenceNumber = i + 1 // Always set sequence number for every service
 
         if (i > 0) {
+          // Only set distance/previous info for non-first services
           const previousService = sortedCluster[i - 1]
           const pairResult = distanceResults.find(
             result =>
@@ -147,111 +138,93 @@ const MapView = () => {
     return servicesWithDistance
   }, [])
 
-  const fetchClusteredServices = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      // Validate dates
-      const start = new Date(startDate)
-      const end = new Date(endDate)
+  const fetchClusteredServices = useCallback(
+    async (targetDate = date) => {
+      try {
+        setIsLoading(true)
+        // Clear existing services first
+        setClusteredServices([])
+        setClusteringInfo(null)
 
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        console.error('Invalid date range')
-        return
-      }
+        // Set start date to midnight Eastern and end date to midnight Eastern the next day
+        const startDate = dayjs.tz(targetDate, 'America/New_York').startOf('day')
+        const endDate = dayjs.tz(targetDate, 'America/New_York').add(1, 'day').startOf('day')
 
-      // Add loading state
-      setClusteredServices([])
-      setClusteringInfo(null)
-
-      const response = await axios.get('/api/schedule', {
-        params: {
-          start: startDate,
-          end: endDate,
-        },
-      })
-
-      const data = response.data
-
-      if (!data.scheduledServices) {
-        console.error('Invalid response format:', data)
-        return
-      }
-
-      if (data.scheduledServices.length === 0) {
-        console.log('No services found for the specified date range')
-        return
-      }
-
-      // Filter services by time window
-      const filteredServices = data.scheduledServices.filter(service => {
-        const serviceTimeStart = new Date(service.time.range[0])
-        const serviceTimeEnd = new Date(service.time.range[1])
-        const scheduledStart = new Date(service.start)
-        const scheduledEnd = new Date(service.end)
-        const windowStart = new Date(startDate)
-        const windowEnd = new Date(endDate)
-
-        // Service must have a valid time window and scheduled times
-        if (!serviceTimeStart || !serviceTimeEnd || !scheduledStart || !scheduledEnd) {
-          return false
+        if (!startDate.isValid() || !endDate.isValid()) {
+          console.error('Invalid date range')
+          setIsLoading(false)
+          return
         }
 
-        // Check if the service's time window overlaps with our shift window
-        const timeWindowOverlaps = serviceTimeStart <= windowEnd && serviceTimeEnd >= windowStart
-
-        // Check if the service is scheduled within our window
-        const isScheduledInWindow = scheduledStart >= windowStart && scheduledEnd <= windowEnd
-
-        // Service must have both overlapping time window AND be scheduled within the window
-        return timeWindowOverlaps && isScheduledInWindow
-      })
-
-      // Add debug logging
-      console.log('Time window:', {
-        start: new Date(startDate).toLocaleString(),
-        end: new Date(endDate).toLocaleString(),
-      })
-      console.log('Original services:', data.scheduledServices.length)
-      console.log('Filtered services:', filteredServices.length)
-      console.log('Sample filtered service:', filteredServices[0])
-
-      // Add debug logging
-      console.log('======================')
-      console.log('Services:', filteredServices.length)
-      console.log('Sample service:', filteredServices[0])
-      console.log(
-        'Clusters:',
-        new Set(filteredServices.map(s => s.cluster).filter(c => c >= 0)).size,
-      )
-      console.log('Connected points:', filteredServices.filter(s => s.cluster >= 0).length)
-      console.log('Outliers:', filteredServices.filter(s => s.cluster === -1).length)
-      console.log('About to call logMapActivity...')
-
-      // Add logging here - moved after filtering
-      try {
-        console.log('Services array type:', Array.isArray(filteredServices))
-        console.log('ClusteringInfo:', data.clusteringInfo)
-
-        logMapActivity({
-          services: filteredServices,
-          clusteringInfo: data.clusteringInfo,
+        const response = await axios.get('/api/schedule', {
+          params: {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+          },
         })
-      } catch (error) {
-        console.error('Error in logMapActivity:', error)
-      }
 
-      setClusteredServices(filteredServices)
-      setClusteringInfo(data.clusteringInfo)
-      setIsLoading(false)
-    } catch (error) {
-      console.error('Error fetching services:', error)
-      setIsLoading(false)
-    }
-  }, [startDate, endDate])
+        const data = response.data
+
+        if (!data.scheduledServices) {
+          console.error('Invalid response format:', data)
+          setIsLoading(false)
+          return
+        }
+
+        if (data.scheduledServices.length === 0) {
+          console.log('No services found for the specified date range')
+          setIsLoading(false)
+          return
+        }
+
+        // Add debug logging
+        console.log('Time window:', {
+          start: startDate.toLocaleString(),
+          end: endDate.toLocaleString(),
+        })
+        console.log('Original services:', data.scheduledServices.length)
+        console.log('Sample service:', data.scheduledServices[0])
+
+        // Add debug logging
+        console.log('======================')
+        console.log('Services:', data.scheduledServices.length)
+        console.log('Sample service:', data.scheduledServices[0])
+        console.log(
+          'Clusters:',
+          new Set(data.scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size,
+        )
+        console.log('Connected points:', data.scheduledServices.filter(s => s.cluster >= 0).length)
+        console.log('Outliers:', data.scheduledServices.filter(s => s.cluster === -1).length)
+        console.log('About to call logMapActivity...')
+
+        // Add logging here - moved after filtering
+        try {
+          console.log('Services array type:', Array.isArray(data.scheduledServices))
+          console.log('ClusteringInfo:', data.clusteringInfo)
+
+          logMapActivity({
+            services: data.scheduledServices,
+            clusteringInfo: data.clusteringInfo,
+          })
+        } catch (error) {
+          console.error('Error in logMapActivity:', error)
+        }
+
+        setClusteredServices(data.scheduledServices)
+        setClusteringInfo(data.clusteringInfo)
+      } catch (error) {
+        console.error('Error fetching services:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [date],
+  )
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    fetchClusteredServices(true)
+    const defaultDate = dayjs.tz('2024-09-03', 'America/New_York').startOf('day').toISOString()
+    fetchClusteredServices(defaultDate)
   }, [])
 
   const handleMapClick = useCallback(() => {
@@ -261,100 +234,16 @@ const MapView = () => {
     }
   }, [activePopup])
 
-  // Update the handleNextDay function to properly handle both start and end dates
-  const handleNextDay = useCallback(() => {
-    const nextStart = new Date(startDate)
-    nextStart.setDate(nextStart.getDate() + 1)
-
-    const nextEnd = new Date(endDate)
-    nextEnd.setDate(nextEnd.getDate() + 1)
-
-    setStartDate(nextStart.toISOString())
-    setEndDate(nextEnd.toISOString())
-  }, [startDate, endDate])
+  // Update the handleNextDay function to properly handle the date
+  const handleNextDay = useCallback(async () => {
+    const nextDate = dayjs(date).tz('America/New_York').add(1, 'day').startOf('day')
+    await setDate(nextDate.toISOString())
+    return nextDate.toISOString()
+  }, [date])
 
   function handlePointsChangeComplete() {
     fetchClusteredServices()
   }
-
-  const optimizeSchedule = useCallback(
-    async (services, distanceBias) => {
-      try {
-        // Create pairs of service IDs for batch processing
-        const pairs = []
-        for (let i = 0; i < services.length; i++) {
-          for (let j = i + 1; j < services.length; j++) {
-            pairs.push(`${services[i].location.id},${services[j].location.id}`)
-          }
-        }
-
-        // Split pairs into chunks of 500 to avoid too large URLs
-        const chunkedPairs = chunk(pairs, 500)
-        const distanceMatrix = Array(services.length)
-          .fill()
-          .map(() => Array(services.length).fill(0))
-
-        // Fetch distances in batches
-        for (const pairChunk of chunkedPairs) {
-          const response = await axios.get('/api/distance', {
-            params: {
-              id: pairChunk,
-            },
-            paramsSerializer: params => {
-              return params.id.map(pair => `id=${pair}`).join('&')
-            },
-          })
-
-          // Populate the distance matrix with results
-          for (const result of response.data) {
-            const [fromId, toId] = result.from.id.split(',')
-            const fromIndex = services.findIndex(s => s.location.id.toString() === fromId)
-            const toIndex = services.findIndex(s => s.location.id.toString() === toId)
-
-            if (result.distance?.[0]?.distance) {
-              const distance = result.distance[0].distance
-              distanceMatrix[fromIndex][toIndex] = distance
-              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
-            }
-          }
-        }
-
-        // Schedule services using the distance matrix
-        const optimizedServices = await scheduleServices(
-          services,
-          clusterUnclustered,
-          distanceBias,
-          minPoints,
-          maxPoints,
-          distanceMatrix,
-        )
-
-        setClusteredServices(optimizedServices)
-      } catch (error) {
-        console.error('Error optimizing schedule:', error)
-      }
-    },
-    [clusterUnclustered, minPoints, maxPoints],
-  )
-
-  // Add these refs at the component level, not inside useEffect
-  const previousStart = useRef(startDate)
-  const previousEnd = useRef(endDate)
-
-  // Update the useEffect
-  useEffect(() => {
-    if (
-      startDate &&
-      endDate &&
-      (previousStart.current !== startDate || previousEnd.current !== endDate)
-    ) {
-      console.log('Fetching services for date range:', { startDate, endDate })
-      fetchClusteredServices()
-
-      previousStart.current = startDate
-      previousEnd.current = endDate
-    }
-  }, [startDate, endDate, fetchClusteredServices])
 
   // Add this near the top with other state declarations
   const [isClient, setIsClient] = useState(false)
@@ -419,42 +308,93 @@ const MapView = () => {
   }, [clusteredServices])
 
   async function createDistanceMatrix(services) {
-    const matrix = {}
-    const serviceIds = services.map(s => s.id)
-
-    for (const [i, id1] of serviceIds.entries()) {
-      matrix[id1] = {}
-      for (const [j, id2] of serviceIds.entries()) {
-        if (i === j) {
-          matrix[id1][id2] = 0
-          continue
+    try {
+      // Create pairs of service IDs for batch processing
+      const pairs = []
+      for (let i = 0; i < services.length; i++) {
+        for (let j = i + 1; j < services.length; j++) {
+          pairs.push(`${services[i].location.id},${services[j].location.id}`)
         }
-
-        const result = await calculateDistance(id1, id2)
-        if (!result || result.pair.distance > HARD_MAX_RADIUS_MILES) {
-          matrix[id1][id2] = null
-          continue
-        }
-
-        matrix[id1][id2] = result.pair.distance
       }
-    }
 
-    return matrix
+      // Split pairs into chunks of 500 to avoid too large URLs
+      const chunkedPairs = chunk(pairs, 500)
+      const distanceMatrix = Array(services.length)
+        .fill()
+        .map(() => Array(services.length).fill(0))
+
+      // Fetch distances in batches
+      for (const pairChunk of chunkedPairs) {
+        const response = await axios.get('/api/distance', {
+          params: {
+            id: pairChunk,
+          },
+          paramsSerializer: params => {
+            return params.id.map(pair => `id=${pair}`).join('&')
+          },
+        })
+
+        // Populate the distance matrix with results
+        for (const result of response.data) {
+          const [fromId, toId] = result.from.id.split(',')
+          const fromIndex = services.findIndex(s => s.location.id.toString() === fromId)
+          const toIndex = services.findIndex(s => s.location.id.toString() === toId)
+
+          if (result.distance?.[0]?.distance) {
+            const distance = result.distance[0].distance
+            if (distance <= HARD_MAX_RADIUS_MILES) {
+              distanceMatrix[fromIndex][toIndex] = distance
+              distanceMatrix[toIndex][fromIndex] = distance // Mirror the distance
+            } else {
+              distanceMatrix[fromIndex][toIndex] = null
+              distanceMatrix[toIndex][fromIndex] = null
+            }
+          }
+        }
+      }
+
+      return distanceMatrix
+    } catch (error) {
+      console.error('Error creating distance matrix:', error)
+      return null
+    }
   }
+
+  const optimizeSchedule = useCallback(
+    async (services, distanceBias) => {
+      try {
+        const distanceMatrix = await createDistanceMatrix(services)
+        if (!distanceMatrix) {
+          console.error('Failed to create distance matrix')
+          return
+        }
+
+        // Schedule services using the distance matrix
+        const optimizedServices = await scheduleServices(
+          services,
+          clusterUnclustered,
+          distanceBias,
+          minPoints,
+          maxPoints,
+          distanceMatrix,
+        )
+
+        setClusteredServices(optimizedServices)
+      } catch (error) {
+        console.error('Error optimizing schedule:', error)
+      }
+    },
+    [clusterUnclustered, minPoints, maxPoints],
+  )
 
   return (
     <div className="relative h-screen w-screen">
       <MapTools
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
+        date={date}
+        setDate={setDate}
         handleNextDay={handleNextDay}
         fetchClusteredServices={fetchClusteredServices}
         isLoading={isLoading}
-        activeShift={activeShift}
-        setActiveShift={setActiveShift}
         clearServices={clearServices}
       />
       {!isClient ? (
@@ -476,15 +416,15 @@ const MapView = () => {
 
           {/* Add borough boundary polygons */}
           {/* {boroughPolygons.map(
-            ({ name, coords }) =>
-              coords.length > 0 && (
-                <Polygon
-                  key={`borough-${name}`}
-                  positions={coords}
-                  pathOptions={polygonStyles[name]}
-                />
-              ),
-          )} */}
+              ({ name, coords }) =>
+                coords.length > 0 && (
+                  <Polygon
+                    key={`borough-${name}`}
+                    positions={coords}
+                    pathOptions={polygonStyles[name]}
+                  />
+                ),
+            )} */}
 
           {/* Add Polylines */}
           {!isLoading &&

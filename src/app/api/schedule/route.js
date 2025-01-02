@@ -3,12 +3,24 @@ import { Worker } from 'node:worker_threads'
 import path from 'node:path'
 import axios from 'axios'
 import { createDistanceMatrix } from '@/app/utils/distance'
+import { startOfDay, endOfDay, dayjsInstance } from '@/app/utils/dayjs'
 
 export async function GET(request) {
   const params = Object.fromEntries(request.nextUrl.searchParams)
   console.log('Schedule API called with params:', params)
 
   try {
+    // Use the exact dates from the request
+    const start = dayjsInstance(params.start)
+    const end = dayjsInstance(params.end)
+
+    console.log('Date range:', {
+      requestedStart: params.start,
+      requestedEnd: params.end,
+      normalizedStart: start.format(),
+      normalizedEnd: end.format(),
+    })
+
     const response = await axios.get(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/services`, {
       params: {
         start: params.start,
@@ -16,19 +28,54 @@ export async function GET(request) {
       },
     })
 
-    console.log('Services API response:', {
-      count: response.data.length,
-      sample: response.data[0],
-    })
-
-    const services = response.data.filter(
-      service => service.time.range[0] !== null && service.time.range[1] !== null,
+    console.log(
+      'Services API response:',
+      JSON.stringify(
+        {
+          count: response.data.length,
+          dateRange: response.data.map(s => s.date),
+        },
+        null,
+        2,
+      ),
     )
 
-    console.log('Filtered services:', {
-      count: services.length,
-      sample: services[0],
+    const services = response.data.filter(service => {
+      if (!service.time.range[0] || !service.time.range[1]) return false
+
+      const serviceDate = dayjsInstance(service.date)
+      // Check if service is within the requested range
+      const isInRange = serviceDate.isBetween(start, end, null, '[)')
+
+      if (!isInRange) {
+        console.log(
+          'Service outside range:',
+          JSON.stringify(
+            {
+              serviceDate: service.date,
+              start: start.format(),
+              end: end.format(),
+            },
+            null,
+            2,
+          ),
+        )
+      }
+
+      return isInRange
     })
+
+    console.log(
+      'Filtered services:',
+      JSON.stringify(
+        {
+          count: services.length,
+          dates: services.map(s => s.date),
+        },
+        null,
+        2,
+      ),
+    )
 
     if (!services.length) {
       console.log('No services found')
@@ -42,7 +89,11 @@ export async function GET(request) {
           2,
         ),
         {
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache',
+          },
         },
       )
     }
@@ -58,12 +109,23 @@ export async function GET(request) {
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
       }
-      console.log('Returning unscheduled services:', {
-        count: result.scheduledServices.length,
-        sample: result.scheduledServices[0],
-      })
+      console.log(
+        'Returning unscheduled services:',
+        JSON.stringify(
+          {
+            count: result.scheduledServices.length,
+            sample: result.scheduledServices[0],
+          },
+          null,
+          2,
+        ),
+      )
       return new Response(JSON.stringify(result, null, 2), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
       })
     }
 
@@ -88,14 +150,25 @@ export async function GET(request) {
       worker.postMessage({ services, distanceMatrix })
     })
 
-    console.log('Worker result:', {
-      scheduledCount: result.scheduledServices?.length,
-      unassignedCount: result.unassignedServices?.length,
-      sample: result.scheduledServices?.[0],
-    })
+    console.log(
+      'Worker result:',
+      JSON.stringify(
+        {
+          scheduledCount: result.scheduledServices?.length,
+          unassignedCount: result.unassignedServices?.length,
+          sample: result.scheduledServices?.[0],
+        },
+        null,
+        2,
+      ),
+    )
 
     return new Response(JSON.stringify(result, null, 2), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
     })
   } catch (error) {
     console.error('Scheduling API error:', error)

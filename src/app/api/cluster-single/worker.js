@@ -138,6 +138,7 @@ function createScheduledService(service, shift, matchInfo) {
   return {
     ...service,
     cluster: shift.cluster,
+    sequenceNumber: shift.services.length + 1,
     start: formatDate(matchInfo.start),
     end: formatDate(new Date(matchInfo.start.getTime() + service.time.duration * 60000)),
     distanceFromPrevious: distance || 0,
@@ -156,6 +157,7 @@ function createNewShift(service, clusterIndex) {
       {
         ...service,
         cluster: clusterIndex,
+        sequenceNumber: 1,
         start: formatDate(shiftStart),
         end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
         distanceFromPrevious: 0,
@@ -419,7 +421,7 @@ function processServices(services, distanceMatrix) {
     )
 
     return {
-      clusteredServices: processedServices,
+      scheduledServices: processedServices,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: Number.parseInt(duration),
@@ -441,12 +443,16 @@ function processServices(services, distanceMatrix) {
 parentPort.on('message', async ({ services, distanceMatrix }) => {
   try {
     const result = await processServices(services, distanceMatrix)
-    parentPort.postMessage(result)
+    parentPort.postMessage({
+      ...result,
+      scheduledServices: result.scheduledServices,
+      clusteredServices: undefined,
+    })
   } catch (error) {
     console.error('Error in clustering worker:', error)
     parentPort.postMessage({
       error: error.message,
-      clusteredServices: services.map(service => ({ ...service, cluster: -1 })),
+      scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: 0,

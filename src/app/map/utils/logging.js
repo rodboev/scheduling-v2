@@ -42,19 +42,16 @@ function logClusterServices(clusterServices) {
     `Cluster ${clusterServices[0].cluster} (${formatTime(clusterServices[0].start)} - ${formatTime(clusterServices[clusterServices.length - 1].end)}):`,
   )
 
-  for (let i = 0; i < clusterServices.length; i++) {
-    const service = clusterServices[i]
+  // Log cluster services
+  for (const [i, service] of clusterServices.entries()) {
     const start = new Date(service.start)
-    const end = new Date(service.end)
+    const distance = service.distanceFromPrevious || 0
+    const travelTime = service.travelTimeFromPrevious || 0
 
-    let line = `- ${formatTime(start)}-${formatTime(end)}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${formatTime(service.time.range[0])}-${formatTime(service.time.range[1])})`
-
+    let line = `- ${formatServiceTime(service)}`
     if (i > 0) {
-      const distance = service.distanceFromPrevious || 'unknown'
-      const travelTime = service.travelTimeFromPrevious || 'unknown'
       line += ` (${distance} mi / ${travelTime} min from ${service.previousCompany})`
     }
-
     console.log(line)
   }
 
@@ -73,4 +70,34 @@ function logClusterServices(clusterServices) {
   console.log('\nCluster Stats:')
   console.log(`  Total Distance: ${totalDistance.toFixed(2)} mi`)
   console.log(`  Total Travel Time: ${totalTravelTime} min`)
+}
+
+// Format service time for logging
+const formatServiceTime = service => {
+  const start = new Date(service.start)
+  const end = new Date(service.end)
+  const date = start.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+  const startTime = start.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const endTime = end.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const rangeStart = new Date(service.time.range[0])
+  const rangeEnd = new Date(service.time.range[1])
+  const rangeStartTime = rangeStart.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const rangeEndTime = rangeEnd.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return `${date} ${startTime}-${endTime}, ${service.company} (${service.location.latitude}, ${service.location.longitude}) (range: ${rangeStartTime}-${rangeEndTime})`
 }
