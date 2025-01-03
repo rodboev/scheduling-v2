@@ -61,9 +61,29 @@ function createServicesForRange(setup, startDate, endDate) {
 }
 
 function shouldServiceOccur(scheduleString, date) {
-  // Check if the service should occur on this date based on the schedule string
-  const dayOfYear = date.dayOfYear()
-  const scheduleIndex = dayOfYear - 1 // 0-based index
+  // Each month has 5 weeks × 7 days = 35 days
+  const DAYS_PER_MONTH = 35
+  const DAYS_PER_WEEK = 7
+
+  // Get month (0-11) and day of week (0-6)
+  const month = date.month()
+  const dayOfWeek = date.day() // 0 = Sunday, 1 = Monday, etc.
+
+  // Get the week number (0-4) based on the day of month
+  // For example: Sept 3 is a Tuesday, so it's in week 0
+  const weekNumber = Math.floor((date.date() - 1) / 7)
+
+  // Calculate position in the 35-day month pattern (0-indexed)
+  const monthStart = month * DAYS_PER_MONTH
+  const dayPosition = weekNumber * DAYS_PER_WEEK + dayOfWeek
+  const scheduleIndex = monthStart + dayPosition
+
+  // Safety check for index bounds (schedule string is exactly 420 characters)
+  if (scheduleIndex >= 420) {
+    console.warn(`Index ${scheduleIndex} out of bounds for schedule string (length: 420)`)
+    return false
+  }
+
   return scheduleString[scheduleIndex] === '1'
 }
 
@@ -198,7 +218,7 @@ export async function GET(request) {
     console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
     // Get first 10 techs with services and filter services to only include those techs
-    const numTechs = 50
+    const numTechs = 10
     const selectedTechs = [
       ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
     ].slice(0, numTechs)

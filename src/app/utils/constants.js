@@ -3,6 +3,10 @@ export const MAX_RADIUS_MILES_ACROSS_BOROUGHS = 3 // Soft cap - services beyond 
 export const HARD_MAX_RADIUS_MILES = 5 // Hard cap - services beyond this distance cannot be connected
 export const ENFORCE_BOROUGH_BOUNDARIES = true
 export const TECH_SPEED_MPH = 10 // Average technician travel speed in miles per hour
+export const MERGE_CLOSEST_SHIFTS = 3 // Number of closest shifts to consider for merging
+export const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
+export const MAX_MERGE_ATTEMPTS = 3 // Limit merge attempts per shift
+export const TECH_START_TIME_VARIANCE = 2 * 60 * 1000 // 2 minutes in milliseconds
 
 // Time constants
 export const MINUTES_PER_HOUR = 60

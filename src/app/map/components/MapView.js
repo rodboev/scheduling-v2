@@ -474,7 +474,7 @@ const MapView = () => {
           <p>Clusters: {clusteringInfo.totalClusters}</p>
           <p>Singles: {clusteringInfo.clusterSizes?.filter(size => size === 1).length || 0}</p>
           <p>
-            Techs: {Object.keys(clusteringInfo.techAssignments || {}).length} (
+            Techs: {Object.keys(clusteringInfo.techAssignments || {}).length} (from{' '}
             {new Set(clusteredServices.map(s => s.tech?.code).filter(Boolean)).size})
           </p>
         </div>

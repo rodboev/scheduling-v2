@@ -5,19 +5,19 @@ import {
   MAX_RADIUS_MILES_ACROSS_BOROUGHS,
   HARD_MAX_RADIUS_MILES,
   SHIFT_DURATION,
+  SHIFT_DURATION_MS,
   ENFORCE_BOROUGH_BOUNDARIES,
   TECH_SPEED_MPH,
+  MAX_TIME_SEARCH,
+  MAX_MERGE_ATTEMPTS,
+  MERGE_CLOSEST_SHIFTS,
+  TECH_START_TIME_VARIANCE,
 } from '../../utils/constants.js'
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
 import dayjs from 'dayjs'
 
-const MAX_TIME_SEARCH = 2 * 60 // 2 hours in minutes
-const MAX_MERGE_ATTEMPTS = 3 // Limit merge attempts per shift
 const SCORE_CACHE = new Map() // Cache for service compatibility scores
-
-// Tech assignment and scheduling constants
-const TECH_START_TIME_VARIANCE = 2 * 60 * 60 * 1000 // 2 hours in milliseconds
 
 // Track tech start times across days
 const techStartTimes = new Map()
@@ -89,7 +89,8 @@ function calculateServiceScore(
 ) {
   const cacheKey = getCacheKey(service, lastService)
   if (SCORE_CACHE.has(cacheKey)) {
-    return SCORE_CACHE.get(cacheKey)
+    const cachedScore = SCORE_CACHE.get(cacheKey)
+    return cachedScore
   }
 
   // Quick distance check
@@ -131,6 +132,7 @@ function calculateServiceScore(
 
   const score =
     distanceScore * 0.4 + timeWindowOverlap * 0.3 + preferredScore * 0.2 + futureScore * 0.1
+
   SCORE_CACHE.set(cacheKey, score)
   return score
 }
@@ -459,7 +461,7 @@ function processServices(services, distanceMatrix) {
               firstStart < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
             )
           })
-          .slice(0, 3) // Only consider the 3 closest shifts
+          .slice(0, MERGE_CLOSEST_SHIFTS)
 
         for (const shift2 of mergeCandidates) {
           const firstService = shift2.services[0]
