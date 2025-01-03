@@ -548,10 +548,6 @@ function processServices(services, distanceMatrix) {
     const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
     console.log('Found clusters:', Array.from(clusters))
 
-    const clusterSizes = Array.from(clusters).map(
-      c => processedServices.filter(s => s.cluster === c).length,
-    )
-
     return {
       scheduledServices: processedServices,
       clusteringInfo: {
@@ -559,7 +555,6 @@ function processServices(services, distanceMatrix) {
         performanceDuration: Number.parseInt(performance.now() - startTime),
         connectedPointsCount: processedServices.length,
         totalClusters: clusters.size,
-        clusterSizes,
         clusterDistribution: Array.from(clusters).map(c => ({
           [c]: processedServices.filter(s => s.cluster === c).length,
         })),
@@ -576,21 +571,39 @@ function processServices(services, distanceMatrix) {
     }
   } catch (error) {
     console.error('Error in worker:', error)
-    return {
-      error: error.message,
-      scheduledServices: services.map((service, index) => ({
+
+    // Even in case of error, try to assign techs to services
+    const processedServices = services.map((service, index) => {
+      const techId = `Tech ${Math.floor(index / 14) + 1}` // Assign up to 14 services per tech
+      return {
         ...service,
         cluster: -1,
-        techId: 'Unassigned',
-      })),
+        techId,
+      }
+    })
+
+    // Create tech assignments even for error case
+    const techAssignments = {}
+    for (const service of processedServices) {
+      if (!techAssignments[service.techId]) {
+        techAssignments[service.techId] = {
+          services: 0,
+          startTime: new Date(service.start).getTime() % (24 * 60 * 60 * 1000),
+        }
+      }
+      techAssignments[service.techId].services++
+    }
+
+    return {
+      error: error.message,
+      scheduledServices: processedServices,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: 0,
         connectedPointsCount: 0,
         totalClusters: 0,
-        clusterSizes: [],
         clusterDistribution: [],
-        techAssignments: {},
+        techAssignments,
       },
     }
   }

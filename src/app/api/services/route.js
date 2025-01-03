@@ -225,18 +225,20 @@ export async function GET(request) {
     )
     console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
-    // Get first 10 techs with services and filter services to only include those techs
-    const selectedTechs = [
-      ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
-    ].slice(0, NUM_TECHS)
-    console.log(`First ${NUM_TECHS} techs with services: ${selectedTechs.join(', ')}`)
-    const filteredServices = servicesWithoutOverlaps.filter(service =>
-      selectedTechs.includes(service.tech.code),
-    )
-
-    // Uncomment for all techs:
-    // const filteredServices = servicesWithoutOverlaps
-    console.log(`Filtered to first ${NUM_TECHS} techs, total services:`, filteredServices.length)
+    let filteredServices
+    if (NUM_TECHS > 0) {
+      // Get first 10 techs with services and filter services to only include those techs
+      const selectedTechs = [
+        ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
+      ].slice(0, NUM_TECHS)
+      console.log(`First ${NUM_TECHS} techs with services: ${selectedTechs.join(', ')}`)
+      filteredServices = servicesWithoutOverlaps.filter(service =>
+        selectedTechs.includes(service.tech.code),
+      )
+      console.log(`Filtered to first ${NUM_TECHS} techs, total services:`, filteredServices.length)
+    } else {
+      filteredServices = servicesWithoutOverlaps
+    }
 
     // Sort services by start time
     filteredServices.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())

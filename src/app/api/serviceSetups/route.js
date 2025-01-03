@@ -4,9 +4,9 @@ import { capitalize } from '@/app/utils/capitalize'
 import { dayjsInstance as dayjs, convertToETTime } from '@/app/utils/dayjs'
 import { readFromDiskCache, writeToDiskCache } from '@/app/utils/diskCache'
 import { parseTimeRange } from '@/app/utils/timeRange'
+import { NextResponse } from 'next/server'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { createJsonResponse } from '@/app/utils/response'
 
 const CACHE_FILE = 'serviceSetups.json'
 
@@ -171,7 +171,7 @@ export async function GET(request) {
       await writeToDiskCache({ file: CACHE_FILE, data: serviceSetups })
     } catch (error) {
       console.error('Error fetching from database:', error)
-      return createJsonResponse(
+      return NextResponse.json(
         {
           error: 'Internal Server Error',
           details: error.message,
@@ -201,5 +201,11 @@ export async function GET(request) {
     )
   }
 
-  return createJsonResponse(serviceSetups)
+  return new Response(JSON.stringify(serviceSetups, null, 2), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  })
 }

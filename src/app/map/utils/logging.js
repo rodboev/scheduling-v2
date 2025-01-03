@@ -8,9 +8,10 @@ export async function logMapActivity({ services, clusteringInfo }) {
       performanceDuration: 0,
       connectedPointsCount: services.filter(s => s.cluster >= 0).length,
       totalClusters: new Set(services.map(s => s.cluster).filter(c => c >= 0)).size,
-      clusterSizes: services.reduce((acc, service) => {
+      clusterDistribution: services.reduce((acc, service) => {
         if (service.cluster >= 0) {
-          acc[service.cluster] = (acc[service.cluster] || 0) + 1
+          const cluster = service.cluster
+          acc[cluster] = (acc[cluster] || 0) + 1
         }
         return acc
       }, []),

@@ -1,9 +1,9 @@
 import { getFullDistanceMatrix } from '@/app/utils/locationCache'
 import { Worker } from 'node:worker_threads'
 import path from 'node:path'
+import { NextResponse } from 'next/server'
 import { dayjsInstance } from '@/app/utils/dayjs'
 import axios from 'axios'
-import { createJsonResponse } from '@/app/utils/response'
 
 const MAX_DAYS_PER_REQUEST = 2 // Process 2 days at a time
 
@@ -14,7 +14,7 @@ export async function GET(request) {
   console.log('Schedule API called with params:', Object.fromEntries(searchParams))
 
   if (!start.isValid() || !end.isValid()) {
-    return createJsonResponse({ error: 'Invalid date range' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
   }
 
   try {
@@ -38,6 +38,7 @@ export async function GET(request) {
     let allScheduledServices = []
     let totalConnectedPoints = 0
     let totalClusters = 0
+    let accumulatedTechAssignments = {}
     const startTime = performance.now()
 
     while (currentStart.isBefore(end)) {
@@ -51,34 +52,53 @@ export async function GET(request) {
         allScheduledServices = allScheduledServices.concat(chunkData.scheduledServices)
         totalConnectedPoints += chunkData.clusteringInfo?.connectedPointsCount || 0
         totalClusters += chunkData.clusteringInfo?.totalClusters || 0
+
+        // Merge tech assignments from this chunk
+        const chunkTechAssignments = chunkData.clusteringInfo?.techAssignments || {}
+        for (const [techId, assignment] of Object.entries(chunkTechAssignments)) {
+          if (!accumulatedTechAssignments[techId]) {
+            accumulatedTechAssignments[techId] = { services: 0, startTime: assignment.startTime }
+          }
+          accumulatedTechAssignments[techId].services += assignment.services
+        }
       }
 
       currentStart = chunkEnd
     }
 
-    return createJsonResponse({
+    return NextResponse.json({
       scheduledServices: allScheduledServices,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: Math.round(performance.now() - startTime),
         connectedPointsCount: totalConnectedPoints,
         totalClusters,
-        clusterSizes: allScheduledServices.reduce((acc, service) => {
+        clusterDistribution: allScheduledServices.reduce((acc, service) => {
           if (service.cluster >= 0) {
-            acc[service.cluster] = (acc[service.cluster] || 0) + 1
+            const cluster = service.cluster
+            acc[cluster] = (acc[cluster] || 0) + 1
           }
           return acc
         }, []),
+        techAssignments: accumulatedTechAssignments,
       },
     })
   } catch (error) {
     console.error('Schedule error:', error)
-    return createJsonResponse(
+    return NextResponse.json(
       {
         error: 'Internal Server Error',
         details: error.message,
         scheduledServices: [],
         unassignedServices: [],
+        clusteringInfo: {
+          algorithm: 'shifts',
+          performanceDuration: 0,
+          connectedPointsCount: 0,
+          totalClusters: 0,
+          clusterDistribution: [],
+          techAssignments: {},
+        },
       },
       { status: 500 },
     )
@@ -104,7 +124,7 @@ async function processDateRange(start, end) {
     })
 
     if (!services.length) {
-      return createJsonResponse({
+      return NextResponse.json({
         scheduledServices: [],
         unassignedServices: [],
         clusteringInfo: {
@@ -112,7 +132,8 @@ async function processDateRange(start, end) {
           performanceDuration: 0,
           connectedPointsCount: 0,
           totalClusters: 0,
-          clusterSizes: [],
+          clusterDistribution: [],
+          techAssignments: {},
         },
       })
     }
@@ -138,7 +159,7 @@ async function processDateRange(start, end) {
     // Validate matrix format and dimensions
     if (!Array.isArray(distanceMatrix) || !Array.isArray(distanceMatrix[0])) {
       console.warn('Invalid distance matrix format')
-      return createJsonResponse({
+      return NextResponse.json({
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -146,7 +167,8 @@ async function processDateRange(start, end) {
           performanceDuration: Math.round(performance.now() - startTime),
           connectedPointsCount: 0,
           totalClusters: 0,
-          clusterSizes: [],
+          clusterDistribution: [],
+          techAssignments: {},
         },
       })
     }
@@ -155,7 +177,7 @@ async function processDateRange(start, end) {
       console.warn(
         `Matrix dimension mismatch: ${distanceMatrix.length} != ${validServices.length} services`,
       )
-      return createJsonResponse({
+      return NextResponse.json({
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -163,7 +185,8 @@ async function processDateRange(start, end) {
           performanceDuration: Math.round(performance.now() - startTime),
           connectedPointsCount: 0,
           totalClusters: 0,
-          clusterSizes: [],
+          clusterDistribution: [],
+          techAssignments: {},
         },
       })
     }
@@ -199,23 +222,25 @@ async function processDateRange(start, end) {
     const totalConnectedPoints = scheduledServices.filter(s => s.cluster >= 0).length
     const totalClusters = new Set(scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
 
-    return createJsonResponse({
+    return NextResponse.json({
       ...result,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: Math.round(performance.now() - startTime),
         connectedPointsCount: totalConnectedPoints,
         totalClusters,
-        clusterSizes: scheduledServices.reduce((acc, service) => {
+        clusterDistribution: scheduledServices.reduce((acc, service) => {
           if (service.cluster >= 0) {
-            acc[service.cluster] = (acc[service.cluster] || 0) + 1
+            const cluster = service.cluster
+            acc[cluster] = (acc[cluster] || 0) + 1
           }
           return acc
         }, []),
+        techAssignments: result.clusteringInfo?.techAssignments || {},
       },
     })
   } catch (error) {
     console.error('Schedule error:', error)
-    return createJsonResponse({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
