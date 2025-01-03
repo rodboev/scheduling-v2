@@ -167,6 +167,7 @@ function createNewShift(service, clusterIndex) {
       {
         ...service,
         cluster: clusterIndex,
+        techId: `Tech ${clusterIndex + 1}`,
         sequenceNumber: 1,
         start: formatDate(shiftStart),
         end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
@@ -179,6 +180,7 @@ function createNewShift(service, clusterIndex) {
     startTime: shiftStart,
     endTime: shiftEnd,
     cluster: clusterIndex,
+    techId: `Tech ${clusterIndex + 1}`,
     mergeAttempts: 0,
   }
 }
@@ -523,7 +525,12 @@ function processServices(services, distanceMatrix) {
 
     // Assign techs to shifts
     const shiftsWithTechs = assignTechsToShifts(shifts)
-    const processedServices = shiftsWithTechs.flatMap(shift => shift.services)
+    const processedServices = shiftsWithTechs.flatMap(shift => {
+      return shift.services.map(service => ({
+        ...service,
+        techId: shift.techId || `Tech ${service.cluster + 1}`,
+      }))
+    })
 
     // Calculate clustering info
     const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
@@ -555,7 +562,23 @@ function processServices(services, distanceMatrix) {
     }
   } catch (error) {
     console.error('Error in worker:', error)
-    throw error
+    return {
+      error: error.message,
+      scheduledServices: services.map((service, index) => ({
+        ...service,
+        cluster: -1,
+        techId: 'Unassigned',
+      })),
+      clusteringInfo: {
+        algorithm: 'shifts',
+        performanceDuration: 0,
+        connectedPointsCount: 0,
+        totalClusters: 0,
+        clusterSizes: [],
+        clusterDistribution: [],
+        techAssignments: {},
+      },
+    }
   }
 }
 
