@@ -485,7 +485,7 @@ function processServices(services, distanceMatrix) {
               shift1End.getTime() - shift2Start.getTime() >= -maxGap
             )
           })
-          .slice(0, 5) // Consider more potential candidates
+          .slice(0, 10) // Consider more potential candidates
 
         for (const shift2 of mergeCandidates) {
           const totalServices = shift1.services.length + shift2.services.length

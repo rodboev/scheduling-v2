@@ -24,12 +24,8 @@ export function formatTime(input) {
 }
 
 export function formatTimeRange(start, end) {
-  const startTime =
-    typeof start === 'number'
-      ? dateFromSecondsSinceMidnight(start)
-      : dayjs(start)
-  const endTime =
-    typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
+  const startTime = typeof start === 'number' ? dateFromSecondsSinceMidnight(start) : dayjs(start)
+  const endTime = typeof end === 'number' ? dateFromSecondsSinceMidnight(end) : dayjs(end)
 
   const startFormatted = formatTime(startTime)
   const endFormatted = formatTime(endTime)
@@ -124,7 +120,18 @@ export function parseTimeRange(timeRangeStr, duration = 30) {
   }
 
   // Time range input
-  return parseTimeRangeInterval(timeRangeStr)
+  const [startTime, endTime] = parseTimeRangeInterval(timeRangeStr)
+  if (startTime === null || endTime === null) {
+    return [null, null]
+  }
+
+  // Add duration to end time
+  let adjustedEndTime = endTime + duration * 60 // Add duration in seconds
+  if (adjustedEndTime >= 86400) {
+    adjustedEndTime %= 86400 // Wrap around if it exceeds 24 hours
+  }
+
+  return [startTime, adjustedEndTime]
 }
 
 export const parseTimeRangeInterval = memoize(timeRangeStr => {
@@ -143,16 +150,11 @@ export const parseTimeRangeInterval = memoize(timeRangeStr => {
   // Determine if the time strings contain period indicators
   const startHasPeriod =
     startStr.toUpperCase().includes('A') || startStr.toUpperCase().includes('P')
-  const endHasPeriod =
-    endStr.toUpperCase().includes('A') || endStr.toUpperCase().includes('P')
+  const endHasPeriod = endStr.toUpperCase().includes('A') || endStr.toUpperCase().includes('P')
 
   // If the end time has a period and the start time does not, use the end time's period for the start time
   const defaultPeriod =
-    !startHasPeriod && endHasPeriod
-      ? endStr.toUpperCase().includes('P')
-        ? 'PM'
-        : 'AM'
-      : 'AM'
+    !startHasPeriod && endHasPeriod ? (endStr.toUpperCase().includes('P') ? 'PM' : 'AM') : 'AM'
 
   // Parse start and end times with the determined default period
   let startTime = parseTime(startStr, defaultPeriod)
@@ -179,10 +181,7 @@ export const parseTimeRangeInterval = memoize(timeRangeStr => {
       !startStr.toUpperCase().includes('PM')
     ) {
       startTime = parseTime(startStr, 'PM')
-    } else if (
-      endStr.toUpperCase().includes('P') &&
-      !startStr.toUpperCase().includes('PM')
-    ) {
+    } else if (endStr.toUpperCase().includes('P') && !startStr.toUpperCase().includes('PM')) {
       startTime = parseTime(startStr, 'AM')
     }
     endTime += 24 * 60 * 60 // Add 24 hours in seconds
