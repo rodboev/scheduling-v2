@@ -364,6 +364,12 @@ export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
   // Filter out invalid location IDs first
   const validLocationIds = newLocationIds.filter(id => locationCache.has(id.toString()))
 
+  if (validLocationIds.length !== newLocationIds.length) {
+    console.warn(
+      `Filtered out ${newLocationIds.length - validLocationIds.length} invalid location IDs`,
+    )
+  }
+
   // Check if we need to update the cache
   const needsUpdate =
     force ||

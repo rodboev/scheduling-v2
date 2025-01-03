@@ -1,9 +1,9 @@
 import { getFullDistanceMatrix } from '@/app/utils/locationCache'
 import { Worker } from 'node:worker_threads'
 import path from 'node:path'
-import { NextResponse } from 'next/server'
 import { dayjsInstance } from '@/app/utils/dayjs'
 import axios from 'axios'
+import { createJsonResponse } from '@/app/utils/response'
 
 const MAX_DAYS_PER_REQUEST = 2 // Process 2 days at a time
 
@@ -14,7 +14,7 @@ export async function GET(request) {
   console.log('Schedule API called with params:', Object.fromEntries(searchParams))
 
   if (!start.isValid() || !end.isValid()) {
-    return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
+    return createJsonResponse({ error: 'Invalid date range' }, { status: 400 })
   }
 
   try {
@@ -56,7 +56,7 @@ export async function GET(request) {
       currentStart = chunkEnd
     }
 
-    return NextResponse.json({
+    return createJsonResponse({
       scheduledServices: allScheduledServices,
       clusteringInfo: {
         algorithm: 'shifts',
@@ -73,7 +73,7 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('Schedule error:', error)
-    return NextResponse.json(
+    return createJsonResponse(
       {
         error: 'Internal Server Error',
         details: error.message,
@@ -104,7 +104,7 @@ async function processDateRange(start, end) {
     })
 
     if (!services.length) {
-      return NextResponse.json({
+      return createJsonResponse({
         scheduledServices: [],
         unassignedServices: [],
         clusteringInfo: {
@@ -138,7 +138,7 @@ async function processDateRange(start, end) {
     // Validate matrix format and dimensions
     if (!Array.isArray(distanceMatrix) || !Array.isArray(distanceMatrix[0])) {
       console.warn('Invalid distance matrix format')
-      return NextResponse.json({
+      return createJsonResponse({
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -155,7 +155,7 @@ async function processDateRange(start, end) {
       console.warn(
         `Matrix dimension mismatch: ${distanceMatrix.length} != ${validServices.length} services`,
       )
-      return NextResponse.json({
+      return createJsonResponse({
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -199,7 +199,7 @@ async function processDateRange(start, end) {
     const totalConnectedPoints = scheduledServices.filter(s => s.cluster >= 0).length
     const totalClusters = new Set(scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
 
-    return NextResponse.json({
+    return createJsonResponse({
       ...result,
       clusteringInfo: {
         algorithm: 'shifts',
@@ -216,6 +216,6 @@ async function processDateRange(start, end) {
     })
   } catch (error) {
     console.error('Schedule error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return createJsonResponse({ error: error.message }, { status: 500 })
   }
 }
