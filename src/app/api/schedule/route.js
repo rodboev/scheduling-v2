@@ -123,18 +123,12 @@ async function processDateRange(start, end) {
     })
 
     // Filter out services with missing locations first
-    const validServices = services.filter(service => {
-      const hasLocation = service.location?.id?.toString()
-      if (!hasLocation) {
-        console.warn(`Service ${service.id} missing location ID`)
-      }
-      return hasLocation
-    })
+    const validServices = services.filter(service => service.location?.id?.toString())
 
     // Get unique location IDs from valid services
     const locationIds = validServices.map(s => s.location.id.toString())
 
-    // Get distance matrix
+    // Get distance matrix in array format
     console.log('Getting distance matrix for', locationIds.length, 'locations')
     const distanceMatrix = await getFullDistanceMatrix(locationIds, {
       format: 'array',
@@ -161,7 +155,6 @@ async function processDateRange(start, end) {
       console.warn(
         `Matrix dimension mismatch: ${distanceMatrix.length} != ${validServices.length} services`,
       )
-      console.warn('This indicates some locations were invalid or not found in the cache')
       return NextResponse.json({
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],

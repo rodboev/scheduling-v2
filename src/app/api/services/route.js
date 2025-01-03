@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { promises as fsPromises } from 'node:fs'
 import path from 'node:path'
 import { HARD_MAX_RADIUS_MILES, TECH_SPEED_MPH, NUM_TECHS } from '@/app/utils/constants'
+import { createJsonResponse } from '@/app/utils/response'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const isProduction = process.env.NODE_ENV === 'production'
@@ -242,7 +243,7 @@ export async function GET(request) {
 
     // Get unique location IDs in the order of services array
     const locationIds = Array.from(
-      new Set(filteredServices.map(s => s.location?.id?.toString()).filter(Boolean)),
+      new Set(services.map(s => s.location?.id?.toString()).filter(Boolean)),
     )
 
     // Get the full distance matrix at once
@@ -579,25 +580,12 @@ export async function GET(request) {
     const finalGroups = serviceGroups.flat()
     finalGroups.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
 
-    return new Response(JSON.stringify(finalGroups, null, 2), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-      },
-    })
+    return createJsonResponse(finalGroups)
   } catch (error) {
     console.error('Error generating services:', error)
-    return new Response(
-      JSON.stringify({ error: 'Failed to generate services: ' + error.message }, null, 2),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-      },
+    return createJsonResponse(
+      { error: 'Failed to generate services: ' + error.message },
+      { status: 500 },
     )
   }
 }

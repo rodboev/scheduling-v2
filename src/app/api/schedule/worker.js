@@ -158,8 +158,6 @@ function createScheduledService(service, shift, matchInfo) {
 }
 
 function createNewShift(service, clusterIndex) {
-  console.log('Creating new shift with cluster:', clusterIndex)
-
   // Use preferred time if available, otherwise use earliest possible time
   const shiftStart = service.time.preferred
     ? new Date(service.time.preferred)
@@ -178,8 +176,6 @@ function createNewShift(service, clusterIndex) {
     previousService: null,
     previousCompany: null,
   }
-
-  console.log('Created service with cluster:', newService.cluster)
 
   return {
     services: [newService],
@@ -538,14 +534,12 @@ function processServices(services, distanceMatrix) {
     console.log('Shifts after tech assignment:', shiftsWithTechs.length)
 
     const processedServices = shiftsWithTechs.flatMap(shift => {
-      console.log('Processing shift with cluster:', shift.cluster)
       return shift.services.map(service => {
         const processedService = {
           ...service,
           techId: shift.techId || `Tech ${service.cluster + 1}`,
           cluster: shift.cluster, // Ensure cluster is set from shift
         }
-        console.log('Processed service cluster:', processedService.cluster)
         return processedService
       })
     })
