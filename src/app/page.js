@@ -23,7 +23,7 @@ export default function Home() {
           <h1 className="mb-12 text-2xl font-bold">Routing / Scheduling</h1>
 
           <div className="flex flex-col gap-6">
-            <Link href="/map" target="_blank">
+            <Link href="/map">
               <Button size="lg" variant="outline" className="w-64">
                 Map View
               </Button>

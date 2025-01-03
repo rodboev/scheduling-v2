@@ -122,6 +122,9 @@ const MapView = () => {
         setClusteredServices([])
         setClusteringInfo(null)
 
+        // Force refresh the location and distance data
+        await fetch('/api/distance/refresh')
+
         // Set start date to midnight Eastern and end date to midnight Eastern the next day
         const startDate = dayjs.tz(targetDate, 'America/New_York').startOf('day')
         const endDate = dayjs.tz(targetDate, 'America/New_York').add(1, 'day').startOf('day')

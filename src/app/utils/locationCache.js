@@ -276,33 +276,28 @@ export async function getLocationPairs(idPairs) {
 
 // Check if locations are loaded
 export async function getLocations(forceRefresh = false) {
-  if (locationCache.size === 0 || forceRefresh) {
-    console.log(forceRefresh ? 'Forcing refresh...' : 'Loading locations...')
+  console.log(forceRefresh ? 'Forcing refresh...' : 'Loading locations...')
 
-    // Load service setups
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
-    console.log(`Fetching service setups from: ${baseUrl}/api/serviceSetups`)
+  // Load service setups
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+  console.log(`Fetching service setups from: ${baseUrl}/api/serviceSetups`)
 
-    const response = await fetch(`${baseUrl}/api/serviceSetups`)
-    const services = await response.json()
+  const response = await fetch(`${baseUrl}/api/serviceSetups`)
+  const services = await response.json()
 
-    if (!Array.isArray(services)) {
-      throw new Error(`Invalid services data: ${typeof services}`)
-    }
-
-    console.log(`Loaded ${services.length} services for location data`)
-
-    const result = await storeLocations(services)
-
-    if (result.finalCount === 0) {
-      throw new Error('Failed to store any locations')
-    }
-
-    return result.finalCount
+  if (!Array.isArray(services)) {
+    throw new Error(`Invalid services data: ${typeof services}`)
   }
 
-  return locationCache.size
+  console.log(`Loaded ${services.length} services for location data`)
+
+  const result = await storeLocations(services)
+
+  if (result.finalCount === 0) {
+    throw new Error('Failed to store any locations')
+  }
+
+  return result.finalCount
 }
 
 // Get cached data
@@ -362,6 +357,9 @@ export function deleteCachedData(key) {
 export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
   const { format = 'object', force = false } = options
   const currentTime = Date.now()
+
+  // Always force a fresh fetch of location data
+  await getLocations(true)
 
   // Check if we need to update the cache
   const needsUpdate =

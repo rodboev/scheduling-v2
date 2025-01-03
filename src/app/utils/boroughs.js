@@ -313,12 +313,6 @@ export function getBorough(lat, lng) {
     }
   }
 
-  if (process.env.NODE_ENV === 'development' && ENFORCE_BOROUGH_BOUNDARIES) {
-    console.log('Borough assignment failed:', {
-      location: { lat, lng },
-    })
-  }
-
   return null
 }
 

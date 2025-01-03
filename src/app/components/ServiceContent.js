@@ -82,14 +82,14 @@ export default function ServiceContent({ service }) {
         </div>
       )}
 
-      {service.cluster !== undefined && (
-        <div className="mt-3">
-          <span className="font-semibold">
-            Cluster: {getClusterLabel(service.cluster, service.clusterReason)}
-          </span>{' '}
-          (was {service.tech.code})
-        </div>
-      )}
+      <div className="mt-3">
+        <span className="font-semibold">{service.techId}</span> (was {service.tech.code})
+      </div>
+      <div>
+        <span className="font-semibold">
+          Cluster {getClusterLabel(service.cluster, service.clusterReason)}
+        </span>
+      </div>
     </div>
   )
 }

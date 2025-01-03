@@ -195,7 +195,6 @@ export async function GET(request) {
     const servicesWithoutOverlaps = services.filter(
       service => !techsWithOverlaps.has(service.tech.code),
     )
-
     console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
     // Get first 10 techs with services and filter services to only include those techs
@@ -207,6 +206,9 @@ export async function GET(request) {
     const filteredServices = servicesWithoutOverlaps.filter(service =>
       selectedTechs.includes(service.tech.code),
     )
+
+    // Uncomment for all techs:
+    // const filteredServices = servicesWithoutOverlaps
     console.log(`Filtered to first ${numTechs} techs, total services:`, filteredServices.length)
 
     // Sort services by start time

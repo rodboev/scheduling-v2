@@ -1,4 +1,4 @@
-import { getFullDistanceMatrix } from '@/app/utils/locationCache'
+import { getLocations, getFullDistanceMatrix } from '@/app/utils/locationCache'
 import { NextResponse } from 'next/server'
 
 export async function GET(request) {
@@ -11,7 +11,7 @@ export async function GET(request) {
 
   try {
     // Get or update the full distance matrix
-    const matrix = await getFullDistanceMatrix(locationIds)
+    const matrix = await getFullDistanceMatrix(locationIds, { force: true })
 
     // Return only the requested pairs
     const requestedMatrix = {}
