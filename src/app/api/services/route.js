@@ -15,8 +15,8 @@ function createServicesForRange(setup, startDate, endDate) {
   const start = dayjs(startDate)
   const end = dayjs(endDate)
 
-  // Create services for the date range, including the end date
-  for (let date = start; date.isSameOrBefore(end); date = date.add(1, 'day')) {
+  // Create services for the date range, excluding the end date
+  for (let date = start; date.isBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
       // Create the service's time window based on its original range
       const rangeStart =
@@ -34,8 +34,15 @@ function createServicesForRange(setup, startDate, endDate) {
       const scheduledStart = preferred
       const scheduledEnd = dayjs(scheduledStart).add(duration, 'minutes')
 
-      // Only create service if scheduled times fall within the time window
-      if (rangeStart && rangeEnd && scheduledStart && scheduledEnd) {
+      // Only create service if scheduled times fall within the requested range
+      if (
+        rangeStart &&
+        rangeEnd &&
+        scheduledStart &&
+        scheduledEnd &&
+        scheduledStart.isBefore(end) &&
+        scheduledEnd.isAfter(start)
+      ) {
         services.push({
           ...setup,
           id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
