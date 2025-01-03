@@ -118,13 +118,6 @@ export function logScheduleActivity({ services, clusteringInfo }) {
       }
     }
 
-    // Log cluster details
-    console.log('\nCluster Details:')
-    for (const [cluster, clusterServices] of servicesByCluster) {
-      const sortedServices = clusterServices.sort((a, b) => new Date(a.start) - new Date(b.start))
-      logClusterServices(sortedServices)
-    }
-
     // Log tech assignments
     console.log('\nTech Assignments:')
     for (const [techId, techServices] of servicesByTech) {
