@@ -489,7 +489,6 @@ const MapView = () => {
             Techs: {Object.keys(clusteringInfo.techAssignments || {}).length} (from{' '}
             {new Set(clusteredServices.map(s => s.tech?.code).filter(Boolean)).size})
           </p>
-          {console.log(clusteringInfo)}
         </div>
       )}
     </div>

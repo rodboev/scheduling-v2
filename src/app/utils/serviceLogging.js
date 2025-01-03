@@ -120,7 +120,13 @@ export function logScheduleActivity({ services, clusteringInfo }) {
 
     // Log tech assignments
     console.log('\nTech Assignments:')
-    for (const [techId, techServices] of servicesByTech) {
+    const sortedTechEntries = Array.from(servicesByTech.entries()).sort((a, b) => {
+      const techNumA = parseInt(a[0].replace('Tech ', ''))
+      const techNumB = parseInt(b[0].replace('Tech ', ''))
+      return techNumA - techNumB
+    })
+
+    for (const [techId, techServices] of sortedTechEntries) {
       const servicesByDate = new Map()
       for (const service of techServices) {
         const date = dayjs(service.start).format('YYYY-MM-DD')
