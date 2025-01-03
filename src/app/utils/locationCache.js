@@ -88,7 +88,7 @@ export async function storeLocations(serviceSetups) {
     const locationId = location.id.toString()
 
     if (processedLocations.has(locationId)) {
-      console.log(`Skipping duplicate location ID: ${locationId} (setup ${setupId})`)
+      // console.log(`Skipping duplicate location ID: ${locationId} (setup ${setupId})`)
       continue
     }
 

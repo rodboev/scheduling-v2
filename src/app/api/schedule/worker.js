@@ -449,70 +449,130 @@ function processServices(services, distanceMatrix) {
           .slice(i + 1)
           .filter(s => {
             if (s.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
-            const firstStart = new Date(s.services[0].start)
+
+            // Check if shifts have any overlapping or nearby time windows
+            const shift2Start = new Date(
+              Math.min(...s.services.map(svc => new Date(svc.time.range[0]).getTime())),
+            )
+            const shift2End = new Date(
+              Math.max(...s.services.map(svc => new Date(svc.time.range[1]).getTime())),
+            )
+            const shift1Start = new Date(
+              Math.min(...shift1.services.map(svc => new Date(svc.time.range[0]).getTime())),
+            )
+            const shift1End = new Date(
+              Math.max(...shift1.services.map(svc => new Date(svc.time.range[1]).getTime())),
+            )
+
+            // Check if any pair of services between shifts are within HARD_MAX_RADIUS_MILES
+            let hasNearbyServices = false
+            for (const service1 of shift1.services) {
+              for (const service2 of s.services) {
+                const distance = distanceMatrix[service1.originalIndex][service2.originalIndex]
+                if (distance && distance <= HARD_MAX_RADIUS_MILES) {
+                  hasNearbyServices = true
+                  break
+                }
+              }
+              if (hasNearbyServices) break
+            }
+            if (!hasNearbyServices) return false
+
+            // Allow merging if there's any potential for services to be interleaved
+            const maxGap = MAX_TIME_SEARCH * 60000 // Convert to milliseconds
             return (
-              firstStart > lastEnd &&
-              firstStart < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
+              shift2End.getTime() - shift1Start.getTime() >= -maxGap &&
+              shift1End.getTime() - shift2Start.getTime() >= -maxGap
             )
           })
-          .slice(0, 3) // Only consider the 3 closest shifts
+          .slice(0, 5) // Consider more potential candidates
 
         for (const shift2 of mergeCandidates) {
-          const firstService = shift2.services[0]
-          const distance = distanceMatrix[lastService.originalIndex][firstService.originalIndex]
-
-          if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
-
-          const travelTime = calculateTravelTime(distance)
-          const earliestStart = new Date(lastEnd.getTime() + travelTime * 60000)
-
-          if (earliestStart > new Date(firstService.time.range[1])) continue
-
           const totalServices = shift1.services.length + shift2.services.length
           if (totalServices > 14) continue
 
-          const mergedDuration =
-            (Math.max(
-              new Date(shift1.services[shift1.services.length - 1].end).getTime(),
-              new Date(shift2.services[shift2.services.length - 1].end).getTime(),
-            ) -
-              Math.min(
-                new Date(shift1.services[0].start).getTime(),
-                new Date(shift2.services[0].start).getTime(),
-              )) /
-            (60 * 1000)
-
-          if (mergedDuration > SHIFT_DURATION) continue
-
-          // If we get here, merge is possible
-          const adjustedFirstService = {
-            ...firstService,
-            cluster: shift1.cluster,
-            sequenceNumber: shift1.services.length + 1,
-            start: formatDate(earliestStart),
-            end: formatDate(new Date(earliestStart.getTime() + firstService.time.duration * 60000)),
-            distanceFromPrevious: distance,
-            travelTimeFromPrevious: travelTime,
-            previousService: lastService.id,
-            previousCompany: lastService.company,
-          }
-
-          const remainingServices = shift2.services.slice(1).map((service, index) => {
-            const prev = index === 0 ? adjustedFirstService : shift2.services[index]
-            const dist = distanceMatrix[prev.originalIndex][service.originalIndex]
-            const travel = calculateTravelTime(dist)
-            return {
-              ...service,
-              cluster: shift1.cluster,
-              sequenceNumber: shift1.services.length + 2 + index,
-              distanceFromPrevious: dist,
-              travelTimeFromPrevious: travel,
-              previousService: prev.id,
-              previousCompany: prev.company,
-            }
+          // Combine all services and sort by scheduled time
+          const combinedServices = [...shift1.services, ...shift2.services].sort((a, b) => {
+            return new Date(a.start) - new Date(b.start)
           })
 
-          shift1.services = [...shift1.services, adjustedFirstService, ...remainingServices]
+          // Try to create a valid schedule
+          let currentTime = new Date(combinedServices[0].start)
+          const proposedSchedule = []
+          let isValidSchedule = true
+
+          for (const service of combinedServices) {
+            // Calculate travel time from previous service
+            const prevService = proposedSchedule[proposedSchedule.length - 1]
+
+            if (prevService) {
+              const distance = distanceMatrix[prevService.originalIndex][service.originalIndex]
+              // Check if distance exceeds hard max radius
+              if (!distance || distance > HARD_MAX_RADIUS_MILES) {
+                isValidSchedule = false
+                break
+              }
+              const travelTime = calculateTravelTime(distance)
+
+              // Calculate earliest possible start time
+              const earliestStart = new Date(
+                new Date(prevService.end).getTime() + travelTime * 60000,
+              )
+
+              // Check if service can be scheduled within its time window
+              const rangeStart = new Date(service.time.range[0])
+              const rangeEnd = new Date(service.time.range[1])
+
+              // Try to schedule at original time if possible, otherwise at earliest available time
+              const originalStart = new Date(service.start)
+              const tryStart = originalStart >= earliestStart ? originalStart : earliestStart
+
+              if (tryStart > rangeEnd) {
+                isValidSchedule = false
+                break
+              }
+
+              const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
+
+              proposedSchedule.push({
+                ...service,
+                start: formatDate(tryStart),
+                end: formatDate(tryEnd),
+                travelTimeFromPrevious: travelTime,
+                previousService: prevService.id,
+                previousCompany: prevService.company,
+                distanceFromPrevious: distance,
+              })
+            } else {
+              // First service in schedule
+              proposedSchedule.push({
+                ...service,
+                travelTimeFromPrevious: 0,
+                previousService: null,
+                previousCompany: null,
+                distanceFromPrevious: 0,
+              })
+            }
+
+            currentTime = new Date(proposedSchedule[proposedSchedule.length - 1].end)
+          }
+
+          if (!isValidSchedule) continue
+
+          // Calculate actual working time
+          const actualWorkingTime = proposedSchedule.reduce((total, service) => {
+            return total + service.time.duration + (service.travelTimeFromPrevious || 0)
+          }, 0)
+
+          if (actualWorkingTime > SHIFT_DURATION) continue
+
+          // If we get here, merge is possible - update services with new cluster and sequence
+          shift1.services = proposedSchedule.map((service, index) => ({
+            ...service,
+            cluster: shift1.cluster,
+            sequenceNumber: index + 1,
+          }))
+
           shift1.mergeAttempts++
           shift2.mergeAttempts++
           shifts.splice(shifts.indexOf(shift2), 1)
