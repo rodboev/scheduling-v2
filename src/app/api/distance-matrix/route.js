@@ -3,29 +3,20 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const locationIds = searchParams.get('ids')?.split(',') || []
+  const locationIds = searchParams.get('ids')?.split(',').filter(Boolean) || []
 
   if (!locationIds.length) {
     return NextResponse.json({ error: 'No location IDs provided' }, { status: 400 })
   }
 
   try {
-    // Get or update the full distance matrix
-    const matrix = await getFullDistanceMatrix(locationIds, { force: true })
+    // Get or update the full distance matrix in array format
+    const matrix = await getFullDistanceMatrix(locationIds, {
+      force: true,
+      format: 'array', // Always use array format
+    })
 
-    // Return only the requested pairs
-    const requestedMatrix = {}
-    for (let i = 0; i < locationIds.length; i++) {
-      for (let j = 0; j < locationIds.length; j++) {
-        if (i === j) continue
-        const key = `${locationIds[i]},${locationIds[j]}`
-        if (matrix[key] !== undefined) {
-          requestedMatrix[key] = matrix[key]
-        }
-      }
-    }
-
-    return NextResponse.json(requestedMatrix)
+    return NextResponse.json(matrix)
   } catch (error) {
     console.error('Error getting distance matrix:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

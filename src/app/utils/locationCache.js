@@ -361,12 +361,21 @@ export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
   // Always force a fresh fetch of location data
   await getLocations(true)
 
+  // Filter out invalid location IDs first
+  const validLocationIds = newLocationIds.filter(id => locationCache.has(id.toString()))
+
+  if (validLocationIds.length !== newLocationIds.length) {
+    console.warn(
+      `Filtered out ${newLocationIds.length - validLocationIds.length} invalid location IDs`,
+    )
+  }
+
   // Check if we need to update the cache
   const needsUpdate =
     force ||
     !distanceMatrixCache.matrix ||
     currentTime - distanceMatrixCache.lastUpdated > distanceMatrixCache.TTL ||
-    !newLocationIds.every(id => distanceMatrixCache.locationIds.has(id)) ||
+    !validLocationIds.every(id => distanceMatrixCache.locationIds.has(id)) ||
     format !== distanceMatrixCache.format
 
   if (!needsUpdate) {
@@ -374,18 +383,18 @@ export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
   }
 
   console.log('Creating new distance matrix...')
-  const locationIds = [...new Set(newLocationIds)]
 
   // Create the matrix in the requested format
   if (format === 'array') {
-    const matrix = Array(locationIds.length)
+    const matrix = Array(validLocationIds.length)
       .fill()
-      .map(() => Array(locationIds.length).fill(null))
+      .map(() => Array(validLocationIds.length).fill(null))
 
     // Fill the matrix
-    for (let i = 0; i < locationIds.length; i++) {
-      for (let j = i + 1; j < locationIds.length; j++) {
-        const distance = await calculateDistance(locationIds[i], locationIds[j])
+    for (let i = 0; i < validLocationIds.length; i++) {
+      matrix[i][i] = 0 // Set diagonal to 0
+      for (let j = i + 1; j < validLocationIds.length; j++) {
+        const distance = await calculateDistance(validLocationIds[i], validLocationIds[j])
         if (distance?.pair?.distance) {
           matrix[i][j] = distance.pair.distance
           matrix[j][i] = distance.pair.distance // Mirror the distance
@@ -401,12 +410,14 @@ export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
     const matrix = {}
 
     // Fill the matrix
-    for (let i = 0; i < locationIds.length; i++) {
-      for (let j = i + 1; j < locationIds.length; j++) {
-        const distance = await calculateDistance(locationIds[i], locationIds[j])
+    for (let i = 0; i < validLocationIds.length; i++) {
+      const key = `${validLocationIds[i]},${validLocationIds[i]}`
+      matrix[key] = 0 // Set diagonal to 0
+      for (let j = i + 1; j < validLocationIds.length; j++) {
+        const distance = await calculateDistance(validLocationIds[i], validLocationIds[j])
         if (distance?.pair?.distance) {
-          const key = `${locationIds[i]},${locationIds[j]}`
-          const reverseKey = `${locationIds[j]},${locationIds[i]}`
+          const key = `${validLocationIds[i]},${validLocationIds[j]}`
+          const reverseKey = `${validLocationIds[j]},${validLocationIds[i]}`
           matrix[key] = distance.pair.distance
           matrix[reverseKey] = distance.pair.distance // Mirror the distance
         }
@@ -419,7 +430,7 @@ export async function getFullDistanceMatrix(newLocationIds = [], options = {}) {
   }
 
   // Update cache metadata
-  distanceMatrixCache.locationIds = new Set(locationIds)
+  distanceMatrixCache.locationIds = new Set(validLocationIds)
   distanceMatrixCache.lastUpdated = currentTime
 
   return distanceMatrixCache.matrix

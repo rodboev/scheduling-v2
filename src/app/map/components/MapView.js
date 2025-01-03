@@ -79,11 +79,22 @@ const MapView = () => {
       return servicesWithDistance
     }
 
-    // Get the full distance matrix for all locations
-    const response = await axios.get('/api/distance-matrix', {
-      params: { ids: locationIds.join(',') },
-    })
-    const distanceMatrix = response.data
+    // Get the full distance matrix at once
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+    const matrixResponse = await fetch(
+      `${baseUrl}/api/distance-matrix?ids=${Array.from(locationIds).join(',')}&format=array`,
+    )
+    const distanceMatrix = await matrixResponse.json()
+
+    // Function to get distance between two services using the matrix
+    function getDistance(service1, service2) {
+      // Find indices in locationIds array
+      const idx1 = locationIds.indexOf(service1.location.id.toString())
+      const idx2 = locationIds.indexOf(service2.location.id.toString())
+      if (idx1 === -1 || idx2 === -1) return Infinity
+      return distanceMatrix[idx1][idx2] || Infinity
+    }
 
     // Now process each cluster with the distance matrix
     for (const clusterServices of Object.values(clusters)) {
@@ -99,8 +110,9 @@ const MapView = () => {
         if (i > 0) {
           // Only set distance/previous info for non-first services
           const previousService = sortedCluster[i - 1]
-          const key = `${previousService.location.id},${currentService.location.id}`
-          const distance = distanceMatrix[key]
+          const idx1 = locationIds.indexOf(previousService.location.id.toString())
+          const idx2 = locationIds.indexOf(currentService.location.id.toString())
+          const distance = idx1 !== -1 && idx2 !== -1 ? distanceMatrix[idx1][idx2] : null
 
           if (distance) {
             currentService.distanceFromPrevious = distance

@@ -1,4 +1,5 @@
 // Clustering constants
+export const NUM_TECHS = 35 // Number of techs to consider
 export const MAX_RADIUS_MILES_ACROSS_BOROUGHS = 3 // Soft cap - services beyond this distance get penalized
 export const HARD_MAX_RADIUS_MILES = 5 // Hard cap - services beyond this distance cannot be connected
 export const ENFORCE_BOROUGH_BOUNDARIES = true

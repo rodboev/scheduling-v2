@@ -140,7 +140,7 @@ function calculateServiceScore(
 function createScheduledService(service, shift, matchInfo) {
   const lastService = shift.services[shift.services.length - 1]
   const distance = lastService
-    ? distanceMatrix[lastService.originalIndex][service.originalIndex]
+    ? distanceMatrix[service.originalIndex][lastService.originalIndex]
     : 0
   const travelTime = distance ? calculateTravelTime(distance) : 0
 
@@ -158,27 +158,31 @@ function createScheduledService(service, shift, matchInfo) {
 }
 
 function createNewShift(service, clusterIndex) {
+  console.log('Creating new shift with cluster:', clusterIndex)
+
   // Use preferred time if available, otherwise use earliest possible time
   const shiftStart = service.time.preferred
     ? new Date(service.time.preferred)
     : new Date(service.time.range[0])
   const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION * 60000)
 
+  const newService = {
+    ...service,
+    cluster: clusterIndex,
+    techId: `Tech ${clusterIndex + 1}`,
+    sequenceNumber: 1,
+    start: formatDate(shiftStart),
+    end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
+    distanceFromPrevious: 0,
+    travelTimeFromPrevious: 0,
+    previousService: null,
+    previousCompany: null,
+  }
+
+  console.log('Created service with cluster:', newService.cluster)
+
   return {
-    services: [
-      {
-        ...service,
-        cluster: clusterIndex,
-        techId: `Tech ${clusterIndex + 1}`,
-        sequenceNumber: 1,
-        start: formatDate(shiftStart),
-        end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
-        distanceFromPrevious: 0,
-        travelTimeFromPrevious: 0,
-        previousService: null,
-        previousCompany: null,
-      },
-    ],
+    services: [newService],
     startTime: shiftStart,
     endTime: shiftEnd,
     cluster: clusterIndex,
@@ -531,15 +535,25 @@ function processServices(services, distanceMatrix) {
 
     // Assign techs to shifts
     const shiftsWithTechs = assignTechsToShifts(shifts)
+    console.log('Shifts after tech assignment:', shiftsWithTechs.length)
+
     const processedServices = shiftsWithTechs.flatMap(shift => {
-      return shift.services.map(service => ({
-        ...service,
-        techId: shift.techId || `Tech ${service.cluster + 1}`,
-      }))
+      console.log('Processing shift with cluster:', shift.cluster)
+      return shift.services.map(service => {
+        const processedService = {
+          ...service,
+          techId: shift.techId || `Tech ${service.cluster + 1}`,
+          cluster: shift.cluster, // Ensure cluster is set from shift
+        }
+        console.log('Processed service cluster:', processedService.cluster)
+        return processedService
+      })
     })
 
     // Calculate clustering info
     const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
+    console.log('Found clusters:', Array.from(clusters))
+
     const clusterSizes = Array.from(clusters).map(
       c => processedServices.filter(s => s.cluster === c).length,
     )
@@ -591,7 +605,21 @@ function processServices(services, distanceMatrix) {
 // Handle messages from the main thread
 parentPort.on('message', async ({ services, distanceMatrix }) => {
   try {
+    console.log('Worker received services:', services.length)
+    console.log(
+      'Distance matrix dimensions:',
+      distanceMatrix.length,
+      'x',
+      distanceMatrix[0]?.length,
+    )
+
     const result = await processServices(services, distanceMatrix)
+    console.log('Worker processed services:', result.scheduledServices.length)
+    console.log(
+      'Services with clusters:',
+      result.scheduledServices.filter(s => s.cluster >= 0).length,
+    )
+
     parentPort.postMessage(result)
   } catch (error) {
     console.error('Error in clustering worker:', error)

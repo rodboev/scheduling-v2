@@ -5,7 +5,7 @@ import axios from 'axios'
 import { NextResponse } from 'next/server'
 import { promises as fsPromises } from 'node:fs'
 import path from 'node:path'
-import { HARD_MAX_RADIUS_MILES, TECH_SPEED_MPH } from '@/app/utils/constants'
+import { HARD_MAX_RADIUS_MILES, TECH_SPEED_MPH, NUM_TECHS } from '@/app/utils/constants'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const isProduction = process.env.NODE_ENV === 'production'
@@ -225,37 +225,40 @@ export async function GET(request) {
     console.log('Services after removing overlaps:', servicesWithoutOverlaps.length)
 
     // Get first 10 techs with services and filter services to only include those techs
-    const numTechs = 10
     const selectedTechs = [
       ...new Set(servicesWithoutOverlaps.map(service => service.tech.code)),
-    ].slice(0, numTechs)
-    console.log(`First ${numTechs} techs with services: ${selectedTechs.join(', ')}`)
+    ].slice(0, NUM_TECHS)
+    console.log(`First ${NUM_TECHS} techs with services: ${selectedTechs.join(', ')}`)
     const filteredServices = servicesWithoutOverlaps.filter(service =>
       selectedTechs.includes(service.tech.code),
     )
 
     // Uncomment for all techs:
     // const filteredServices = servicesWithoutOverlaps
-    console.log(`Filtered to first ${numTechs} techs, total services:`, filteredServices.length)
+    console.log(`Filtered to first ${NUM_TECHS} techs, total services:`, filteredServices.length)
 
     // Sort services by start time
     filteredServices.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
 
-    // Get all unique location IDs
-    const locationIds = new Set(filteredServices.map(service => service.location.id))
+    // Get unique location IDs in the order of services array
+    const locationIds = Array.from(
+      new Set(filteredServices.map(s => s.location?.id?.toString()).filter(Boolean)),
+    )
 
     // Get the full distance matrix at once
     const baseUrl =
       process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
     const matrixResponse = await fetch(
-      `${baseUrl}/api/distance-matrix?ids=${Array.from(locationIds).join(',')}`,
+      `${baseUrl}/api/distance-matrix?ids=${locationIds.join(',')}`,
     )
     const distanceMatrix = await matrixResponse.json()
 
     // Function to get distance between two services using the matrix
     function getDistance(service1, service2) {
-      const key = `${service1.location.id},${service2.location.id}`
-      return distanceMatrix[key] || Infinity
+      const idx1 = locationIds.indexOf(service1.location.id.toString())
+      const idx2 = locationIds.indexOf(service2.location.id.toString())
+      if (idx1 === -1 || idx2 === -1) return Infinity
+      return distanceMatrix[idx1][idx2] || Infinity
     }
 
     // Function to check if a service can fit in a group with lookahead
