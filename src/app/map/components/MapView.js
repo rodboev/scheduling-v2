@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { scheduleServices } from '@/app/api/cluster/scheduling'
 import MapMarker from '@/app/map/components/MapMarker'
 import Service from '@/app/components/Service'
 import MapTools from '@/app/map/components/MapTools'
@@ -473,7 +472,11 @@ const MapView = () => {
           <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
           <p>Clusters: {clusteringInfo.totalClusters}</p>
-          <p>Outliers: {clusteringInfo.outlierCount}</p>
+          <p>Singles: {clusteringInfo.clusterSizes?.filter(size => size === 1).length || 0}</p>
+          <p>
+            Techs: {Object.keys(clusteringInfo.techAssignments || {}).length} (
+            {new Set(clusteredServices.map(s => s.tech?.code).filter(Boolean)).size})
+          </p>
         </div>
       )}
     </div>

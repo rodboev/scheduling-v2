@@ -76,10 +76,10 @@ const generateSpectrum = count => {
   return { ...colors, ...namedColors, ...neutralColors }
 }
 
-const baseColors = generateSpectrum(24) // 24 colors for a rich spectrum
+const baseColors = generateSpectrum(32)
 
 const MAX_LIGHTNESS = 0.8 // Prevent colors from getting too close to white
-const MIN_COLOR_DIFFERENCE = 30 // Minimum Delta E difference between colors
+const MIN_COLOR_DIFFERENCE = 20 // Minimum Delta E difference between colors
 
 function calculateDeltaE(color1, color2) {
   // Convert to Lab color space for better perceptual difference calculation

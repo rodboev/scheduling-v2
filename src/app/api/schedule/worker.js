@@ -301,15 +301,19 @@ function processServices(services, distanceMatrix) {
         service.time.range[1],
     )
 
+    // Calculate latest possible start time for each service
+    const latestStart = service =>
+      new Date(service.time.range[1]).getTime() - service.time.duration * 60000
+
     // Sort services by time window and start time
     const sortedServices = validServices
       .map((service, index) => ({
         ...service,
         originalIndex: index,
         borough: getBorough(service.location.latitude, service.location.longitude),
-        timeWindow: new Date(service.time.range[1]) - new Date(service.time.range[0]),
+        timeWindow: latestStart(service) - new Date(service.time.range[0]).getTime(),
         startTime: new Date(service.time.range[0]),
-        endTime: new Date(service.time.range[1]),
+        endTime: new Date(latestStart(service)),
       }))
       .filter(service => service && isValidTimeRange(service.startTime, service.endTime))
       .sort((a, b) => {
