@@ -54,7 +54,7 @@ export function findGaps({ shift, from, to, minimumGap = 15 }) {
 
 export function canFitInGap(service, gap) {
   const serviceDuration = service.time.duration
-  const gapDuration = (gap.end - gap.start) / (60 * 1000) // Convert to minutes
+  const gapDuration = (gap.end - gap.start) / (60 * 1000)
 
   return (
     serviceDuration <= gapDuration &&

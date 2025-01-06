@@ -39,7 +39,7 @@ function isValidTimeRange(start, end) {
 
 // Check if two service execution times overlap (including their durations)
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
-  // Convert all times to milliseconds for comparison
+  // These are actual execution times, so current names are good
   const existingStartMs = existingStart.getTime()
   const existingEndMs = existingEnd.getTime()
   const newStartMs = newStart.getTime()
@@ -58,20 +58,20 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
 }
 
 function getTimeWindowOverlapScore(service, shiftServices) {
-  const serviceStart = new Date(service.time.range[0])
+  const serviceEarliestStart = new Date(service.time.range[0])
   const serviceLatestStart = new Date(service.time.range[1])
-  const serviceDuration = service.time.duration * 60 * 1000 // Convert minutes to milliseconds
+  const serviceDuration = service.time.duration * 60 * 1000
 
   let totalOverlap = 0
   for (const existing of shiftServices) {
-    const existingStart = new Date(existing.time.range[0])
+    const existingEarliestStart = new Date(existing.time.range[0])
     const existingLatestStart = new Date(existing.time.range[1])
     const existingDuration = existing.time.duration * 60 * 1000
 
     // Check both directions:
     // 1. Can this service start before existing service ends?
     // 2. Can this service end before existing service starts?
-    const overlapStart = Math.max(serviceStart, existingStart)
+    const overlapStart = Math.max(serviceEarliestStart, existingEarliestStart)
     const overlapEnd = Math.min(
       new Date(serviceLatestStart.getTime() + serviceDuration),
       new Date(existingLatestStart.getTime() + existingDuration)
@@ -363,9 +363,9 @@ function processServices(services, distanceMatrix) {
 
         // Only consider services that could potentially fit
         const potentialServices = remainingServices.filter(service => {
-          const rangeEnd = new Date(service.time.range[1])
+          const latestAllowedStart = new Date(service.time.range[1])
           return (
-            rangeEnd > lastEnd &&
+            latestAllowedStart > lastEnd &&
             new Date(service.time.range[0]) < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
           )
         })
@@ -376,12 +376,12 @@ function processServices(services, distanceMatrix) {
 
           const travelTime = calculateTravelTime(distance)
           const earliestStart = new Date(lastEnd.getTime() + travelTime * 60000)
-          const rangeStart = new Date(service.time.range[0])
-          const rangeEnd = new Date(service.time.range[1])
+          const earliestAllowedStart = new Date(service.time.range[0])
+          const latestAllowedStart = new Date(service.time.range[1])
 
-          if (earliestStart > rangeEnd) continue
+          if (earliestStart > latestAllowedStart) continue
 
-          const tryStart = earliestStart < rangeStart ? rangeStart : earliestStart
+          const tryStart = earliestStart < earliestAllowedStart ? earliestAllowedStart : earliestStart
           const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
 
           const newDuration = (tryEnd.getTime() - shiftStart.getTime()) / (60 * 1000)
