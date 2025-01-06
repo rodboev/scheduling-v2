@@ -4,6 +4,7 @@ import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { dayjsInstance } from '@/app/utils/dayjs'
 import axios from 'axios'
+import { createJsonResponse } from '@/app/utils/response'
 
 const MAX_DAYS_PER_REQUEST = 2 // Process 2 days at a time
 
@@ -14,7 +15,7 @@ export async function GET(request) {
   console.log('Schedule API called with params:', Object.fromEntries(searchParams))
 
   if (!start.isValid() || !end.isValid()) {
-    return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
+    return createJsonResponse({ error: 'Invalid date range' }, { status: 400 })
   }
 
   try {
@@ -29,78 +30,121 @@ export async function GET(request) {
 
     // If request is within limit, process normally
     if (totalDays <= MAX_DAYS_PER_REQUEST) {
-      return await processDateRange(start, end)
+      const result = await processDateRange(start, end)
+      return createJsonResponse(result)
     }
 
-    // For larger ranges, process in chunks and combine results
-    console.log('Processing large date range in chunks...')
-    let currentStart = start
-    let allScheduledServices = []
-    let totalConnectedPoints = 0
-    let totalClusters = 0
-    let accumulatedTechAssignments = {}
-    const startTime = performance.now()
-
-    while (currentStart.isBefore(end)) {
-      const chunkEnd = dayjsInstance.min(currentStart.add(MAX_DAYS_PER_REQUEST, 'day'), end)
-
-      console.log(`Processing chunk: ${currentStart.format()} to ${chunkEnd.format()}`)
-      const chunkResult = await processDateRange(currentStart, chunkEnd)
-      const chunkData = await chunkResult.json()
-
-      if (chunkData.scheduledServices) {
-        allScheduledServices = allScheduledServices.concat(chunkData.scheduledServices)
-        totalConnectedPoints += chunkData.clusteringInfo?.connectedPointsCount || 0
-        totalClusters += chunkData.clusteringInfo?.totalClusters || 0
-
-        // Merge tech assignments from this chunk
-        const chunkTechAssignments = chunkData.clusteringInfo?.techAssignments || {}
-        for (const [techId, assignment] of Object.entries(chunkTechAssignments)) {
-          if (!accumulatedTechAssignments[techId]) {
-            accumulatedTechAssignments[techId] = { services: 0, startTime: assignment.startTime }
-          }
-          accumulatedTechAssignments[techId].services += assignment.services
-        }
+    // Otherwise, split into chunks and process sequentially
+    const chunks = []
+    let chunkStart = start.clone()
+    while (chunkStart.isBefore(end)) {
+      const chunkEnd = chunkStart.clone().add(MAX_DAYS_PER_REQUEST, 'day')
+      if (chunkEnd.isAfter(end)) {
+        chunks.push([chunkStart, end])
+      } else {
+        chunks.push([chunkStart, chunkEnd])
       }
-
-      currentStart = chunkEnd
+      chunkStart = chunkEnd
     }
 
-    return NextResponse.json({
-      scheduledServices: allScheduledServices,
-      clusteringInfo: {
-        algorithm: 'shifts',
-        performanceDuration: Math.round(performance.now() - startTime),
-        connectedPointsCount: totalConnectedPoints,
-        totalClusters,
-        clusterDistribution: allScheduledServices.reduce((acc, service) => {
-          if (service.cluster >= 0) {
-            const cluster = service.cluster
-            acc[cluster] = (acc[cluster] || 0) + 1
-          }
-          return acc
-        }, []),
-        techAssignments: accumulatedTechAssignments,
-      },
-    })
+    console.log('Processing in chunks:', chunks.length)
+    const results = []
+    for (const [s, e] of chunks) {
+      const result = await processDateRange(s, e)
+      results.push(result)
+    }
+
+    // Combine results
+    const combinedResult = {
+      scheduledServices: results.flatMap(r => r.scheduledServices || []),
+      unassignedServices: results.flatMap(r => r.unassignedServices || []),
+      clusteringInfo: results.reduce((acc, r) => ({
+        ...acc,
+        ...r.clusteringInfo,
+        performanceDuration: (acc.performanceDuration || 0) + (r.clusteringInfo?.performanceDuration || 0),
+      }), {}),
+    }
+
+    return createJsonResponse(combinedResult)
   } catch (error) {
-    console.error('Schedule error:', error)
-    return NextResponse.json(
-      {
-        error: 'Internal Server Error',
-        details: error.message,
-        scheduledServices: [],
-        unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          totalClusters: 0,
-          clusterDistribution: [],
-          techAssignments: {},
-        },
-      },
-      { status: 500 },
+    console.error('Error in schedule API:', error)
+    return createJsonResponse(
+      { error: error.message || 'Internal server error' },
+      { status: error.status || 500 }
+    )
+  }
+}
+
+export async function POST(request) {
+  try {
+    const { services } = await request.json()
+
+    if (!Array.isArray(services)) {
+      return createJsonResponse(
+        { error: 'Invalid request: services must be an array' },
+        { status: 400 }
+      )
+    }
+
+    const validServices = services.filter(
+      service =>
+        service &&
+        service.time &&
+        service.time.range &&
+        service.time.range[0] &&
+        service.time.range[1] &&
+        service.location &&
+        service.location.latitude &&
+        service.location.longitude,
+    )
+
+    if (validServices.length === 0) {
+      return createJsonResponse(
+        { error: 'No valid services provided' },
+        { status: 400 }
+      )
+    }
+
+    // Get location IDs for distance matrix
+    const locationIds = validServices
+      .map(service => service.location?.id?.toString())
+      .filter(Boolean)
+
+    // Get distance matrix
+    const distanceMatrix = await getFullDistanceMatrix(locationIds, {
+      force: true,
+      format: 'object',
+    })
+
+    if (!distanceMatrix) {
+      return createJsonResponse(
+        { error: 'Failed to get distance matrix' },
+        { status: 500 }
+      )
+    }
+
+    // Create worker
+    const worker = new Worker(path.join(process.cwd(), 'src/app/api/schedule/worker.js'), {
+      workerData: { type: 'module' },
+    })
+
+    // Process services
+    const result = await new Promise((resolve, reject) => {
+      worker.on('message', resolve)
+      worker.on('error', reject)
+      worker.on('exit', code => {
+        if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`))
+      })
+
+      worker.postMessage({ services: validServices, distanceMatrix })
+    })
+
+    return createJsonResponse(result)
+  } catch (error) {
+    console.error('Error in schedule API:', error)
+    return createJsonResponse(
+      { error: error.message || 'Internal server error' },
+      { status: error.status || 500 }
     )
   }
 }
@@ -124,7 +168,7 @@ async function processDateRange(start, end) {
     })
 
     if (!services.length) {
-      return NextResponse.json({
+      return {
         scheduledServices: [],
         unassignedServices: [],
         clusteringInfo: {
@@ -135,7 +179,7 @@ async function processDateRange(start, end) {
           clusterDistribution: [],
           techAssignments: {},
         },
-      })
+      }
     }
 
     // Add originalIndex to each service
@@ -159,7 +203,7 @@ async function processDateRange(start, end) {
     // Validate matrix format and dimensions
     if (!Array.isArray(distanceMatrix) || !Array.isArray(distanceMatrix[0])) {
       console.warn('Invalid distance matrix format')
-      return NextResponse.json({
+      return {
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -170,14 +214,14 @@ async function processDateRange(start, end) {
           clusterDistribution: [],
           techAssignments: {},
         },
-      })
+      }
     }
 
     if (distanceMatrix.length !== validServices.length) {
       console.warn(
         `Matrix dimension mismatch: ${distanceMatrix.length} != ${validServices.length} services`,
       )
-      return NextResponse.json({
+      return {
         scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
         unassignedServices: [],
         clusteringInfo: {
@@ -188,7 +232,7 @@ async function processDateRange(start, end) {
           clusterDistribution: [],
           techAssignments: {},
         },
-      })
+      }
     }
 
     // Create worker
@@ -222,7 +266,7 @@ async function processDateRange(start, end) {
     const totalConnectedPoints = scheduledServices.filter(s => s.cluster >= 0).length
     const totalClusters = new Set(scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
 
-    return NextResponse.json({
+    return {
       ...result,
       clusteringInfo: {
         algorithm: 'shifts',
@@ -238,9 +282,9 @@ async function processDateRange(start, end) {
         }, []),
         techAssignments: result.clusteringInfo?.techAssignments || {},
       },
-    })
+    }
   } catch (error) {
     console.error('Schedule error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    throw error
   }
 }

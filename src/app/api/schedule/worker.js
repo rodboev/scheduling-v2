@@ -98,6 +98,7 @@ function calculateServiceScore(
   travelTime,
   scheduledServices,
   remainingServices,
+  distanceMatrix
 ) {
   const cacheKey = getCacheKey(service, lastService)
   if (SCORE_CACHE.has(cacheKey)) {
@@ -126,7 +127,7 @@ function calculateServiceScore(
   let futureScore = 0
   if (remainingServices.length > 0) {
     const nextService = remainingServices[0]
-    const nextDistance = calculateDistance(service, nextService)
+    const nextDistance = getDistance(service, nextService, distanceMatrix)
 
     if (nextDistance && nextDistance <= HARD_MAX_RADIUS_MILES) {
       const nextTravelTime = calculateTravelTime(nextDistance)
@@ -149,9 +150,24 @@ function calculateServiceScore(
   return score
 }
 
-function createScheduledService(service, shift, matchInfo) {
+function getDistance(service1, service2, distanceMatrix) {
+  if (!service1?.location?.id || !service2?.location?.id) return null
+
+  // Try distance matrix first
+  const key = `${service1.location.id},${service2.location.id}`
+  const matrixDistance = distanceMatrix[key]
+  
+  // Fall back to direct calculation if matrix lookup fails
+  if (matrixDistance === undefined || matrixDistance === null) {
+    return calculateDistance(service1, service2)
+  }
+  
+  return matrixDistance
+}
+
+function createScheduledService(service, shift, matchInfo, distanceMatrix) {
   const lastService = shift.services[shift.services.length - 1]
-  const distance = lastService ? calculateDistance(lastService, service) : 0
+  const distance = lastService ? getDistance(lastService, service, distanceMatrix) : 0
   const travelTime = distance ? calculateTravelTime(distance) : 0
 
   return {
@@ -314,6 +330,7 @@ function processServices(services, distanceMatrix) {
 
     // Create a Map to track services by ID for efficient lookup
     const serviceMap = new Map()
+    const scheduledServiceIds = new Set()
 
     // Pre-filter and deduplicate services
     services.forEach(service => {
@@ -323,7 +340,9 @@ function processServices(services, distanceMatrix) {
         service.time.range &&
         service.time.range[0] &&
         service.time.range[1] &&
-        isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1]))
+        isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) &&
+        service.location?.id && // Ensure service has a location ID
+        !scheduledServiceIds.has(service.id) // Skip if already scheduled
       ) {
         // Only keep the first instance of each service ID
         if (!serviceMap.has(service.id)) {
@@ -334,9 +353,8 @@ function processServices(services, distanceMatrix) {
 
     // Convert to array and add metadata
     const sortedServices = Array.from(serviceMap.values())
-      .map((service, index) => ({
+      .map(service => ({
         ...service,
-        originalIndex: index,
         borough: getBorough(service.location.latitude, service.location.longitude),
         startTimeWindow: new Date(service.time.range[1]).getTime() - new Date(service.time.range[0]).getTime(),
         earliestStart: new Date(service.time.range[0]),
@@ -351,10 +369,10 @@ function processServices(services, distanceMatrix) {
       })
 
     const shifts = []
-    const scheduledServiceIds = new Set()
 
     // First pass: Try to schedule each service in existing shifts
     for (const service of sortedServices) {
+      // Skip if already scheduled
       if (scheduledServiceIds.has(service.id)) continue
 
       let bestMatch = null
@@ -363,7 +381,7 @@ function processServices(services, distanceMatrix) {
 
       // Try to fit in existing shifts first
       for (const shift of shifts) {
-        // Skip if shift already has this service
+        // Skip if shift already has this service or any service with the same ID
         if (shift.services.some(s => s.id === service.id)) continue
 
         const gaps = findShiftGaps(shift)
@@ -381,9 +399,13 @@ function processServices(services, distanceMatrix) {
             .filter(s => new Date(s.start).getTime() >= gap.end.getTime())
             .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())[0]
 
-          // Calculate actual distances
-          const prevDistance = prevService ? calculateDistance(prevService, service) : 0
-          const nextDistance = nextService ? calculateDistance(service, nextService) : 0
+          // Calculate distances using location IDs with fallback
+          const prevDistance = prevService 
+            ? getDistance(prevService, service, distanceMatrix)
+            : 0
+          const nextDistance = nextService
+            ? getDistance(service, nextService, distanceMatrix)
+            : 0
 
           if (prevDistance > HARD_MAX_RADIUS_MILES || 
               nextDistance > HARD_MAX_RADIUS_MILES) continue
@@ -435,7 +457,8 @@ function processServices(services, distanceMatrix) {
             prevDistance,
             prevTravelTime,
             shift.services,
-            sortedServices.filter(s => !scheduledServiceIds.has(s.id))
+            sortedServices.filter(s => !scheduledServiceIds.has(s.id)),
+            distanceMatrix
           )
 
           if (score > bestScore) {
@@ -469,19 +492,7 @@ function processServices(services, distanceMatrix) {
       }
 
       // Schedule the service
-      const scheduledService = {
-        ...service,
-        cluster: bestShift.cluster,
-        techId: bestShift.techId,
-        sequenceNumber: bestShift.services.length + 1,
-        start: formatDate(bestMatch.start),
-        end: formatDate(bestMatch.end),
-        distanceFromPrevious: bestMatch.distance,
-        travelTimeFromPrevious: bestMatch.travelTime,
-        previousService: bestMatch.prevService?.id || null,
-        previousCompany: bestMatch.prevService?.company || null
-      }
-
+      const scheduledService = createScheduledService(service, bestShift, bestMatch, distanceMatrix)
       bestShift.services.push(scheduledService)
       scheduledServiceIds.add(service.id)
     }
@@ -497,8 +508,9 @@ function processServices(services, distanceMatrix) {
           const prevService = shift.services[index - 1]
           service.previousService = prevService.id
           service.previousCompany = prevService.company
-          service.distanceFromPrevious = calculateDistance(prevService, service) || 0
-          service.travelTimeFromPrevious = calculateTravelTime(service.distanceFromPrevious)
+          const distance = getDistance(prevService, service, distanceMatrix) || 0
+          service.distanceFromPrevious = distance
+          service.travelTimeFromPrevious = calculateTravelTime(distance)
         } else {
           service.previousService = null
           service.previousCompany = null
