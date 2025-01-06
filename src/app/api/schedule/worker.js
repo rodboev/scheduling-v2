@@ -37,41 +37,53 @@ function isValidTimeRange(start, end) {
   return start < end && end - start <= SHIFT_DURATION * 60 * 60 * 1000
 }
 
+// Check if two service execution times overlap (including their durations)
 function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
-  if (
-    newStart.getTime() === existingEnd.getTime() ||
-    existingStart.getTime() === newEnd.getTime()
-  ) {
+  // Convert all times to milliseconds for comparison
+  const existingStartMs = existingStart.getTime()
+  const existingEndMs = existingEnd.getTime()
+  const newStartMs = newStart.getTime()
+  const newEndMs = newEnd.getTime()
+
+  // No overlap if one service ends exactly when the other starts
+  if (newStartMs === existingEndMs || existingStartMs === newEndMs) {
     return false
   }
 
+  // Check if either service starts during the other's time window
   return (
-    (newStart < existingEnd && newStart >= existingStart) ||
-    (newEnd > existingStart && newEnd <= existingEnd) ||
-    (newStart <= existingStart && newEnd >= existingEnd)
+    (newStartMs < existingEndMs && newStartMs >= existingStartMs) ||
+    (existingStartMs < newEndMs && existingStartMs >= newStartMs)
   )
 }
 
 function getTimeWindowOverlapScore(service, shiftServices) {
-  let maxOverlap = 0
   const serviceStart = new Date(service.time.range[0])
-  const serviceEnd = new Date(service.time.range[1])
+  const serviceLatestStart = new Date(service.time.range[1])
+  const serviceDuration = service.time.duration * 60 * 1000 // Convert minutes to milliseconds
 
+  let totalOverlap = 0
   for (const existing of shiftServices) {
     const existingStart = new Date(existing.time.range[0])
-    const existingEnd = new Date(existing.time.range[1])
+    const existingLatestStart = new Date(existing.time.range[1])
+    const existingDuration = existing.time.duration * 60 * 1000
 
-    // Calculate overlap duration in minutes
+    // Check both directions:
+    // 1. Can this service start before existing service ends?
+    // 2. Can this service end before existing service starts?
     const overlapStart = Math.max(serviceStart, existingStart)
-    const overlapEnd = Math.min(serviceEnd, existingEnd)
+    const overlapEnd = Math.min(
+      new Date(serviceLatestStart.getTime() + serviceDuration),
+      new Date(existingLatestStart.getTime() + existingDuration)
+    )
 
     if (overlapEnd > overlapStart) {
-      const overlap = (overlapEnd - overlapStart) / (1000 * 60)
-      maxOverlap = Math.max(maxOverlap, overlap)
+      const overlap = (overlapEnd - overlapStart) / (60 * 1000) // Convert to minutes
+      totalOverlap += overlap
     }
   }
 
-  return maxOverlap / (SHIFT_DURATION / 2)
+  return totalOverlap / (SHIFT_DURATION / 2)
 }
 
 function getCacheKey(service1, service2) {

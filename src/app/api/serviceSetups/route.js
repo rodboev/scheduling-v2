@@ -95,7 +95,7 @@ function transformServiceSetup(setup, enforcementState) {
   }
 
   let [rangeStart, rangeEnd] = setup.TimeRange
-    ? parseTimeRange(setup.TimeRange, setup.Duration)
+    ? parseTimeRange(setup.TimeRange)
     : [null, null]
 
   // If time range is [null, null], try to use route time

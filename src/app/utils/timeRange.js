@@ -95,43 +95,35 @@ export function parseTime(timeStr, defaultPeriod = null) {
   return totalSeconds
 }
 
-export function parseTimeRange(timeRangeStr, duration = 30) {
+export function parseTimeRange(timeRangeStr) {
+  // Return null range for invalid input
   if (!timeRangeStr || typeof timeRangeStr !== 'string') {
     return [null, null]
   }
 
+  // Handle "ANY" time range
   if (timeRangeStr.trim().toUpperCase() === 'ANY') {
-    return [0, 86400] // 24 hours
+    return [0, 86400] // 24 hours in seconds
   }
 
   const parts = timeRangeStr.split('-')
 
+  // Handle single time input (e.g. "9:00am")
   if (parts.length === 1) {
-    // Single time input
     const startTime = parseTime(parts[0].trim())
     if (startTime === null) {
       return [null, null]
     }
-    let endTime = startTime + duration * 60 // Add duration in seconds
-    if (endTime >= 86400) {
-      endTime %= 86400 // Wrap around if it exceeds 24 hours
-    }
-    return [startTime, endTime]
+    return [startTime, startTime]
   }
 
-  // Time range input
+  // Handle time range input (e.g. "9:00am-5:00pm")
   const [startTime, endTime] = parseTimeRangeInterval(timeRangeStr)
   if (startTime === null || endTime === null) {
     return [null, null]
   }
 
-  // Add duration to end time
-  let adjustedEndTime = endTime + duration * 60 // Add duration in seconds
-  if (adjustedEndTime >= 86400) {
-    adjustedEndTime %= 86400 // Wrap around if it exceeds 24 hours
-  }
-
-  return [startTime, adjustedEndTime]
+  return [startTime, endTime]
 }
 
 export const parseTimeRangeInterval = memoize(timeRangeStr => {
