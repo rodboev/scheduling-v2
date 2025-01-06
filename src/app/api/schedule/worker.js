@@ -183,15 +183,13 @@ function createScheduledService(service, shift, matchInfo, distanceMatrix) {
   }
 }
 
-function createNewShift(service, clusterIndex) {
-  // Use preferred time if available, otherwise use earliest possible time
-  const shiftStart = service.time.preferred
-    ? new Date(service.time.preferred)
-    : new Date(service.time.range[0])
+function createNewShift(service, clusterIndex, remainingServices, distanceMatrix) {
+  // Find optimal start time that maximizes potential services
+  const shiftStart = findBestShiftStart(service, remainingServices, distanceMatrix)
   const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION_MS)
 
   return {
-    services: [], // Initialize with empty services array
+    services: [], // Initialize empty, service will be added after
     startTime: shiftStart,
     endTime: shiftEnd,
     cluster: clusterIndex,
@@ -321,6 +319,77 @@ function calculateDistance(service1, service2) {
     Math.sin(dLon/2) * Math.sin(dLon/2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
   return R * c
+}
+
+function findBestShiftStart(service, otherServices, distanceMatrix) {
+  const windowStart = new Date(service.time.range[0])
+  const windowEnd = new Date(service.time.range[1])
+  let bestStart = windowStart
+  let maxScore = -Infinity
+  
+  // Try different start times within the window
+  for (let tryStart = windowStart; tryStart <= windowEnd; tryStart = new Date(tryStart.getTime() + 30 * 60000)) {
+    const shiftEnd = new Date(tryStart.getTime() + SHIFT_DURATION_MS)
+    let currentTime = new Date(tryStart.getTime() + service.time.duration * 60000)
+    let totalScore = 0
+    let serviceCount = 1
+    let lastService = service
+    let totalDuration = service.time.duration
+    
+    // Track potential services that could fit
+    const potentialServices = []
+    
+    // See how many other services could fit
+    for (const otherService of otherServices) {
+      const distance = getDistance(lastService, otherService, distanceMatrix)
+      if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
+      
+      const travelTime = calculateTravelTime(distance)
+      const earliestStart = new Date(currentTime.getTime() + travelTime * 60000)
+      
+      if (earliestStart <= new Date(otherService.time.range[1]) && 
+          new Date(earliestStart.getTime() + otherService.time.duration * 60000) <= shiftEnd) {
+        
+        // Calculate score components
+        const distanceScore = 1 - (distance / HARD_MAX_RADIUS_MILES)
+        const timeScore = otherService.time.preferred ? 
+          1 - Math.abs(earliestStart - new Date(otherService.time.preferred)) / (4 * 60 * 60 * 1000) : 0
+        const boroughScore = lastService?.location?.latitude && lastService?.location?.longitude && 
+          otherService?.location?.latitude && otherService?.location?.longitude && 
+          areSameBorough(
+            lastService.location.latitude,
+            lastService.location.longitude,
+            otherService.location.latitude, 
+            otherService.location.longitude
+          ) ? 0.5 : 0
+        
+        const serviceScore = distanceScore * 0.4 + timeScore * 0.4 + boroughScore * 0.2
+        
+        potentialServices.push({
+          service: otherService,
+          start: earliestStart,
+          score: serviceScore
+        })
+        
+        serviceCount++
+        lastService = otherService
+        currentTime = new Date(earliestStart.getTime() + otherService.time.duration * 60000)
+        totalDuration += otherService.time.duration + travelTime
+      }
+    }
+    
+    // Calculate overall score for this start time
+    const utilizationScore = totalDuration / SHIFT_DURATION
+    const totalShiftScore = (utilizationScore * 0.6 + (serviceCount / 14) * 0.4) * 
+      potentialServices.reduce((sum, ps) => sum + ps.score, 0)
+    
+    if (totalShiftScore > maxScore) {
+      maxScore = totalShiftScore
+      bestStart = tryStart
+    }
+  }
+  
+  return bestStart
 }
 
 function processServices(services, distanceMatrix) {
@@ -478,7 +547,15 @@ function processServices(services, distanceMatrix) {
 
       // If no suitable gap found, create new shift
       if (!bestMatch) {
-        const newShift = createNewShift(service, shifts.length)
+        // Get remaining unscheduled services
+        const remainingServices = sortedServices.filter(s => !scheduledServiceIds.has(s.id))
+        
+        const newShift = createNewShift(
+          service, 
+          shifts.length,
+          remainingServices,
+          distanceMatrix
+        )
         shifts.push(newShift)
         bestShift = newShift
         bestMatch = {

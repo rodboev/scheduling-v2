@@ -79,6 +79,7 @@ export async function POST(request) {
   try {
     const { services } = await request.json()
 
+    // Validate services array
     if (!Array.isArray(services)) {
       return createJsonResponse(
         { error: 'Invalid request: services must be an array' },
@@ -86,62 +87,34 @@ export async function POST(request) {
       )
     }
 
-    const validServices = services.filter(
-      service =>
-        service &&
-        service.time &&
-        service.time.range &&
-        service.time.range[0] &&
-        service.time.range[1] &&
-        service.location &&
-        service.location.latitude &&
-        service.location.longitude,
+    // Filter valid services
+    const validServices = services.filter(service =>
+      service?.time?.range?.[0] &&
+      service?.time?.range?.[1] &&
+      service?.location?.latitude &&
+      service?.location?.longitude
     )
 
-    if (validServices.length === 0) {
-      return createJsonResponse(
-        { error: 'No valid services provided' },
-        { status: 400 }
-      )
-    }
-
-    // Get location IDs for distance matrix
+    // Get distance matrix for locations
     const locationIds = validServices
       .map(service => service.location?.id?.toString())
       .filter(Boolean)
 
-    // Get distance matrix
     const distanceMatrix = await getFullDistanceMatrix(locationIds, {
       force: true,
-      format: 'object',
+      format: 'object'
     })
 
-    if (!distanceMatrix) {
-      return createJsonResponse(
-        { error: 'Failed to get distance matrix' },
-        { status: 500 }
-      )
-    }
-
-    // Create worker
-    const worker = new Worker(path.join(process.cwd(), 'src/app/api/schedule/worker.js'), {
-      workerData: { type: 'module' },
-    })
-
-    // Process services
+    // Process services using worker thread
+    const worker = new Worker(path.join(process.cwd(), 'src/app/api/schedule/worker.js'))
+    
     const result = await new Promise((resolve, reject) => {
       worker.on('message', resolve)
-      worker.on('error', reject)
-      worker.on('exit', code => {
-        if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`))
-      })
-
       worker.postMessage({ services: validServices, distanceMatrix })
     })
 
     return createJsonResponse(result)
   } catch (error) {
-    console.error('Error in schedule API:', error)
     return createJsonResponse(
       { error: error.message || 'Internal server error' },
       { status: error.status || 500 }
