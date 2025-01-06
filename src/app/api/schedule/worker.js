@@ -201,12 +201,13 @@ function createNewShift(service, clusterIndex, remainingServices, distanceMatrix
 function assignTechsToShifts(shifts, dateStr) {
   // Group shifts by date
   const shiftsByDate = new Map()
-  const techAssignmentsByDate = new Map() // Track tech assignments per day
-  const totalClusters = new Set(shifts.map(s => s.cluster)).size // Get total number of unique clusters
+  const techAssignmentsByDate = new Map()
+  const totalClusters = new Set(shifts.map(s => s.cluster)).size
 
   // Reset tech start times for new assignment
   techStartTimes.clear()
 
+  // First, group all shifts by date
   for (const shift of shifts) {
     const shiftDate = dayjs(shift.services[0].start).format('YYYY-MM-DD')
     if (!shiftsByDate.has(shiftDate)) {
@@ -216,83 +217,61 @@ function assignTechsToShifts(shifts, dateStr) {
     shiftsByDate.get(shiftDate).push(shift)
   }
 
-  // For each date, assign techs to shifts
-  for (const [date, dateShifts] of shiftsByDate) {
-    // Sort shifts by start time and size (prioritize larger clusters)
-    dateShifts.sort((a, b) => {
-      const timeCompare = new Date(a.services[0].start) - new Date(b.services[0].start)
-      if (timeCompare !== 0) return timeCompare
-      return b.services.length - a.services.length
-    })
+  // Sort all dates chronologically
+  const sortedDates = Array.from(shiftsByDate.keys()).sort()
+  const firstDate = sortedDates[0]
 
-    // Assign techs to shifts
-    for (let i = 0; i < dateShifts.length; i++) {
-      const shift = dateShifts[i]
-      const shiftStartTime = new Date(shift.services[0].start).getTime()
-      const assignedTechs = techAssignmentsByDate.get(date)
+  // Sort first day's shifts by start time and assign techs sequentially
+  const firstDayShifts = shiftsByDate.get(firstDate)
+  firstDayShifts.sort((a, b) => new Date(a.services[0].start) - new Date(b.services[0].start))
 
-      // Find the best tech for this shift
+  // Assign techs to first day and establish baseline start times
+  firstDayShifts.forEach((shift, index) => {
+    const techId = `Tech ${index + 1}`
+    const startTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
+    techStartTimes.set(techId, startTime)
+    shift.techId = techId
+    techAssignmentsByDate.get(firstDate).add(techId)
+  })
+
+  // Process remaining days
+  for (const date of sortedDates.slice(1)) {
+    const dateShifts = shiftsByDate.get(date)
+    const assignedTechs = techAssignmentsByDate.get(date)
+
+    // Sort shifts by start time
+    dateShifts.sort((a, b) => new Date(a.services[0].start) - new Date(b.services[0].start))
+
+    // For each shift, find best matching tech based on start time
+    for (const shift of dateShifts) {
+      const shiftStartTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
       let bestTech = null
-      let bestVariance = Infinity
+      let bestVariance = TECH_START_TIME_VARIANCE
 
-      // First, try to find an existing tech that matches the start time and isn't assigned today
+      // Try to find tech with closest start time
       for (const [techId, prefStartTime] of techStartTimes) {
         if (assignedTechs.has(techId)) continue
 
-        const variance = Math.abs((shiftStartTime % (24 * 60 * 60 * 1000)) - prefStartTime)
+        const variance = Math.abs(shiftStartTime - prefStartTime)
         if (variance <= TECH_START_TIME_VARIANCE && variance < bestVariance) {
           bestTech = techId
           bestVariance = variance
         }
       }
 
-      // If no existing tech fits, create a new one (but only if we haven't exceeded total clusters)
-      if (!bestTech && techStartTimes.size < totalClusters) {
-        bestTech = `Tech ${techStartTimes.size + 1}`
+      if (bestTech) {
+        shift.techId = bestTech
+        assignedTechs.add(bestTech)
+      } else {
+        // If no tech found within variance, create new tech
+        const newTechId = `Tech ${techStartTimes.size + 1}`
+        shift.techId = newTechId
+        techStartTimes.set(newTechId, shiftStartTime)
+        assignedTechs.add(newTechId)
       }
 
-      // If still no tech, find the tech with the least work who isn't assigned today
-      if (!bestTech) {
-        const techWorkload = new Map()
-        for (const [d, shifts] of shiftsByDate) {
-          for (const s of shifts) {
-            if (s.techId) {
-              techWorkload.set(s.techId, (techWorkload.get(s.techId) || 0) + 1)
-            }
-          }
-        }
-
-        const availableTechs = Array.from(techWorkload.entries())
-          .filter(([techId]) => !assignedTechs.has(techId))
-          .sort((a, b) => a[1] - b[1])
-
-        bestTech = availableTechs[0]?.[0]
-      }
-
-      // If we still don't have a tech, use the first available tech number
-      if (!bestTech) {
-        for (let techNum = 1; techNum <= totalClusters; techNum++) {
-          const techId = `Tech ${techNum}`
-          if (!assignedTechs.has(techId)) {
-            bestTech = techId
-            break
-          }
-        }
-      }
-
-      // Assign the tech to the shift
-      shift.techId = bestTech
-      assignedTechs.add(bestTech)
-
-      // Update the tech's preferred start time if not set
-      if (!techStartTimes.has(bestTech)) {
-        techStartTimes.set(bestTech, shiftStartTime % (24 * 60 * 60 * 1000))
-      }
-
-      // Update all services in the shift with the tech ID
-      for (const service of shift.services) {
-        service.techId = bestTech
-      }
+      // Update all services in shift with tech ID
+      shift.services.forEach(service => service.techId = shift.techId)
     }
   }
 
@@ -430,11 +409,12 @@ function processServices(services, distanceMatrix) {
         latestStart: new Date(service.time.range[1]),
       }))
       .sort((a, b) => {
-        // Sort by earliest start time first
-        const timeCompare = a.earliestStart.getTime() - b.earliestStart.getTime()
-        if (timeCompare !== 0) return timeCompare
-        // Then by time window size (smaller windows first)
-        return a.startTimeWindow - b.startTimeWindow
+        // First sort by time window flexibility (less flexible first)
+        const flexibilityCompare = a.startTimeWindow - b.startTimeWindow
+        if (flexibilityCompare !== 0) return flexibilityCompare
+        
+        // Then by earliest start time
+        return a.earliestStart.getTime() - b.earliestStart.getTime()
       })
 
     const shifts = []
@@ -449,7 +429,8 @@ function processServices(services, distanceMatrix) {
       let bestScore = -Infinity
 
       // Try to fit in existing shifts first
-      for (const shift of shifts) {
+      for (const shift of shifts.sort((a, b) => a.services.length - b.services.length)) {
+        // This sorts shifts by number of services, so we try to fill emptier shifts first
         // Skip if shift already has this service or any service with the same ID
         if (shift.services.some(s => s.id === service.id)) continue
 
@@ -547,24 +528,46 @@ function processServices(services, distanceMatrix) {
 
       // If no suitable gap found, create new shift
       if (!bestMatch) {
-        // Get remaining unscheduled services
-        const remainingServices = sortedServices.filter(s => !scheduledServiceIds.has(s.id))
+        // Try harder to fit in existing shifts by allowing more variance
+        for (const shift of shifts.sort((a, b) => a.services.length - b.services.length)) {
+          if (shift.services.length >= 14) continue
+          
+          const lastService = shift.services[shift.services.length - 1]
+          const distance = getDistance(lastService, service, distanceMatrix)
+          
+          if (distance && distance <= HARD_MAX_RADIUS_MILES * 1.2) { // Allow slightly longer distances
+            const travelTime = calculateTravelTime(distance)
+            const tryStart = new Date(new Date(lastService.end).getTime() + travelTime * 60000)
+            
+            if (tryStart <= new Date(service.time.range[1])) {
+              bestMatch = {
+                start: tryStart,
+                end: new Date(tryStart.getTime() + service.time.duration * 60000),
+                prevService: lastService,
+                nextService: null,
+                distance,
+                travelTime
+              }
+              bestShift = shift
+              break
+            }
+          }
+        }
         
-        const newShift = createNewShift(
-          service, 
-          shifts.length,
-          remainingServices,
-          distanceMatrix
-        )
-        shifts.push(newShift)
-        bestShift = newShift
-        bestMatch = {
-          start: newShift.startTime,
-          end: new Date(newShift.startTime.getTime() + service.time.duration * 60000),
-          prevService: null,
-          nextService: null,
-          distance: 0,
-          travelTime: 0
+        // If still no match, create new shift
+        if (!bestMatch) {
+          const remainingServices = sortedServices.filter(s => !scheduledServiceIds.has(s.id))
+          const newShift = createNewShift(service, shifts.length, remainingServices, distanceMatrix)
+          shifts.push(newShift)
+          bestShift = newShift
+          bestMatch = {
+            start: newShift.startTime,
+            end: new Date(newShift.startTime.getTime() + service.time.duration * 60000),
+            prevService: null,
+            nextService: null,
+            distance: 0,
+            travelTime: 0
+          }
         }
       }
 
