@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n \"DB,Next\" -c \"greenBright,magentaBright\" \"bash scripts/setupDB.sh\" \"next dev\"",
+    "dev": "concurrently -n \"DB,Next\" -c \"greenBright,magentaBright\" \"bash scripts/setupDB.sh\" \"yarn clean && next dev\"",
     "clean": "rimraf .next",
     "build": "yarn clean && next build",
     "lint": "next lint",
