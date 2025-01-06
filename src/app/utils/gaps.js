@@ -56,9 +56,12 @@ export function canFitInGap(service, gap) {
   const serviceDuration = service.time.duration
   const gapDuration = (gap.end - gap.start) / (60 * 1000)
 
+  const serviceEarliestStart = new Date(service.time.range[0])
+  const serviceLatestStart = new Date(service.time.range[1])
+
   return (
     serviceDuration <= gapDuration &&
-    new Date(service.time.range[0]) <= gap.start &&
-    new Date(service.time.range[1]) >= addMinutes(gap.start, serviceDuration)
+    serviceEarliestStart <= gap.start &&
+    serviceLatestStart >= addMinutes(gap.start, serviceDuration)
   )
 }

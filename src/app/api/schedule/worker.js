@@ -58,9 +58,9 @@ function checkTimeOverlap(existingStart, existingEnd, newStart, newEnd) {
 }
 
 function getTimeWindowOverlapScore(service, shiftServices) {
-  const serviceEarliestStart = new Date(service.time.range[0])
-  const serviceLatestStart = new Date(service.time.range[1])
-  const serviceDuration = service.time.duration * 60 * 1000
+  const nextEarliestStart = new Date(service.time.range[0])
+  const nextLatestStart = new Date(service.time.range[1])
+  const nextDuration = service.time.duration * 60 * 1000
 
   let totalOverlap = 0
   for (const existing of shiftServices) {
@@ -71,9 +71,9 @@ function getTimeWindowOverlapScore(service, shiftServices) {
     // Check both directions:
     // 1. Can this service start before existing service ends?
     // 2. Can this service end before existing service starts?
-    const overlapStart = Math.max(serviceEarliestStart, existingEarliestStart)
+    const overlapStart = Math.max(nextEarliestStart, existingEarliestStart)
     const overlapEnd = Math.min(
-      new Date(serviceLatestStart.getTime() + serviceDuration),
+      new Date(nextLatestStart.getTime() + nextDuration),
       new Date(existingLatestStart.getTime() + existingDuration)
     )
 
@@ -326,13 +326,13 @@ function processServices(services, distanceMatrix) {
         originalIndex: index,
         borough: getBorough(service.location.latitude, service.location.longitude),
         timeWindow: latestStart(service) - new Date(service.time.range[0]).getTime(),
-        startTime: new Date(service.time.range[0]),
-        endTime: new Date(latestStart(service)),
+        earliestStart: new Date(service.time.range[0]),
+        latestStart: new Date(service.time.range[1]),
       }))
-      .filter(service => service && isValidTimeRange(service.startTime, service.endTime))
+      .filter(service => service && isValidTimeRange(service.earliestStart, service.latestStart))
       .sort((a, b) => {
         // Sort by start time first
-        const timeCompare = a.startTime - b.startTime
+        const timeCompare = a.earliestStart - b.earliestStart
         if (timeCompare !== 0) return timeCompare
         // Then by time window flexibility
         return a.timeWindow - b.timeWindow
@@ -363,9 +363,9 @@ function processServices(services, distanceMatrix) {
 
         // Only consider services that could potentially fit
         const potentialServices = remainingServices.filter(service => {
-          const latestAllowedStart = new Date(service.time.range[1])
+          const nextServiceLatestStart = new Date(service.time.range[1])
           return (
-            latestAllowedStart > lastEnd &&
+            nextServiceLatestStart > lastEnd &&
             new Date(service.time.range[0]) < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
           )
         })
@@ -375,13 +375,13 @@ function processServices(services, distanceMatrix) {
           if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
 
           const travelTime = calculateTravelTime(distance)
-          const earliestStart = new Date(lastEnd.getTime() + travelTime * 60000)
-          const earliestAllowedStart = new Date(service.time.range[0])
-          const latestAllowedStart = new Date(service.time.range[1])
+          const earliestPossibleStart = new Date(lastEnd.getTime() + travelTime * 60000)
+          const nextServiceEarliestStart = new Date(service.time.range[0])
+          const nextServiceLatestStart = new Date(service.time.range[1])
 
-          if (earliestStart > latestAllowedStart) continue
+          if (earliestPossibleStart > nextServiceLatestStart) continue
 
-          const tryStart = earliestStart < earliestAllowedStart ? earliestAllowedStart : earliestStart
+          const tryStart = earliestPossibleStart < nextServiceEarliestStart ? nextServiceEarliestStart : earliestPossibleStart
           const tryEnd = new Date(tryStart.getTime() + service.time.duration * 60000)
 
           const newDuration = (tryEnd.getTime() - shiftStart.getTime()) / (60 * 1000)
