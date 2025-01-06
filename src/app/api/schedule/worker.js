@@ -315,17 +315,13 @@ function processServices(services, distanceMatrix) {
         service.time.range[1],
     )
 
-    // Calculate latest possible start time for each service
-    const latestStart = service =>
-      new Date(service.time.range[1]).getTime() - service.time.duration * 60000
-
     // Sort services by time window and start time
     const sortedServices = validServices
       .map((service, index) => ({
         ...service,
         originalIndex: index,
         borough: getBorough(service.location.latitude, service.location.longitude),
-        timeWindow: latestStart(service) - new Date(service.time.range[0]).getTime(),
+        startTimeWindow: new Date(service.time.range[1]).getTime() - new Date(service.time.range[0]).getTime(),
         earliestStart: new Date(service.time.range[0]),
         latestStart: new Date(service.time.range[1]),
       }))
@@ -334,8 +330,8 @@ function processServices(services, distanceMatrix) {
         // Sort by start time first
         const timeCompare = a.earliestStart - b.earliestStart
         if (timeCompare !== 0) return timeCompare
-        // Then by time window flexibility
-        return a.timeWindow - b.timeWindow
+        // Then by time window
+        return a.startTimeWindow - b.startTimeWindow
       })
 
     const shifts = []
