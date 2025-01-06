@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useEnforcement } from '@/app/hooks/useEnforcement'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { logScheduleActivity } from '@/app/utils/serviceLogging'
+import { findShiftGaps } from '@/app/utils/gaps'
 
 const BATCH_SIZE = 100 // Adjust this value based on performance
 const PROGRESS_UPDATE_INTERVAL = 10 // Update progress every 10ms
@@ -228,6 +229,27 @@ export function useSchedule(currentViewRange) {
   const { updateServiceEnforcement, updateAllServicesEnforcement, allServicesEnforced } =
     useEnforcement(allServices, fetchSchedule)
 
+  const scheduleServices = useCallback(async (services) => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ services })
+      })
+      
+      if (!response.ok) throw new Error('Scheduling failed')
+      
+      const result = await response.json()
+      return result
+    } catch (error) {
+      console.error('Scheduling error:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   return {
     assignedServices: result.assignedServices,
     resources: result.resources,
@@ -238,5 +260,6 @@ export function useSchedule(currentViewRange) {
     updateAllServicesEnforcement,
     allServicesEnforced,
     refetchSchedule: fetchSchedule,
+    scheduleServices,
   }
 }
