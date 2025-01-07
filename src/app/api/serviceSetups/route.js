@@ -82,8 +82,6 @@ async function getEnforcementState() {
 }
 
 function transformServiceSetup(setup, enforcementState) {
-  const shouldLog = setup.id === 21949
-  
   const formatTechName = (fname, lname) => {
     if (!fname) return ''
     if (!lname) return fname
@@ -97,14 +95,8 @@ function transformServiceSetup(setup, enforcementState) {
   }
 
   let [rangeStart, rangeEnd] = setup.TimeRange
-    ? parseTimeRange(shouldLog ? setup.TimeRange : null)
+    ? parseTimeRange(setup.TimeRange)
     : [null, null]
-
-  if (shouldLog) {
-    console.log('Service 21949:')
-    console.log('Original TimeRange:', setup.TimeRange)
-    console.log('Parsed range:', [rangeStart, rangeEnd])
-  }
 
   // If time range is [null, null], try to use route time
   if (rangeStart === null && rangeEnd === null) {
@@ -112,8 +104,8 @@ function transformServiceSetup(setup, enforcementState) {
     rangeEnd = convertToETTime(setup.RouteEndTime)
   }
 
-  // If both time range and route time are invalid, return null to exclude this service
-  if (rangeStart === null || rangeEnd === null) {
+  // If both time range and route time are [null, null], return null to exclude this service
+  if (rangeStart === null && rangeEnd === null) {
     return null
   }
 

@@ -96,20 +96,33 @@ export function parseTime(timeStr, defaultPeriod = null) {
 }
 
 export function parseTimeRange(timeRangeStr) {
-  if (!timeRangeStr) return [null, null]
-  
-  console.log('parseTimeRange input:', timeRangeStr)
-  const parts = timeRangeStr.split('-')
-  console.log('Split parts:', parts)
+  // Return null range for invalid input
+  if (!timeRangeStr || typeof timeRangeStr !== 'string') {
+    return [null, null]
+  }
 
+  // Handle "ANY" time range
+  if (timeRangeStr.trim().toUpperCase() === 'ANY') {
+    return [0, 86400] // 24 hours in seconds
+  }
+
+  const parts = timeRangeStr.split('-')
+
+  // Handle single time input (e.g. "9:00am")
   if (parts.length === 1) {
     const startTime = parseTime(parts[0].trim())
-    console.log('Single time input, parsed time:', startTime)
+    if (startTime === null) {
+      return [null, null]
+    }
     return [startTime, startTime]
   }
 
+  // Handle time range input (e.g. "9:00am-5:00pm")
   const [startTime, endTime] = parseTimeRangeInterval(timeRangeStr)
-  console.log('Time range input, parsed times:', [startTime, endTime])
+  if (startTime === null || endTime === null) {
+    return [null, null]
+  }
+
   return [startTime, endTime]
 }
 
