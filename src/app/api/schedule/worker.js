@@ -16,7 +16,7 @@ import {
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
 import dayjs from 'dayjs'
-import { findShiftGaps, canFitInGap } from '../../utils/gaps.js'
+import { findShiftGaps, canFitInGap, findGaps } from '../../utils/gaps.js'
 
 const SCORE_CACHE = new Map() // Cache for service compatibility scores
 
@@ -618,17 +618,7 @@ function processServices(services, distanceMatrix) {
         const lastEnd = new Date(lastService.end)
 
         // Only consider nearby shifts in time
-        const mergeCandidates = shiftsByTime
-          .slice(i + 1)
-          .filter(s => {
-            if (s.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
-            const firstStart = new Date(s.services[0].start)
-            return (
-              firstStart > lastEnd &&
-              firstStart < new Date(lastEnd.getTime() + MAX_TIME_SEARCH * 60000)
-            )
-          })
-          .slice(0, MERGE_CLOSEST_SHIFTS)
+        const mergeCandidates = findMergeCandidates(shift1, shiftsByTime, i, distanceMatrix)
 
         for (const shift2 of mergeCandidates) {
           const firstService = shift2.services[0]
@@ -786,6 +776,133 @@ function processServices(services, distanceMatrix) {
       },
     }
   }
+}
+
+function canMergeShifts(shift1, shift2, distanceMatrix) {
+  const lastService = shift1.services[shift1.services.length - 1]
+  const firstNewService = shift2.services[0]
+  const lastEnd = new Date(lastService.end)
+  const newStart = new Date(firstNewService.start)
+  
+  // Calculate travel time between services
+  const distance = getDistance(lastService, firstNewService, distanceMatrix)
+  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+  
+  // Earliest possible start time for the new service
+  const earliestPossibleStart = new Date(lastEnd.getTime() + (travelTime * 60 * 1000))
+  
+  // Check if new service starts after previous ends + travel time
+  if (newStart < earliestPossibleStart) return false
+
+  // Calculate total shift duration including new service
+  const shiftStart = new Date(shift1.services[0].start)
+  const newEnd = new Date(firstNewService.end)
+  const totalDuration = (newEnd - shiftStart) / (60 * 60 * 1000)
+  
+  // Ensure shift doesn't exceed 8 hours
+  if (totalDuration > 8) return false
+
+  return true
+}
+
+function mergeShifts(shift1, shift2, distanceMatrix) {
+  const lastService = shift1.services[shift1.services.length - 1]
+  const firstNewService = shift2.services[0]
+  const lastEnd = new Date(lastService.end)
+  
+  const distance = getDistance(lastService, firstNewService, distanceMatrix)
+  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+  
+  // Calculate actual start time for the new service
+  const newStartTime = new Date(lastEnd.getTime() + travelTime * 60000)
+  
+  // Update the start time of the new service to right after travel time
+  firstNewService.start = newStartTime.toISOString()
+  firstNewService.end = new Date(newStartTime.getTime() + 
+    (new Date(firstNewService.end) - new Date(firstNewService.start))).toISOString()
+
+  return {
+    services: [...shift1.services, ...shift2.services],
+    mergeAttempts: Math.max(shift1.mergeAttempts, shift2.mergeAttempts) + 1
+  }
+}
+
+function findMergeCandidates(shift, shiftsByTime, i, distanceMatrix) {
+  const lastService = shift.services[shift.services.length - 1]
+  const lastEnd = new Date(lastService.end)
+
+  return shiftsByTime
+    .slice(i + 1)
+    .filter(s => {
+      if (s.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
+      
+      const service = s.services[0]
+      const earliestPossibleTime = new Date(service.time.range[0]) // Use earliest possible time
+      const distance = getDistance(lastService, service, distanceMatrix)
+      const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+      
+      // Check if this service could start after last service ends + travel time
+      const earliestAfterTravel = new Date(lastEnd.getTime() + travelTime * 60000)
+
+      // Service can be merged if:
+      // 1. It can start as early as needed to fit after the last service
+      // 2. That early start time is within its allowed time window
+      return earliestPossibleTime <= earliestAfterTravel && 
+             earliestAfterTravel <= new Date(service.time.range[1])
+    })
+    .sort((a, b) => {
+      // Prioritize services that can start earlier in their time window
+      const aEarliestStart = new Date(a.services[0].time.range[0])
+      const bEarliestStart = new Date(b.services[0].time.range[0])
+      return aEarliestStart - bEarliestStart
+    })
+    .slice(0, MERGE_CLOSEST_SHIFTS)
+}
+
+function initializeShifts(services) {
+  // Sort all services by their earliest possible start time first
+  return services
+    .sort((a, b) => {
+      const aEarliestStart = new Date(a.time.range[0])
+      const bEarliestStart = new Date(b.time.range[0])
+      return aEarliestStart - bEarliestStart
+    })
+    .map(service => ({
+      services: [{ ...service, cluster: -1 }], // Start with -1, will assign cluster numbers as we merge
+      mergeAttempts: 0
+    }))
+}
+
+function clusterServices(services, distanceMatrix) {
+  let currentCluster = 0
+  const shiftsByTime = initializeShifts(services)
+  
+  // First pass - try to merge services based on earliest possible start times
+  for (let i = 0; i < shiftsByTime.length; i++) {
+    const shift = shiftsByTime[i]
+    if (shift.services[0].cluster === -1) {
+      // Start new cluster
+      shift.services[0].cluster = currentCluster
+    }
+
+    let merged = false
+    const mergeCandidates = findMergeCandidates(shift, shiftsByTime, i, distanceMatrix)
+    
+    for (const candidate of mergeCandidates) {
+      const mergedShift = mergeShifts(shift, candidate, distanceMatrix)
+      if (mergedShift) {
+        shiftsByTime[i] = mergedShift
+        merged = true
+        break
+      }
+    }
+
+    if (!merged) {
+      currentCluster++
+    }
+  }
+
+  return shiftsByTime
 }
 
 // Handle messages from the main thread
