@@ -13,6 +13,7 @@ import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
 import { Calendar, Views } from 'react-big-calendar'
 import { dayjsLocalizer as createDayjsLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
+import { DEFAULT_DATE } from '@/app/utils/constants'
 
 const UPDATE_INTERVAL = 100 // 100ms between UI updates
 
@@ -23,7 +24,7 @@ const MAX_TIME = new Date(2024, 0, 1, 23, 59, 59) // 11:59 PM
 const localizer = createDayjsLocalizer(dayjs)
 
 export default function BigCalendar() {
-  const defaultDate = new Date(2024, 8, 3)
+  const defaultDate = dayjs(DEFAULT_DATE).toDate()
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now())
 
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =

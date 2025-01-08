@@ -7,7 +7,7 @@ import MapTools from '@/app/map/components/MapTools'
 import { chunk } from '@/app/map/utils/array'
 import { getDistance } from '@/app/map/utils/distance'
 import { logMapActivity } from '@/app/map/utils/logging'
-import { SHIFT_DURATION_MS } from '@/app/utils/constants'
+import { SHIFT_DURATION_MS, DEFAULT_DATE } from '@/app/utils/constants'
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Polygon, Polyline } from 'react-leaflet'
@@ -46,7 +46,7 @@ const MapView = () => {
   // UI state
   const [activePopup, setActivePopup] = useState(null)
   const [date, setDate] = useState(() => {
-    return dayjs.tz('2024-09-03', 'America/New_York').startOf('day').toISOString()
+    return dayjs.tz(DEFAULT_DATE, 'America/New_York').startOf('day').toISOString()
   })
   const center = [40.72, -73.97] // BK: [40.687, -73.965]
   const markerRefs = useRef({})
@@ -201,7 +201,7 @@ const MapView = () => {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    const defaultDate = dayjs.tz('2024-09-03', 'America/New_York').startOf('day').toISOString()
+    const defaultDate = dayjs.tz(DEFAULT_DATE, 'America/New_York').startOf('day').toISOString()
     fetchClusteredServices(defaultDate)
   }, [])
 

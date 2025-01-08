@@ -44,8 +44,10 @@ function createServicesForRange(setup, startDate, endDate) {
         scheduledStart.isBefore(end) &&
         scheduledEnd.isAfter(start)
       ) {
+        const { schedule, comments, route, ...serviceWithoutOmittedFields } = setup
+        
         services.push({
-          ...setup,
+          ...serviceWithoutOmittedFields,
           id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
           date: date.toDate(),
           start: scheduledStart.toDate(),
@@ -55,10 +57,12 @@ function createServicesForRange(setup, startDate, endDate) {
             preferred: preferred.toDate(),
             duration,
             meta: {
-              dayRange: setup.time.range,
               originalRange: setup.time.originalRange,
               preferred: setup.time.preferred,
             },
+          },
+          route: {
+            time: setup.route.time,
           },
         })
       }
