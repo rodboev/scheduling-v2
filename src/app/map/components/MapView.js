@@ -249,21 +249,21 @@ const MapView = () => {
     nj: { color: '#ff44ff', weight: 2, opacity: 0.6, fillOpacity: 0, dashArray: '10, 10' },
   }
 
-  // Add this function to organize services by cluster
-  const clusterPolylines = useMemo(() => {
+  // Add this function to organize services by tech
+  const techPolylines = useMemo(() => {
     if (!clusteredServices?.length) return []
 
-    // Group services by cluster and sort by sequence number
-    const clusters = clusteredServices.reduce((acc, service) => {
-      if (service.cluster >= 0) {
-        if (!acc[service.cluster]) acc[service.cluster] = []
-        acc[service.cluster].push(service)
+    // Group services by tech and sort by sequence number
+    const techGroups = clusteredServices.reduce((acc, service) => {
+      if (service.techId) {
+        if (!acc[service.techId]) acc[service.techId] = []
+        acc[service.techId].push(service)
       }
       return acc
     }, {})
 
-    // Create polylines for each cluster
-    return Object.entries(clusters).map(([clusterId, services]) => {
+    // Create polylines for each tech
+    return Object.entries(techGroups).map(([techId, services]) => {
       // Sort services by sequence number
       const sortedServices = [...services].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
 
@@ -273,12 +273,13 @@ const MapView = () => {
         service.location.longitude,
       ])
 
-      // Get color based on cluster ID (matching marker colors)
+      // Get color based on tech number (matching marker colors)
       const colorKeys = Object.keys(COLORS)
-      const color = COLORS[colorKeys[Number(clusterId) % colorKeys.length]]
+      const techNumber = parseInt(techId.replace('Tech ', ''))
+      const color = COLORS[colorKeys[(techNumber - 1) % colorKeys.length]]
 
       return {
-        clusterId,
+        techId,
         coordinates,
         color,
       }
@@ -289,7 +290,7 @@ const MapView = () => {
   async function getDistanceMatrix(services) {
     if (!services?.length) return {}
 
-    // Only get distances for services in the same cluster
+    // Only get distances for services with the same tech
     const locationIds = [...new Set(services.map(s => s.location?.id?.toString()).filter(Boolean))]
 
     // If we have too many locations, split into smaller requests
@@ -307,12 +308,12 @@ const MapView = () => {
     return matrices
   }
 
-  // Function to update distances for a cluster
-  async function updateClusterDistances(cluster) {
-    if (!cluster?.length) return cluster
+  // Function to update distances for a tech's services
+  async function updateTechDistances(services) {
+    if (!services?.length) return services
 
     // Sort services by sequence number or start time first
-    const sortedServices = [...cluster].sort((a, b) => {
+    const sortedServices = [...services].sort((a, b) => {
       if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
         return a.sequenceNumber - b.sequenceNumber
       }
@@ -358,24 +359,24 @@ const MapView = () => {
   async function processServices(services) {
     if (!services?.length) return []
 
-    // Group services by cluster
-    const clusters = {}
+    // Group services by tech
+    const techGroups = {}
     for (const service of services) {
-      const cluster = service.cluster ?? -1
-      if (!clusters[cluster]) clusters[cluster] = []
-      clusters[cluster].push(service)
+      const techId = service.techId
+      if (!techGroups[techId]) techGroups[techId] = []
+      techGroups[techId].push(service)
     }
 
-    // Process each cluster in parallel
-    const processedClusters = await Promise.all(
-      Object.entries(clusters).map(async ([clusterId, clusterServices]) => {
-        const result = await updateClusterDistances(clusterServices)
-        return { clusterId, ...result }
+    // Process each tech's services in parallel
+    const processedGroups = await Promise.all(
+      Object.entries(techGroups).map(async ([techId, services]) => {
+        const result = await updateTechDistances(services)
+        return { techId, ...result }
       }),
     )
 
     // Combine all processed services
-    return processedClusters.flatMap(cluster => cluster.services)
+    return processedGroups.flatMap(group => group.services)
   }
 
   const optimizeSchedule = useCallback(
@@ -446,9 +447,9 @@ const MapView = () => {
 
           {/* Add Polylines */}
           {!isLoading &&
-            clusterPolylines.map(({ clusterId, coordinates, color }) => (
+            techPolylines.map(({ techId, coordinates, color }) => (
               <PolylineWithArrow
-                key={`polyline-${clusterId}`}
+                key={`polyline-${techId}`}
                 positions={coordinates}
                 color={color}
               />
@@ -457,7 +458,7 @@ const MapView = () => {
           {!isLoading &&
             clusteredServices.reduce(
               (acc, service, i) => {
-                const index = service.cluster >= 0 ? acc.validMarkers + 1 : undefined
+                const index = service.techId ? acc.validMarkers + 1 : undefined
                 acc.markers.push(
                   <MapMarker
                     key={service.id}
@@ -470,7 +471,7 @@ const MapView = () => {
                     <MapService service={service} />
                   </MapMarker>,
                 )
-                if (service.cluster >= 0) {
+                if (service.techId) {
                   acc.validMarkers += 1
                 }
                 return acc
@@ -483,12 +484,8 @@ const MapView = () => {
         <div className="absolute bottom-4 right-4 z-[1000] rounded bg-white px-4 py-3 shadow">
           <p>Runtime: {clusteringInfo.performanceDuration} ms</p>
           <p>Connected Points: {clusteringInfo.connectedPointsCount}</p>
-          <p>Clusters: {clusteringInfo.totalClusters}</p>
+          <p>Techs: {Object.keys(clusteringInfo.techAssignments || {}).length}</p>
           <p>Singles: {clusteringInfo.clusterSizes?.filter(size => size === 1).length || 0}</p>
-          <p>
-            Techs: {Object.keys(clusteringInfo.techAssignments || {}).length} (from{' '}
-            {new Set(clusteredServices.map(s => s.tech?.code).filter(Boolean)).size})
-          </p>
         </div>
       )}
     </div>

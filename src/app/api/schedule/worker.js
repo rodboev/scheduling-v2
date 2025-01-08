@@ -188,12 +188,14 @@ function createNewShift(service, clusterIndex, remainingServices, distanceMatrix
   const shiftStart = findBestShiftStart(service, remainingServices, distanceMatrix)
   const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION_MS)
 
+  // Use the same index for both cluster and techId
+  const techNumber = clusterIndex + 1
   return {
     services: [], // Initialize empty, service will be added after
     startTime: shiftStart,
     endTime: shiftEnd,
-    cluster: clusterIndex,
-    techId: `Tech ${clusterIndex + 1}`,
+    cluster: techNumber,
+    techId: `Tech ${techNumber}`,
     mergeAttempts: 0,
   }
 }
@@ -202,7 +204,7 @@ function assignTechsToShifts(shifts, dateStr) {
   // Group shifts by date
   const shiftsByDate = new Map()
   const techAssignmentsByDate = new Map()
-  const totalClusters = new Set(shifts.map(s => s.cluster)).size
+  const totalTechs = new Set(shifts.map(s => s.techId)).size
 
   // Reset tech start times for new assignment
   techStartTimes.clear()
@@ -227,10 +229,12 @@ function assignTechsToShifts(shifts, dateStr) {
 
   // Assign techs to first day and establish baseline start times
   firstDayShifts.forEach((shift, index) => {
-    const techId = `Tech ${index + 1}`
+    const techNumber = index + 1
+    const techId = `Tech ${techNumber}`
     const startTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
     techStartTimes.set(techId, startTime)
     shift.techId = techId
+    shift.cluster = techNumber // Ensure cluster matches tech number
     techAssignmentsByDate.get(firstDate).add(techId)
   })
 
@@ -261,17 +265,23 @@ function assignTechsToShifts(shifts, dateStr) {
 
       if (bestTech) {
         shift.techId = bestTech
+        shift.cluster = parseInt(bestTech.replace('Tech ', '')) // Extract number from techId
         assignedTechs.add(bestTech)
       } else {
         // If no tech found within variance, create new tech
-        const newTechId = `Tech ${techStartTimes.size + 1}`
+        const techNumber = techStartTimes.size + 1
+        const newTechId = `Tech ${techNumber}`
         shift.techId = newTechId
+        shift.cluster = techNumber
         techStartTimes.set(newTechId, shiftStartTime)
         assignedTechs.add(newTechId)
       }
 
-      // Update all services in shift with tech ID
-      shift.services.forEach(service => service.techId = shift.techId)
+      // Update all services in shift with tech ID and cluster
+      shift.services.forEach(service => {
+        service.techId = shift.techId
+        service.cluster = shift.cluster
+      })
     }
   }
 

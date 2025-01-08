@@ -22,13 +22,12 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
   const markerRef = useRef(null)
   const timeoutRef = useRef(null)
 
-  function getMarkerIcon(cluster) {
+  function getMarkerIcon(techId) {
     const colorKeys = Object.keys(COLORS)
-    const color =
-      cluster === undefined || cluster < 0
-        ? COLORS.darkgray
-        : COLORS[colorKeys[cluster % colorKeys.length]]
-    const icon = cluster === undefined || cluster < 0 ? faCircleExclamation : faMapMarker
+    const color = techId
+      ? COLORS[colorKeys[(parseInt(techId.replace('Tech ', '')) - 1) % colorKeys.length]]
+      : COLORS.darkgray
+    const icon = techId ? faMapMarker : faCircleExclamation
     const strokeColor = darkenColor(color, 0.25)
     const viewBoxWidth = icon.icon[0] + 32
     const viewBoxHeight = icon.icon[1] + 32
@@ -120,8 +119,8 @@ const MapMarker = ({ service, markerRefs, setActivePopup, children }) => {
 
   // Memoize the marker icon
   const markerIcon = useMemo(
-    () => getMarkerIcon(service.cluster),
-    [service.cluster, service.sequenceNumber],
+    () => getMarkerIcon(service.techId),
+    [service.techId, service.sequenceNumber],
   )
 
   return (

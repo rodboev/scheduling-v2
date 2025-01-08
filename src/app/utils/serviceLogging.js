@@ -74,75 +74,126 @@ export function logClusterServices(clusterServices) {
   console.log(`Travel time: ${totalTravelTime} min\n`)
 }
 
+export function logTechServices(techServices) {
+  const firstService = techServices[0]
+  const lastService = techServices[techServices.length - 1]
+
+  // Format times
+  const startTime = dayjs(firstService.start).format('h:mm A')
+  const endTime = dayjs(lastService.end).format('h:mm A')
+
+  // Calculate total distance and travel time
+  const totalDistance = techServices.reduce(
+    (sum, service) => sum + (service.distanceFromPrevious || 0),
+    0,
+  )
+  const totalTravelTime = techServices.reduce(
+    (sum, service) => sum + (service.travelTimeFromPrevious || 0),
+    0,
+  )
+
+  // Log tech header
+  console.log(`${firstService.techId} (${startTime} - ${endTime}):`)
+
+  // Log tech services
+  for (const [i, service] of techServices.entries()) {
+    const time = dayjs(service.start).format('h:mm A')
+    const duration = service.time.duration
+    const distance = service.distanceFromPrevious?.toFixed(1) || 0
+    const travelTime = service.travelTimeFromPrevious || 0
+    console.log(
+      `  ${i + 1}. ${time} (${duration}m) - ${service.company} (${distance}mi, ${travelTime}m travel)`,
+    )
+  }
+
+  // Print tech stats
+  const distances = techServices
+    .map(s => s.distanceFromPrevious || 0)
+    .filter(d => d > 0)
+  const avgDistance =
+    distances.length > 0
+      ? distances.reduce((sum, d) => sum + d, 0) / distances.length
+      : 0
+
+  const travelTimes = techServices
+    .map(s => s.travelTimeFromPrevious || 0)
+    .filter(t => t > 0)
+  const avgTravelTime =
+    travelTimes.length > 0
+      ? travelTimes.reduce((sum, t) => sum + t, 0) / travelTimes.length
+      : 0
+
+  console.log(
+    `  Stats: ${totalDistance.toFixed(1)}mi total, ${totalTravelTime}m travel time`,
+  )
+  console.log(
+    `  Averages: ${avgDistance.toFixed(1)}mi distance, ${Math.round(
+      avgTravelTime,
+    )}m travel time`,
+  )
+  console.log()
+}
+
 export function logScheduleActivity({ services, clusteringInfo }) {
-  try {
-    console.log('\n=== Schedule Statistics ===')
-    console.log('Services:', services.length)
-    console.log('Clustering info:', clusteringInfo)
+  if (!services?.length) {
+    console.log('No services to log')
+    return
+  }
 
-    // Log clustering performance metrics
-    console.log('\nClustering Performance:')
-    console.log(`Runtime: ${clusteringInfo.performanceDuration}ms`)
-    console.log(`Total clusters: ${clusteringInfo.totalClusters}`)
-    console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
+  console.log('Clustering info:', clusteringInfo)
 
-    // Log cluster statistics
-    const clusters = new Set(services.map(s => s.cluster).filter(c => c >= 0))
-    console.log('\nCluster Statistics:')
-    console.log(`Number of clusters: ${clusters.size}`)
+  // Log clustering performance metrics
+  console.log('\nScheduling Performance:')
+  console.log(`Runtime: ${clusteringInfo.performanceDuration}ms`)
+  console.log(`Total techs: ${Object.keys(clusteringInfo.techAssignments || {}).length}`)
+  console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
 
-    // Calculate average services per cluster
-    const servicesInClusters = services.filter(s => s.cluster >= 0).length
-    const avgServicesPerCluster = servicesInClusters / clusters.size
-    console.log(`Average services per cluster: ${avgServicesPerCluster.toFixed(2)}`)
+  // Log tech statistics
+  const techs = new Set(services.map(s => s.techId).filter(Boolean))
+  console.log('\nTech Statistics:')
+  console.log(`Number of techs: ${techs.size}`)
 
-    // Group services by cluster and tech
-    const servicesByCluster = new Map()
-    const servicesByTech = new Map()
+  // Calculate average services per tech
+  const servicesWithTechs = services.filter(s => s.techId).length
+  const avgServicesPerTech = servicesWithTechs / techs.size
+  console.log(`Average services per tech: ${avgServicesPerTech.toFixed(2)}`)
 
-    for (const service of services) {
-      // Group by cluster
-      if (service.cluster >= 0) {
-        if (!servicesByCluster.has(service.cluster)) {
-          servicesByCluster.set(service.cluster, [])
-        }
-        servicesByCluster.get(service.cluster).push(service)
+  // Group services by tech
+  const servicesByTech = new Map()
+  const servicesByCompany = new Map()
+
+  for (const service of services) {
+    // Group by tech
+    if (service.techId) {
+      if (!servicesByTech.has(service.techId)) {
+        servicesByTech.set(service.techId, [])
       }
-
-      // Group by tech
-      if (service.techId) {
-        if (!servicesByTech.has(service.techId)) {
-          servicesByTech.set(service.techId, [])
-        }
-        servicesByTech.get(service.techId).push(service)
-      }
+      servicesByTech.get(service.techId).push(service)
     }
 
-    // Log tech assignments
-    console.log('\nTech Assignments:')
-    const sortedTechEntries = Array.from(servicesByTech.entries()).sort((a, b) => {
-      const techNumA = parseInt(a[0].replace('Tech ', ''))
-      const techNumB = parseInt(b[0].replace('Tech ', ''))
-      return techNumA - techNumB
+    // Group by company
+    const company = service.company
+    if (!servicesByCompany.has(company)) {
+      servicesByCompany.set(company, [])
+    }
+    servicesByCompany.get(company).push(service)
+  }
+
+  // Log tech details
+  console.log('\nTech Details:')
+  for (const [techId, services] of servicesByTech) {
+    const sortedServices = [...services].sort((a, b) => {
+      if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
+        return a.sequenceNumber - b.sequenceNumber
+      }
+      return new Date(a.start) - new Date(b.start)
     })
+    logTechServices(sortedServices)
+  }
 
-    for (const [techId, techServices] of sortedTechEntries) {
-      const servicesByDate = new Map()
-      for (const service of techServices) {
-        const date = dayjs(service.start).format('YYYY-MM-DD')
-        if (!servicesByDate.has(date)) {
-          servicesByDate.set(date, [])
-        }
-        servicesByDate.get(date).push(service)
-      }
-
-      console.log(`\n${techId}:`)
-      for (const [date, dateServices] of servicesByDate) {
-        const sortedServices = dateServices.sort((a, b) => new Date(a.start) - new Date(b.start))
-        logClusterServices(sortedServices)
-      }
-    }
-  } catch (error) {
-    console.error('Error logging schedule activity:', error)
+  // Log company distribution
+  console.log('\nCompany Distribution:')
+  for (const [company, services] of servicesByCompany) {
+    console.log(`${company}: ${services.length} services`)
   }
 }
