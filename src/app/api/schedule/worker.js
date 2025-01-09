@@ -26,6 +26,7 @@ const techStartTimes = new Map()
 
 // Maximum shift duration (8 hours in milliseconds)
 const MAX_SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000
+const MAX_SHIFT_DURATION_WITH_GRACE_MS = MAX_SHIFT_DURATION_MS + (5 * 60 * 1000) // 8 hours + 5 minutes grace
 
 function parseDate(dateStr) {
   const date = new Date(dateStr)
@@ -39,7 +40,7 @@ function formatDate(date) {
 
 function isValidTimeRange(start, end) {
   if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return false
-  return start < end && end - start <= SHIFT_DURATION * 60 * 60 * 1000
+  return start < end // Only check that end is after start
 }
 
 // Check if two service execution times overlap
@@ -77,6 +78,11 @@ function validateNoOverlaps(shift, newService, tryStart) {
   return true
 }
 
+function wouldExceedShiftDuration(firstServiceStart, lastServiceEnd) {
+  const duration = lastServiceEnd.getTime() - firstServiceStart.getTime()
+  return duration > MAX_SHIFT_DURATION_MS
+}
+
 function validateShiftDuration(services) {
   if (services.length === 0) return true
   
@@ -85,12 +91,12 @@ function validateShiftDuration(services) {
     new Date(a.start).getTime() - new Date(b.start).getTime()
   )
   
-  const firstStart = new Date(sortedServices[0].start).getTime()
-  const lastEnd = new Date(sortedServices[sortedServices.length - 1].end).getTime()
+  const firstStart = new Date(sortedServices[0].start)
+  const lastEnd = new Date(sortedServices[sortedServices.length - 1].end)
   
   // Calculate total shift duration
-  const duration = lastEnd - firstStart
-  return duration <= MAX_SHIFT_DURATION_MS
+  const duration = lastEnd.getTime() - firstStart.getTime()
+  return duration <= MAX_SHIFT_DURATION_WITH_GRACE_MS
 }
 
 function validateShiftTimes(shift) {
@@ -456,13 +462,11 @@ function processServices(services, distanceMatrix) {
     services.forEach(service => {
       if (
         service &&
-        service.time &&
-        service.time.range &&
-        service.time.range[0] &&
-        service.time.range[1] &&
-        isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) &&
-        service.location?.id && // Ensure service has a location ID
-        !scheduledServiceIds.has(service.id) // Skip if already scheduled
+        service.time?.range?.[0] &&
+        service.time?.range?.[1] &&
+        service.location?.latitude != null && // Check for actual coordinates
+        service.location?.longitude != null &&
+        !scheduledServiceIds.has(service.id)
       ) {
         // Only keep the first instance of each service ID
         if (!serviceMap.has(service.id)) {
@@ -502,13 +506,18 @@ function processServices(services, distanceMatrix) {
 
       // Try to fit in existing shifts first
       for (const shift of shifts.sort((a, b) => a.services.length - b.services.length)) {
-        // Skip if shift is at max duration
-        const shiftStart = new Date(shift.services[0].start).getTime()
-        const shiftEnd = new Date(shift.services[shift.services.length - 1].end).getTime()
-        if ((shiftEnd - shiftStart) >= MAX_SHIFT_DURATION_MS) continue
-
-        // Skip if shift already has this service or any service with the same ID
+        // Skip if shift already has this service
         if (shift.services.some(s => s.id === service.id)) continue
+
+        // Get shift start time
+        const shiftStart = new Date(shift.services[0].start)
+
+        // Quick check if adding this service could exceed shift duration
+        const potentialEnd = new Date(Math.max(
+          ...shift.services.map(s => new Date(s.end).getTime()),
+          shiftStart.getTime() + service.time.duration * 60000
+        ))
+        if (wouldExceedShiftDuration(shiftStart, potentialEnd)) continue
 
         const gaps = findShiftGaps(shift)
         
@@ -568,6 +577,9 @@ function processServices(services, distanceMatrix) {
           // Verify no overlap with existing services
           if (!validateNoOverlaps(shift, service, tryStart)) continue
 
+          // Check if adding this service would exceed shift duration
+          if (wouldExceedShiftDuration(shiftStart, tryEnd)) continue
+
           // Score this gap placement
           const score = calculateServiceScore(
             service,
@@ -580,16 +592,23 @@ function processServices(services, distanceMatrix) {
           )
 
           if (score > bestScore) {
-            bestScore = score
-            bestMatch = {
-              start: tryStart,
-              end: tryEnd,
-              prevService,
-              nextService,
-              distance: prevDistance,
-              travelTime: prevTravelTime
+            // Verify one final time that this wouldn't exceed shift duration
+            const potentialEnd = new Date(Math.max(
+              ...shift.services.map(s => new Date(s.end).getTime()),
+              tryEnd.getTime()
+            ))
+            if (!wouldExceedShiftDuration(shiftStart, potentialEnd)) {
+              bestScore = score
+              bestMatch = {
+                start: tryStart,
+                end: tryEnd,
+                prevService,
+                nextService,
+                distance: prevDistance,
+                travelTime: prevTravelTime
+              }
+              bestShift = shift
             }
-            bestShift = shift
           }
         }
       }
@@ -879,9 +898,9 @@ function mergeShifts(shift1, shift2, distanceMatrix) {
   const lastEnd = new Date(lastService.end)
   
   // Quick check if merging would exceed shift duration
-  const shift1Start = new Date(shift1.services[0].start).getTime()
-  const shift2End = new Date(shift2.services[shift2.services.length - 1].end).getTime()
-  if ((shift2End - shift1Start) > MAX_SHIFT_DURATION_MS) {
+  const shift1Start = new Date(shift1.services[0].start)
+  const shift2End = new Date(shift2.services[shift2.services.length - 1].end)
+  if (wouldExceedShiftDuration(shift1Start, shift2End)) {
     return null
   }
   

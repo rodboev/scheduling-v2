@@ -1,0 +1,47 @@
+Let's take all the services for WMON, M1MON (first Mon of everty month), M1/3MON
+Ignore the techs in this case, they can be generic
+Take time ranges
+Take the durations
+Cluster close together as possible, allowing for drive time between them
+
+---
+
+Need single source of truth 
+
+- Alex speadsheet has 399 on Mondays and 469 on Tuesday (without biannual, etc)
+  from C:\Users\Rod\Downloads\1st_Monday_and_1st_Tuesday_services.xlsx (https://onedrive.live.com/edit?id=83E1F0B33D15FE01!208018&resid=83E1F0B33D15FE01!208018&ithint=file%2cxlsx&authkey=!AAAdqxSQu9QEymo&wdo=2&cid=83e1f0b33d15fe01)
+- I have 175 on Monday and 188 on Tuesday
+
+---
+
+- Remove overlapping services for example on 9/2 Tech 4's
+- Limit shifts to 8 hour from start of first service to end of last
+- Move the fullest shifts all the way to the front (e.g.  Tech 1, Tech 2, etc.), and the emptiest shiftrs all the way to the back
+- Backburner
+
+---
+
+The schedule endpoint currently refers to both Techs and Clusters, so that Tech 4 is Cluster 9. Both the calendar and the map use these designations. I want to replace anywhere that a "Cluster" appears with the appropriate "Tech" that it corresponds to, in both the calendar and the map.
+
+---
+
+I want to eradicate throughout the  any mention of a cluster and replace it with a tech.
+
+---
+
+From this data on 9/4, for Tech 4, you can see that Tech 4 has work from 6am-2:01am. That's fine, it's up to 5 minutes more than 8 hours, so it's acceptable.
+However, Tech 6 has work from 6:30am to 3:26pm, which is not acceptble, because we're not paying for that 26 minute excess after the 8 hours. Condense his schedule to 8 hours. This seems fairly easyl. His first job Bagel Oasis, which can start as early as 6am, but as late oas 9am. Why don't we Bagel Oasis at 9am-9:30am, drive 2 minutes to Meadow Stationary, get there at 9:32am-10:02am, drive 11 minutes to to Chicken Lovers, start that at 10:13am-10:43am, and then we have a whole long break uintil Storage Mart starts at 11am.
+I don't understand why we are not moving up the early services to later, to compact Tech 6 (and for that matter, other technicians') schedules, to make sure that they (1) fit within the 8 hour shift maximum defined in the constants, and secondly, create additional opportunities for other services to potentially fit the remaining gaps. Can you explain to me why this is not being done?
+
+---
+
+Now, in the display of the techs from left to right in the calendar, we see Tech 1, who has 1 service, Tech 2 who has 1 service, Tech 3, who has 3 services, etc. This looks bad. We want to re-number the techs (on the schedule back-end) so that tha the techs with the fullest schedules (in this case being defined as the most amount of minutes on an actual job in an 8 hour period), 
+
+---
+
+Here is some raw data for Tech 4:
+
+Tech 4 has work from 6am-2:01am. That's fine, it's up to 5 minutes more than 8 hours, so it's acceptable.
+Now take a look at the data for Tech 6. He has work from 6:30am to 3:26pm, which is not acceptble, because we're not paying for that 26 minute excess after the 8 hours. Condense his schedule to 8 hours. This seems fairly easy. His first job Bagel Oasis, which can start as early as 6am, but as late oas 9am. Why don't we Bagel Oasis at 9am-9:30am, drive 2 minutes to Meadow Stationary, get there at 9:32am-10:02am, drive 11 minutes to to Chicken Lovers, start that at 10:13am-10:43am, and then we have a whole long break uintil Storage Mart starts at 11am.
+
+In both the cases of Tech 4 and Tech 6, I don't understand why we are not moving up the early services to later, to compact Tech 6 (and for that matter, other technicians') schedules, to make sure that they (1) fit within the 8 hour shift maximum defined in the constants, and secondly, create additional opportunities for other services to potentially fit the remaining gaps. Can you explain to me why this is not being done?

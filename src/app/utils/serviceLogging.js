@@ -123,15 +123,7 @@ export function logTechServices(techServices) {
       ? travelTimes.reduce((sum, t) => sum + t, 0) / travelTimes.length
       : 0
 
-  console.log(
-    `  Stats: ${totalDistance.toFixed(1)}mi total, ${totalTravelTime}m travel time`,
-  )
-  console.log(
-    `  Averages: ${avgDistance.toFixed(1)}mi distance, ${Math.round(
-      avgTravelTime,
-    )}m travel time`,
-  )
-  console.log()
+  console.log('')
 }
 
 export function logScheduleActivity({ services, clusteringInfo }) {
@@ -189,11 +181,5 @@ export function logScheduleActivity({ services, clusteringInfo }) {
       return new Date(a.start) - new Date(b.start)
     })
     logTechServices(sortedServices)
-  }
-
-  // Log company distribution
-  console.log('\nCompany Distribution:')
-  for (const [company, services] of servicesByCompany) {
-    console.log(`${company}: ${services.length} services`)
   }
 }
