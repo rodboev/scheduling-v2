@@ -74,9 +74,6 @@ export default function ServiceContent({ service }) {
         Time Range: {dayjs(service.time.range[0]).format('M/D h:mma')} -{' '}
         {dayjs(service.time.range[1]).format('h:mma')}
       </div>
-      <div>
-        (from {service.time.meta.originalRange} + {service.time.duration} min)
-      </div>
 
       {service.route && (
         <div className="-mx-4 my-3 border-y-2 border-dashed border-gray-300 px-4 py-1">
