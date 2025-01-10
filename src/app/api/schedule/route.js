@@ -12,6 +12,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const start = dayjsInstance(searchParams.get('start'))
   const end = dayjsInstance(searchParams.get('end'))
+  const techId = searchParams.get('tech') ? `Tech ${searchParams.get('tech')}` : null
   console.log('Schedule API called with params:', Object.fromEntries(searchParams))
 
   if (!start.isValid() || !end.isValid()) {
@@ -31,6 +32,24 @@ export async function GET(request) {
     // If request is within limit, process normally
     if (totalDays <= MAX_DAYS_PER_REQUEST) {
       const result = await processDateRange(start, end)
+      // Filter for specific tech if requested
+      if (techId) {
+        result.scheduledServices = result.scheduledServices.filter(s => s.techId === techId)
+        // Update clustering info for filtered services
+        const filteredClusters = new Set(result.scheduledServices.map(s => s.cluster))
+        result.clusteringInfo.totalClusters = filteredClusters.size
+        result.clusteringInfo.connectedPointsCount = result.scheduledServices.length
+        result.clusteringInfo.clusterDistribution = result.scheduledServices.reduce((acc, service) => {
+          if (service.cluster >= 0) {
+            const cluster = service.cluster
+            acc[cluster] = (acc[cluster] || 0) + 1
+          }
+          return acc
+        }, [])
+        result.clusteringInfo.techAssignments = {
+          [techId]: result.clusteringInfo.techAssignments[techId] || { services: 0, startTime: 0 }
+        }
+      }
       return createJsonResponse(result)
     }
 
@@ -51,6 +70,24 @@ export async function GET(request) {
     const results = []
     for (const [s, e] of chunks) {
       const result = await processDateRange(s, e)
+      // Filter each chunk for specific tech if requested
+      if (techId) {
+        result.scheduledServices = result.scheduledServices.filter(s => s.techId === techId)
+        // Update clustering info for filtered services
+        const filteredClusters = new Set(result.scheduledServices.map(s => s.cluster))
+        result.clusteringInfo.totalClusters = filteredClusters.size
+        result.clusteringInfo.connectedPointsCount = result.scheduledServices.length
+        result.clusteringInfo.clusterDistribution = result.scheduledServices.reduce((acc, service) => {
+          if (service.cluster >= 0) {
+            const cluster = service.cluster
+            acc[cluster] = (acc[cluster] || 0) + 1
+          }
+          return acc
+        }, [])
+        result.clusteringInfo.techAssignments = {
+          [techId]: result.clusteringInfo.techAssignments[techId] || { services: 0, startTime: 0 }
+        }
+      }
       results.push(result)
     }
 
