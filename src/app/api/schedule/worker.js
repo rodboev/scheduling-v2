@@ -422,11 +422,14 @@ function processServices(services, distanceMatrix) {
   try {
     const startTime = performance.now()
     SCORE_CACHE.clear()
+
+    console.log('Worker received services:', services.length)
     
-    let duplicates = new Set()
-    let invalidServices = new Set()
-    let serviceMap = new Map()
-    let scheduledServiceIds = new Set()
+    // Track duplicates and invalid services
+    const duplicates = new Set()
+    const invalidServices = new Set()
+    const serviceMap = new Map()
+    const scheduledServiceIds = new Set()
 
     // Pre-filter and deduplicate services
     services.forEach(service => {
@@ -440,12 +443,20 @@ function processServices(services, distanceMatrix) {
 
       if (!isValid) {
         invalidServices.add(service.id)
+        console.log('Worker filtered invalid service:', service.id, {
+          hasTime: !!service.time,
+          hasRange: !!service.time?.range,
+          hasStart: !!service.time?.range?.[0],
+          hasEnd: !!service.time?.range?.[1],
+          hasLocationId: !!service.location?.id
+        })
         return
       }
 
       // Check for duplicates and already scheduled
       if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
         duplicates.add(service.id)
+        console.log('Worker found duplicate/already scheduled service:', service.id)
         return
       }
 
@@ -457,7 +468,7 @@ function processServices(services, distanceMatrix) {
     })
 
     // Convert to array and add metadata
-    let sortedServices = Array.from(serviceMap.values())
+    const sortedServices = Array.from(serviceMap.values())
       .map(service => ({
         ...service,
         borough: getBorough(service.location.latitude, service.location.longitude),
@@ -467,21 +478,32 @@ function processServices(services, distanceMatrix) {
       }))
 
     // Separate long services and regular services
-    let longServices = sortedServices.filter(s => s.isLongService)
-    let regularServices = sortedServices.filter(s => !s.isLongService)
+    const longServices = sortedServices.filter(s => s.isLongService)
+    const regularServices = sortedServices.filter(s => !s.isLongService)
 
     // Sort regular services by time window flexibility and start time
     regularServices.sort((a, b) => {
+      // Prioritize services with less flexibility first
       const flexibilityCompare = a.startTimeWindow - b.startTimeWindow
       if (flexibilityCompare !== 0) return flexibilityCompare
       
+      // Then by duration (longer services first)
       const durationCompare = b.time.duration - a.time.duration
       if (durationCompare !== 0) return durationCompare
       
+      // Finally by start time
       return a.earliestStart.getTime() - b.earliestStart.getTime()
     })
 
-    let shifts = []
+    console.log('Sorted services time windows:', regularServices.slice(0, 10).map(s => ({
+      id: s.id,
+      company: s.company,
+      window: s.startTimeWindow,
+      start: s.earliestStart,
+      duration: s.duration
+    })))
+
+    const shifts = []
 
     // First, schedule long services in their own shifts
     for (const service of longServices) {
@@ -504,6 +526,13 @@ function processServices(services, distanceMatrix) {
 
       // For zero-width time windows, try existing shifts first
       if (service.startTimeWindow === 0) {
+        console.log('Processing exact-time service:', {
+          id: service.id,
+          company: service.company,
+          start: service.earliestStart,
+          duration: service.duration
+        })
+
         let bestMatch = null
         let bestShift = null
 
@@ -672,13 +701,13 @@ function processServices(services, distanceMatrix) {
 
         const lastService = shift1.services[shift1.services.length - 1]
         const lastEnd = new Date(lastService.end)
-        
+
         // Only consider nearby shifts in time
         const mergeCandidates = findMergeCandidates(shift1, shiftsByTime, i, distanceMatrix)
 
         for (const shift2 of mergeCandidates) {
           const firstService = shift2.services[0]
-          const distance = getDistance(lastService, firstService, distanceMatrix)
+          const distance = distanceMatrix[lastService.originalIndex][firstService.originalIndex]
 
           if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
 
@@ -752,17 +781,20 @@ function processServices(services, distanceMatrix) {
 
     // Proceed with tech assignment
     let shiftsWithTechs = assignTechsToShifts(shifts)
+    console.log('Initial shifts after tech assignment:', shiftsWithTechs.length)
 
     // After all services are scheduled in shifts
+    console.log('Attempting to merge shifts...')
     let mergeAttempts = 0
     while (mergeAttempts < MAX_MERGE_ATTEMPTS) {
       const merged = tryMergeShifts(shiftsWithTechs, distanceMatrix)
       if (!merged) break
       mergeAttempts++
     }
+    console.log(`Completed ${mergeAttempts} merge attempts`)
 
     // Process services with tech assignments
-    let processedServices = shiftsWithTechs.flatMap(shift => {
+    const processedServices = shiftsWithTechs.flatMap(shift => {
       // Update relationships within each shift while preserving tech assignments
       const updatedServices = updateServiceRelationships(shift.services, distanceMatrix)
       return updatedServices.map(service => ({
@@ -773,7 +805,8 @@ function processServices(services, distanceMatrix) {
     })
 
     // Calculate clustering info
-    let clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
+    const clusters = new Set(processedServices.map(s => s.cluster).filter(c => c >= 0))
+    console.log('Found clusters:', Array.from(clusters))
 
     return {
       scheduledServices: processedServices,
@@ -803,8 +836,8 @@ function processServices(services, distanceMatrix) {
 }
 
 function canMergeShifts(shift1, shift2, distanceMatrix) {
-  // If either shift has more than 14 services, don't merge
-  if (shift1.services.length + shift2.services.length > 14) return false
+  // If either shift has more than 12 services, don't merge
+  if (shift1.services.length + shift2.services.length > 12) return false
 
   const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
   const shift2Start = new Date(shift2.services[0].start)
@@ -824,7 +857,7 @@ function canMergeShifts(shift1, shift2, distanceMatrix) {
   if (shift2Start >= earliestPossibleStart) {
     // Check if total shift duration would be reasonable
     const totalDuration = (shift2End - shift1Start) / (60 * 60 * 1000)
-    if (totalDuration <= SHIFT_DURATION / 60) return true
+    if (totalDuration <= HOURS_PER_SHIFT) return true
   }
 
   return false
@@ -1272,9 +1305,6 @@ function areTimeWindowsCompatible(service1, service2) {
 }
 
 function calculateTimeWindowCompatibility(shift, serviceGroup) {
-  // Guard against empty shifts
-  if (!shift.services || shift.services.length === 0) return 0
-  
   let score = 0
   const shiftStart = new Date(shift.services[0].start)
   const shiftEnd = new Date(shift.services[shift.services.length - 1].end)
@@ -1299,7 +1329,20 @@ function calculateTimeWindowCompatibility(shift, serviceGroup) {
 // Handle messages from the main thread
 parentPort.on('message', async ({ services, distanceMatrix }) => {
   try {
+    console.log('Worker received services:', services.length)
+    console.log(
+      'Distance matrix dimensions:',
+      distanceMatrix.length,
+      'x',
+      distanceMatrix[0]?.length,
+    )
+
     const result = await processServices(services, distanceMatrix)
+    console.log('Worker processed services:', result.scheduledServices.length)
+    console.log(
+      'Services with clusters:',
+      result.scheduledServices.filter(s => s.cluster >= 0).length,
+    )
 
     parentPort.postMessage(result)
   } catch (error) {
