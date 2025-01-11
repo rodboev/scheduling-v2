@@ -8,7 +8,8 @@
     "clean": "rimraf .next",
     "build": "yarn clean && next build",
     "lint": "next lint",
-    "start": "bash scripts/setupDB.sh && next start"
+    "start": "bash scripts/setupDB.sh && next start",
+    "test": "node test-schedule.js"
   },
   "dependencies": {
     "@floating-ui/react": "^0.26.23",
@@ -43,6 +44,7 @@
     "mssql": "^11.0.1",
     "next": "^15.0.0-rc.0",
     "node-cache": "^5.1.2",
+    "node-fetch": "^3.3.2",
     "odbc": "^2.4.9",
     "pm2": "^5.4.2",
     "priorityqueuejs": "^2.0.0",
