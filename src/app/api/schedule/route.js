@@ -93,6 +93,7 @@ export async function GET(request) {
 
     // Combine results
     const combinedResult = {
+      initialServices: results.reduce((sum, r) => sum + r.initialServices, 0),
       scheduledServices: results.flatMap(r => r.scheduledServices || []),
       unassignedServices: results.flatMap(r => r.unassignedServices || []),
       clusteringInfo: results.reduce((acc, r) => ({
@@ -100,6 +101,21 @@ export async function GET(request) {
         ...r.clusteringInfo,
         performanceDuration: (acc.performanceDuration || 0) + (r.clusteringInfo?.performanceDuration || 0),
       }), {}),
+      schedulingDetails: results.reduce((acc, r) => {
+        if (!acc) return r.schedulingDetails
+        return {
+          totalServices: acc.totalServices + r.schedulingDetails.totalServices,
+          scheduledServices: acc.scheduledServices + r.schedulingDetails.scheduledServices,
+          unscheduledServices: [...acc.unscheduledServices, ...r.schedulingDetails.unscheduledServices],
+          summary: {
+            totalUnscheduled: acc.summary.totalUnscheduled + r.schedulingDetails.summary.totalUnscheduled,
+            reasonBreakdown: Object.entries(r.schedulingDetails.summary.reasonBreakdown).reduce((breakdown, [key, value]) => {
+              breakdown[key] = (breakdown[key] || 0) + value
+              return breakdown
+            }, {...acc.summary.reasonBreakdown})
+          }
+        }
+      }, null)
     }
 
     return createJsonResponse(combinedResult)
@@ -171,37 +187,101 @@ async function processDateRange(start, end) {
       },
     })
 
+    console.log('Initial services from /services:', response.data.length)
+
+    // Track services filtered due to missing time range
+    const missingTimeRangeServices = response.data.filter(service => {
+      if (!service.time.range[0] || !service.time.range[1]) {
+        console.log('Filtered out service missing time range:', service.id)
+        return true
+      }
+      return false
+    }).map(service => ({
+      id: service.id,
+      company: service.company,
+      location: {
+        id: service.location?.id,
+        address: service.location?.address
+      },
+      time: {
+        range: service.time.range,
+        duration: service.time.duration
+      },
+      reason: 'MISSING_TIME_RANGE'
+    }))
+
     const services = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) return false
       const serviceDate = dayjsInstance(service.date)
-      return serviceDate.isBetween(start, end, null, '[)')
-    })
-
-    if (!services.length) {
-      return {
-        scheduledServices: [],
-        unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: 0,
-          connectedPointsCount: 0,
-          totalClusters: 0,
-          clusterDistribution: [],
-          techAssignments: {},
-        },
+      const isInRange = serviceDate.isBetween(start, end, null, '[)')
+      if (!isInRange) {
+        console.log('Filtered out service outside date range:', service.id, {
+          serviceDate: serviceDate.format(),
+          start: start.format(),
+          end: end.format()
+        })
       }
-    }
-
-    // Add originalIndex to each service
-    services.forEach((service, index) => {
-      service.originalIndex = index
+      return isInRange
     })
 
-    // Filter out services with missing locations first
-    const validServices = services.filter(service => service.location?.id?.toString())
+    console.log('Services after date/time filtering:', services.length)
+
+    // Track invalid services before filtering
+    const invalidServices = services.filter(service => {
+      // Check for missing location ID
+      if (!service.location?.id?.toString()) {
+        console.log('Service missing location ID:', service.id)
+        return true
+      }
+      
+      // Check for invalid coordinates (0,0 or missing)
+      const lat = service.location.latitude
+      const lng = service.location.longitude
+      if (!lat || !lng || (lat === 0 && lng === 0)) {
+        console.log('Service has invalid coordinates:', service.id, { lat, lng })
+        return true
+      }
+      
+      return false
+    }).map(service => ({
+      id: service.id,
+      company: service.company,
+      location: {
+        id: service.location?.id,
+        address: service.location?.address,
+        coordinates: {
+          latitude: service.location?.latitude,
+          longitude: service.location?.longitude
+        }
+      },
+      time: {
+        range: service.time.range,
+        duration: service.time.duration
+      },
+      reason: !service.location?.id?.toString() ? 'MISSING_LOCATION' : 'INVALID_COORDINATES'
+    }))
+
+    console.log('Invalid services:', invalidServices.length, invalidServices)
+
+    // Update validServices filter accordingly
+    const validServices = services.filter(service => {
+      if (!service.location?.id?.toString()) return false
+      const lat = service.location.latitude
+      const lng = service.location.longitude
+      if (!lat || !lng || (lat === 0 && lng === 0)) return false
+      return true
+    })
+
+    console.log('Valid services:', validServices.length)
+
+    // Add originalIndex to each service before sending to worker
+    const validServicesWithIndex = validServices.map((service, index) => ({
+      ...service,
+      originalIndex: index
+    }))
 
     // Get unique location IDs from valid services
-    const locationIds = validServices.map(s => s.location.id.toString())
+    const locationIds = validServicesWithIndex.map(s => s.location.id.toString())
 
     // Get distance matrix in array format
     console.log('Getting distance matrix for', locationIds.length, 'locations')
@@ -210,45 +290,8 @@ async function processDateRange(start, end) {
       force: true,
     })
 
-    // Validate matrix format and dimensions
-    if (!Array.isArray(distanceMatrix) || !Array.isArray(distanceMatrix[0])) {
-      console.warn('Invalid distance matrix format')
-      return {
-        scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
-        unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: Math.round(performance.now() - startTime),
-          connectedPointsCount: 0,
-          totalClusters: 0,
-          clusterDistribution: [],
-          techAssignments: {},
-        },
-      }
-    }
-
-    if (distanceMatrix.length !== validServices.length) {
-      console.warn(
-        `Matrix dimension mismatch: ${distanceMatrix.length} != ${validServices.length} services`,
-      )
-      return {
-        scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
-        unassignedServices: [],
-        clusteringInfo: {
-          algorithm: 'shifts',
-          performanceDuration: Math.round(performance.now() - startTime),
-          connectedPointsCount: 0,
-          totalClusters: 0,
-          clusterDistribution: [],
-          techAssignments: {},
-        },
-      }
-    }
-
-    // Create worker
+    // Create worker and get result
     const worker = new Worker(path.resolve(process.cwd(), 'src/app/api/schedule/worker.js'))
-
-    // Get result from worker with timeout
     const result = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         worker.terminate()
@@ -267,23 +310,50 @@ async function processDateRange(start, end) {
         reject(error)
       })
 
-      // Pass valid services and their distance matrix to worker
-      worker.postMessage({ services: validServices, distanceMatrix })
+      // Pass the indexed services to worker
+      worker.postMessage({ services: validServicesWithIndex, distanceMatrix })
     })
 
-    // Add clustering info to the result
-    const scheduledServices = result.scheduledServices || []
-    const totalConnectedPoints = scheduledServices.filter(s => s.cluster >= 0).length
-    const totalClusters = new Set(scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
+    // Now that we have the result, identify unscheduled services
+    const scheduledServiceIds = new Set(result.scheduledServices.map(s => s.id))
+    const unscheduledValidServices = validServices
+      .filter(s => !scheduledServiceIds.has(s.id))
+      .map(service => {
+        const reason = determineUnscheduledReason(service, result.scheduledServices)
+        console.log('Unscheduled valid service:', service.id, 'Reason:', reason)
+        return {
+          id: service.id,
+          company: service.company,
+          location: {
+            id: service.location.id,
+            address: service.location.address
+          },
+          time: {
+            range: service.time.range,
+            duration: service.time.duration
+          },
+          reason
+        }
+      })
+
+    console.log('Unscheduled valid services:', unscheduledValidServices.length)
+
+    // When combining unscheduled services, include the missing time range ones
+    const unscheduledServices = [...missingTimeRangeServices, ...invalidServices, ...unscheduledValidServices]
+    console.log('Total unscheduled services:', unscheduledServices.length)
+
+    const totalConnectedPoints = result.scheduledServices.filter(s => s.cluster >= 0).length
+    const totalClusters = new Set(result.scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
 
     return {
       ...result,
+      initialServices: response.data.length,
       clusteringInfo: {
         algorithm: 'shifts',
         performanceDuration: Math.round(performance.now() - startTime),
         connectedPointsCount: totalConnectedPoints,
         totalClusters,
-        clusterDistribution: scheduledServices.reduce((acc, service) => {
+        clusterDistribution: result.scheduledServices.reduce((acc, service) => {
           if (service.cluster >= 0) {
             const cluster = service.cluster
             acc[cluster] = (acc[cluster] || 0) + 1
@@ -292,9 +362,56 @@ async function processDateRange(start, end) {
         }, []),
         techAssignments: result.clusteringInfo?.techAssignments || {},
       },
+      schedulingDetails: {
+        totalServices: services.length,
+        scheduledServices: result.scheduledServices.length,
+        unscheduledServices,
+        summary: {
+          totalUnscheduled: unscheduledServices.length,
+          reasonBreakdown: unscheduledServices.reduce((acc, s) => {
+            acc[s.reason] = (acc[s.reason] || 0) + 1
+            return acc
+          }, {})
+        }
+      }
     }
   } catch (error) {
     console.error('Schedule error:', error)
     throw error
   }
+}
+
+function determineUnscheduledReason(service, scheduledServices) {
+  // Check for missing location
+  if (!service.location?.id) return 'MISSING_LOCATION'
+
+  // Check for invalid time range
+  if (!service.time?.range?.[0] || !service.time?.range?.[1]) {
+    return 'INVALID_TIME_RANGE'
+  }
+
+  // Check for zero-width time window
+  const start = new Date(service.time.range[0])
+  const end = new Date(service.time.range[1])
+  if (start.getTime() === end.getTime()) {
+    return 'ZERO_WIDTH_TIME_WINDOW'
+  }
+
+  // Check for overlapping services at same location
+  const overlappingServices = scheduledServices.filter(s => 
+    s.location.id === service.location.id &&
+    new Date(s.time.range[0]) <= new Date(service.time.range[1]) &&
+    new Date(s.time.range[1]) >= new Date(service.time.range[0])
+  )
+  if (overlappingServices.length > 0) {
+    return 'TIME_OVERLAP_AT_LOCATION'
+  }
+
+  // Check if service duration exceeds shift duration
+  if (service.time.duration > 480) { // 8 hours in minutes
+    return 'EXCEEDS_SHIFT_DURATION'
+  }
+
+  // Default reason if no specific condition is met
+  return 'NO_VALID_SHIFT_FIT'
 }

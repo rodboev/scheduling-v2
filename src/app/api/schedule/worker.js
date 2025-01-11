@@ -423,31 +423,57 @@ function processServices(services, distanceMatrix) {
     const startTime = performance.now()
     SCORE_CACHE.clear()
 
-    // Create a Map to track services by ID for efficient lookup
+    console.log('Worker received services:', services.length)
+    
+    // Track duplicates and invalid services
+    const duplicates = new Set()
+    const invalidServices = new Set()
     const serviceMap = new Map()
     const scheduledServiceIds = new Set()
 
     // Pre-filter and deduplicate services
     services.forEach(service => {
-      if (
-        service &&
+      // Check validity conditions
+      const isValid = service &&
         service.time &&
         service.time.range &&
         service.time.range[0] &&
         service.time.range[1] &&
         isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) &&
-        service.location?.id && // Ensure service has a location ID
-        !scheduledServiceIds.has(service.id) // Skip if already scheduled
-      ) {
-        // Only keep the first instance of each service ID
-        if (!serviceMap.has(service.id)) {
-          serviceMap.set(service.id, {
-            ...service,
-            duration: service.time.duration,
-            isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
-          })
-        }
+        service.location?.id
+
+      if (!isValid) {
+        invalidServices.add(service.id)
+        console.log('Worker filtered invalid service:', service.id, {
+          hasTime: !!service.time,
+          hasRange: !!service.time?.range,
+          hasStart: !!service.time?.range?.[0],
+          hasEnd: !!service.time?.range?.[1],
+          isValidRange: service.time?.range ? isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) : false,
+          hasLocationId: !!service.location?.id
+        })
+        return
       }
+
+      // Check for duplicates and already scheduled
+      if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
+        duplicates.add(service.id)
+        console.log('Worker found duplicate/already scheduled service:', service.id)
+        return
+      }
+
+      serviceMap.set(service.id, {
+        ...service,
+        duration: service.time.duration,
+        isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
+      })
+    })
+
+    console.log('Worker processing summary:', {
+      received: services.length,
+      valid: serviceMap.size,
+      duplicates: duplicates.size,
+      invalid: invalidServices.size
     })
 
     // Convert to array and add metadata
