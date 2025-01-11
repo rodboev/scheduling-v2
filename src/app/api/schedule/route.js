@@ -207,7 +207,7 @@ async function processDateRange(start, end) {
         range: service.time.range,
         duration: service.time.duration
       },
-      reason: 'MISSING_TIME_RANGE'
+      reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
     }))
 
     const services = response.data.filter(service => {
@@ -258,7 +258,9 @@ async function processDateRange(start, end) {
         range: service.time.range,
         duration: service.time.duration
       },
-      reason: !service.location?.id?.toString() ? 'MISSING_LOCATION' : 'INVALID_COORDINATES'
+      reason: !service.location?.id?.toString() 
+        ? 'MISSING_LOCATION' 
+        : `INVALID_COORDINATES: (${service.location.latitude},${service.location.longitude})`
     }))
 
     console.log('Invalid services:', invalidServices.length, invalidServices)
