@@ -192,7 +192,10 @@ async function processDateRange(start, end) {
     // Track services filtered due to missing time range
     const missingTimeRangeServices = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) {
-        console.log('Filtered out service missing time range:', service.id)
+        console.log('Filtered out service missing time range:', service.id, {
+          originalRange: service.time?.meta?.originalRange || '',
+          range: service.time?.range
+        })
         return true
       }
       return false
@@ -205,7 +208,8 @@ async function processDateRange(start, end) {
       },
       time: {
         range: service.time.range,
-        duration: service.time.duration
+        duration: service.time.duration,
+        meta: service.time.meta
       },
       reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
     }))
@@ -256,7 +260,8 @@ async function processDateRange(start, end) {
       },
       time: {
         range: service.time.range,
-        duration: service.time.duration
+        duration: service.time.duration,
+        meta: service.time.meta
       },
       reason: !service.location?.id?.toString() 
         ? 'MISSING_LOCATION' 
@@ -392,11 +397,11 @@ function determineUnscheduledReason(service, scheduledServices) {
     return 'INVALID_TIME_RANGE'
   }
 
-  // Check for zero-width time window
+  // Check for invalid time window (end before start)
   const start = new Date(service.time.range[0])
   const end = new Date(service.time.range[1])
-  if (start.getTime() === end.getTime()) {
-    return 'ZERO_WIDTH_TIME_WINDOW'
+  if (end < start) {
+    return 'INVALID_TIME_WINDOW: End time before start time'
   }
 
   // Check for overlapping services at same location

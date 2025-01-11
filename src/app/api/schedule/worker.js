@@ -439,7 +439,6 @@ function processServices(services, distanceMatrix) {
         service.time.range &&
         service.time.range[0] &&
         service.time.range[1] &&
-        isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) &&
         service.location?.id
 
       if (!isValid) {
@@ -449,7 +448,6 @@ function processServices(services, distanceMatrix) {
           hasRange: !!service.time?.range,
           hasStart: !!service.time?.range?.[0],
           hasEnd: !!service.time?.range?.[1],
-          isValidRange: service.time?.range ? isValidTimeRange(new Date(service.time.range[0]), new Date(service.time.range[1])) : false,
           hasLocationId: !!service.location?.id
         })
         return
@@ -467,13 +465,6 @@ function processServices(services, distanceMatrix) {
         duration: service.time.duration,
         isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
       })
-    })
-
-    console.log('Worker processing summary:', {
-      received: services.length,
-      valid: serviceMap.size,
-      duplicates: duplicates.size,
-      invalid: invalidServices.size
     })
 
     // Convert to array and add metadata
@@ -497,6 +488,14 @@ function processServices(services, distanceMatrix) {
       return a.earliestStart.getTime() - b.earliestStart.getTime()
     })
 
+    console.log('Sorted services time windows:', regularServices.slice(0, 10).map(s => ({
+      id: s.id,
+      company: s.company,
+      window: s.startTimeWindow,
+      start: s.earliestStart,
+      duration: s.duration
+    })))
+
     const shifts = []
 
     // First, schedule long services in their own shifts
@@ -506,7 +505,7 @@ function processServices(services, distanceMatrix) {
       const newShift = createNewShift(service, shifts.length, [], distanceMatrix)
       const scheduledService = createScheduledService(service, newShift, {
         start: service.earliestStart,
-        end: new Date(service.earliestStart.getTime() + service.time.duration * 60000)
+        end: new Date(service.earliestStart.getTime() + service.duration * 60000)
       }, distanceMatrix)
 
       newShift.services = [scheduledService]
@@ -514,9 +513,93 @@ function processServices(services, distanceMatrix) {
       scheduledServiceIds.add(service.id)
     }
 
-    // Then schedule regular services
+    // Then schedule regular services in order of time window flexibility
     for (const service of regularServices) {
       if (scheduledServiceIds.has(service.id)) continue
+
+      // For zero-width time windows, try existing shifts first
+      if (service.startTimeWindow === 0) {
+        console.log('Processing exact-time service:', {
+          id: service.id,
+          company: service.company,
+          start: service.earliestStart,
+          duration: service.duration
+        })
+
+        let bestMatch = null
+        let bestShift = null
+
+        // Try to fit in existing shifts first
+        for (const shift of shifts.sort((a, b) => a.services.length - b.services.length)) {
+          // Skip if shift already has max services or is a long-service shift
+          if (shift.services.length >= 14 || shift.services.some(s => s.isLongService)) continue
+
+          // Check if this exact time fits in any gap in this shift
+          const gaps = findShiftGaps(shift)
+          for (const gap of gaps) {
+            // For exact-time services, we need an exact fit at the specified time
+            const exactStart = service.earliestStart
+            const exactEnd = new Date(exactStart.getTime() + service.duration * 60000)
+            
+            // Check if this exact time window fits in the gap
+            if (exactStart >= gap.start && exactEnd <= gap.end) {
+              // Verify no overlaps with existing services and travel times
+              const wouldOverlap = shift.services.some(existing => {
+                const existingStart = new Date(existing.start).getTime()
+                const existingEnd = new Date(existing.end).getTime()
+                
+                // Check direct time overlap
+                if (exactStart.getTime() < existingEnd && existingStart < exactEnd.getTime()) {
+                  return true
+                }
+
+                // Check if there's enough travel time between services
+                const distance = getDistance(service, existing, distanceMatrix)
+                const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+                const minBuffer = travelTime * 60 * 1000 // Convert minutes to milliseconds
+
+                if (exactStart.getTime() < existingEnd + minBuffer && existingStart - minBuffer < exactEnd.getTime()) {
+                  return true
+                }
+
+                return false
+              })
+
+              if (!wouldOverlap) {
+                bestMatch = {
+                  start: exactStart,
+                  end: exactEnd,
+                  score: 0
+                }
+                bestShift = shift
+                break
+              }
+            }
+          }
+          if (bestMatch) break
+        }
+
+        // If no existing shift works, create a new one
+        if (!bestMatch) {
+          const newShift = createNewShift(service, shifts.length, [], distanceMatrix)
+          newShift.startTime = service.earliestStart
+          bestShift = newShift
+          bestMatch = {
+            start: service.earliestStart,
+            end: new Date(service.earliestStart.getTime() + service.duration * 60000),
+            score: 0
+          }
+          shifts.push(newShift)
+        }
+
+        const scheduledService = createScheduledService(service, bestShift, bestMatch, distanceMatrix)
+        bestShift.services.push(scheduledService)
+        scheduledServiceIds.add(service.id)
+        
+        // Sort services within shift by start time
+        bestShift.services.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+        continue
+      }
 
       let bestMatch = null
       let bestShift = null
@@ -557,7 +640,7 @@ function processServices(services, distanceMatrix) {
         bestShift = newShift
         bestMatch = {
           start: newShift.startTime,
-          end: new Date(newShift.startTime.getTime() + service.time.duration * 60000),
+          end: new Date(newShift.startTime.getTime() + service.duration * 60000),
           score: 0
         }
         shifts.push(newShift)
@@ -728,53 +811,7 @@ function processServices(services, distanceMatrix) {
     }
   } catch (error) {
     console.error('Error in worker:', error)
-
-    // Even in case of error, try to assign techs to services
-    const processedServices = services.map((service, index, array) => {
-      const techId = `Tech ${Math.floor(index / 14) + 1}` // Assign up to 14 services per tech
-      const prevService = index > 0 ? array[index - 1] : null
-      let distance = 0
-      if (prevService && distanceMatrix && 
-          typeof prevService.originalIndex !== 'undefined' && 
-          typeof service.originalIndex !== 'undefined') {
-        distance = distanceMatrix[prevService.originalIndex][service.originalIndex] || 0
-      }
-      const travelTime = distance ? calculateTravelTime(distance) : 0
-      return {
-        ...service,
-        cluster: -1,
-        techId,
-        distanceFromPrevious: distance,
-        travelTimeFromPrevious: travelTime,
-        previousService: prevService?.id || null,
-        previousCompany: prevService?.company || null,
-      }
-    })
-
-    // Create tech assignments even for error case
-    const techAssignments = {}
-    for (const service of processedServices) {
-      if (!techAssignments[service.techId]) {
-        techAssignments[service.techId] = {
-          services: 0,
-          startTime: new Date(service.start).getTime() % (24 * 60 * 60 * 1000),
-        }
-      }
-      techAssignments[service.techId].services++
-    }
-
-    return {
-      error: error.message,
-      scheduledServices: processedServices,
-      clusteringInfo: {
-        algorithm: 'shifts',
-        performanceDuration: 0,
-        connectedPointsCount: 0,
-        totalClusters: 0,
-        clusterDistribution: [],
-        techAssignments,
-      },
-    }
+    throw error
   }
 }
 
