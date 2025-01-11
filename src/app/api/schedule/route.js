@@ -192,10 +192,7 @@ async function processDateRange(start, end) {
     // Track services filtered due to missing time range
     const missingTimeRangeServices = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) {
-        console.log('Filtered out service missing time range:', service.id, {
-          originalRange: service.time?.meta?.originalRange || '',
-          range: service.time?.range
-        })
+        console.log('Filtered out service missing time range:', service.id)
         return true
       }
       return false
@@ -208,8 +205,7 @@ async function processDateRange(start, end) {
       },
       time: {
         range: service.time.range,
-        duration: service.time.duration,
-        meta: service.time.meta
+        duration: service.time.duration
       },
       reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
     }))
@@ -260,8 +256,7 @@ async function processDateRange(start, end) {
       },
       time: {
         range: service.time.range,
-        duration: service.time.duration,
-        meta: service.time.meta
+        duration: service.time.duration
       },
       reason: !service.location?.id?.toString() 
         ? 'MISSING_LOCATION' 

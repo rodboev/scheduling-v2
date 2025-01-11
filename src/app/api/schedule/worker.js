@@ -25,6 +25,9 @@ const SCORE_CACHE = new Map() // Cache for service compatibility scores
 // Track tech start times across days
 const techStartTimes = new Map()
 
+// Constants at the top of the file
+const HOURS_PER_SHIFT = 8
+
 function parseDate(dateStr) {
   const date = new Date(dateStr)
   return isNaN(date.getTime()) ? null : date
@@ -769,9 +772,19 @@ function processServices(services, distanceMatrix) {
       shift.services = updateServiceRelationships(shift.services, distanceMatrix)
     }
 
-    // Assign techs to shifts
-    const shiftsWithTechs = assignTechsToShifts(shifts)
-    console.log('Shifts after tech assignment:', shiftsWithTechs.length)
+    // Assign initial techs and clusters before merging
+    let shiftsWithTechs = assignTechsToShifts(shifts)
+    console.log('Initial shifts after tech assignment:', shiftsWithTechs.length)
+
+    // After all services are scheduled in shifts
+    console.log('Attempting to merge shifts...')
+    let mergeAttempts = 0
+    while (mergeAttempts < MAX_MERGE_ATTEMPTS) {
+      const merged = tryMergeShifts(shiftsWithTechs, distanceMatrix)
+      if (!merged) break
+      mergeAttempts++
+    }
+    console.log(`Completed ${mergeAttempts} merge attempts`)
 
     // Process services with tech assignments
     const processedServices = shiftsWithTechs.flatMap(shift => {
@@ -780,7 +793,7 @@ function processServices(services, distanceMatrix) {
       return updatedServices.map(service => ({
         ...service,
         techId: shift.techId,
-        cluster: shift.cluster
+        cluster: shift.cluster || -1 // Ensure we have a cluster value
       }))
     })
 
@@ -816,93 +829,75 @@ function processServices(services, distanceMatrix) {
 }
 
 function canMergeShifts(shift1, shift2, distanceMatrix) {
+  // If either shift has more than 12 services, don't merge
+  if (shift1.services.length + shift2.services.length > 12) return false
+
+  const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
+  const shift2Start = new Date(shift2.services[0].start)
+  const shift1Start = new Date(shift1.services[0].start)
+  const shift2End = new Date(shift2.services[shift2.services.length - 1].end)
+  
+  // Calculate travel time between shifts
   const lastService = shift1.services[shift1.services.length - 1]
   const firstNewService = shift2.services[0]
-  const lastEnd = new Date(lastService.end)
-  const newStart = new Date(firstNewService.start)
-  
-  // Calculate travel time between services
   const distance = getDistance(lastService, firstNewService, distanceMatrix)
   const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
   
-  // Earliest possible start time for the new service
-  const earliestPossibleStart = new Date(lastEnd.getTime() + (travelTime * 60 * 1000))
+  // Add buffer for travel time
+  const earliestPossibleStart = new Date(shift1End.getTime() + (travelTime * 60 * 1000))
   
-  // Check if new service starts after previous ends + travel time
-  if (newStart < earliestPossibleStart) return false
+  // If second shift starts after travel time from first shift, they can potentially merge
+  if (shift2Start >= earliestPossibleStart) {
+    // Check if total shift duration would be reasonable
+    const totalDuration = (shift2End - shift1Start) / (60 * 60 * 1000)
+    if (totalDuration <= HOURS_PER_SHIFT) return true
+  }
 
-  // Calculate total shift duration including new service
-  const shiftStart = new Date(shift1.services[0].start)
-  const newEnd = new Date(firstNewService.end)
-  const totalDuration = (newEnd - shiftStart) / (60 * 60 * 1000)
-  
-  // Ensure shift doesn't exceed 8 hours
-  if (totalDuration > 8) return false
-
-  return true
+  return false
 }
 
-function mergeShifts(shift1, shift2, distanceMatrix) {
-  const lastService = shift1.services[shift1.services.length - 1]
-  const firstNewService = shift2.services[0]
-  const lastEnd = new Date(lastService.end)
+function tryMergeShifts(shifts, distanceMatrix) {
+  let merged = false
   
-  const distance = getDistance(lastService, firstNewService, distanceMatrix)
-  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+  // Sort shifts by number of services (try to merge smaller shifts first)
+  shifts.sort((a, b) => a.services.length - b.services.length)
   
-  // Calculate actual start time for the new service
-  const newStartTime = new Date(lastEnd.getTime() + travelTime * 60000)
-  
-  // Ensure the new start time is within the service's time window
-  const latestAllowedStart = new Date(firstNewService.time.range[1])
-  if (newStartTime > latestAllowedStart) {
-    return null
-  }
-
-  // Create merged services array
-  const mergedServices = [...shift1.services]
-  
-  // Adjust times for all services from shift2
-  let currentTime = newStartTime
-  for (const service of shift2.services) {
-    // Calculate travel time from previous service
-    const prevService = mergedServices[mergedServices.length - 1]
-    const dist = prevService ? getDistance(prevService, service, distanceMatrix) : 0
-    const travel = dist <= 0.2 ? 0 : calculateTravelTime(dist)
+  for (let i = 0; i < shifts.length; i++) {
+    const shift1 = shifts[i]
     
-    // Set new start time after travel
-    const serviceStart = new Date(currentTime.getTime() + travel * 60000)
-    const serviceEnd = new Date(serviceStart.getTime() + service.time.duration * 60000)
+    // Skip if shift already has many services
+    if (shift1.services.length >= 12) continue
     
-    // Verify this service is within its time window
-    if (serviceStart > new Date(service.time.range[1])) {
-      return null
+    for (let j = i + 1; j < shifts.length; j++) {
+      const shift2 = shifts[j]
+      
+      if (canMergeShifts(shift1, shift2, distanceMatrix)) {
+        // Merge shift2 into shift1
+        const mergedServices = [...shift1.services, ...shift2.services].map(service => ({
+          ...service,
+          cluster: shift1.cluster, // Preserve cluster from first shift
+          techId: shift1.techId // Preserve tech from first shift
+        }))
+        
+        // Sort services within shift by start time
+        shift1.services = mergedServices.sort((a, b) => 
+          new Date(a.start).getTime() - new Date(b.start).getTime()
+        )
+        
+        // Update service relationships
+        updateServiceRelationships(shift1.services, distanceMatrix)
+        
+        // Remove shift2
+        shifts.splice(j, 1)
+        merged = true
+        break
+      }
     }
     
-    // Add service with adjusted times
-    mergedServices.push({
-      ...service,
-      start: serviceStart.toISOString(),
-      end: serviceEnd.toISOString(),
-      distanceFromPrevious: dist,
-      travelTimeFromPrevious: travel,
-      previousService: prevService?.id || null,
-      previousCompany: prevService?.company || null
-    })
-    
-    currentTime = serviceEnd
+    if (merged) break
   }
-
-  // Verify total shift duration
-  const totalDuration = (currentTime - new Date(shift1.services[0].start)) / (60 * 60 * 1000)
-  if (totalDuration > HOURS_PER_SHIFT) {
-    return null
-  }
-
-  return {
-    services: mergedServices,
-    mergeAttempts: Math.max(shift1.mergeAttempts, shift2.mergeAttempts) + 1
-  }
+  
+  return merged
 }
 
 function findMergeCandidates(shift, shiftsByTime, i, distanceMatrix) {
