@@ -77,7 +77,6 @@ export function logClusterServices(clusterServices) {
 export function logTechServices(techServices) {
   if (!techServices?.length) return
 
-  // Sort services by start time first, then by sequence number if times are equal
   const sortedServices = [...techServices].sort((a, b) => {
     const timeA = new Date(a.start).getTime()
     const timeB = new Date(b.start).getTime()
@@ -128,6 +127,11 @@ export function logTechServices(techServices) {
     const location = service.location ? 
       `(${service.location.latitude.toFixed(3)}, ${service.location.longitude.toFixed(3)})` : ''
     
+    // Format time range
+    const rangeStart = dayjs(service.time.range[0]).format('h:mm A')
+    const rangeEnd = dayjs(service.time.range[1]).format('h:mm A')
+    const timeRange = `${rangeStart} - ${rangeEnd})`
+    
     const prevService = i > 0 ? sortedServices[i - 1] : null
     const travelInfo = prevService && !overlapsWithCurrent
       ? ` (${distance} mi, ${travelTime}m from ${prevService.company})`
@@ -136,7 +140,7 @@ export function logTechServices(techServices) {
     const conflictWarning = overlapsWithCurrent ? ' ⚠️ CONFLICT' : ''
     
     console.log(
-      `  ${i + 1}. ${startTime} - ${endTime} - ${service.company} ${location}${travelInfo}${conflictWarning}`,
+      `  ${i + 1}. ${startTime} - ${endTime} - ${service.company} ${location} ${timeRange}${travelInfo}${conflictWarning}`,
     )
   }
 
