@@ -123,7 +123,15 @@ export function logTechServices(techServices) {
       ? travelTimes.reduce((sum, t) => sum + t, 0) / travelTimes.length
       : 0
 
-  console.log('')
+  console.log(
+    `  Stats: ${totalDistance.toFixed(1)}mi total, ${totalTravelTime}m travel time`,
+  )
+  console.log(
+    `  Averages: ${avgDistance.toFixed(1)}mi distance, ${Math.round(
+      avgTravelTime,
+    )}m travel time`,
+  )
+  console.log()
 }
 
 export function logScheduleActivity({ services, clusteringInfo }) {
@@ -173,16 +181,7 @@ export function logScheduleActivity({ services, clusteringInfo }) {
 
   // Log tech details
   console.log('\nTech Details:')
-  
-  // Sort tech IDs numerically by the number portion
-  const sortedTechIds = [...servicesByTech.keys()].sort((a, b) => {
-    const numA = parseInt(a.replace('Tech ', ''))
-    const numB = parseInt(b.replace('Tech ', ''))
-    return numA - numB
-  })
-
-  for (const techId of sortedTechIds) {
-    const services = servicesByTech.get(techId)
+  for (const [techId, services] of servicesByTech) {
     const sortedServices = [...services].sort((a, b) => {
       if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
         return a.sequenceNumber - b.sequenceNumber
@@ -190,5 +189,11 @@ export function logScheduleActivity({ services, clusteringInfo }) {
       return new Date(a.start) - new Date(b.start)
     })
     logTechServices(sortedServices)
+  }
+
+  // Log company distribution
+  console.log('\nCompany Distribution:')
+  for (const [company, services] of servicesByCompany) {
+    console.log(`${company}: ${services.length} services`)
   }
 }
