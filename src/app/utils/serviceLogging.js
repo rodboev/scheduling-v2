@@ -75,63 +75,89 @@ export function logClusterServices(clusterServices) {
 }
 
 export function logTechServices(techServices) {
-  const firstService = techServices[0]
-  const lastService = techServices[techServices.length - 1]
+  if (!techServices?.length) return
+
+  // Sort services by start time first, then by sequence number if times are equal
+  const sortedServices = [...techServices].sort((a, b) => {
+    const timeA = new Date(a.start).getTime()
+    const timeB = new Date(b.start).getTime()
+    return timeA - timeB
+  })
+
+  const firstService = sortedServices[0]
+  const lastService = sortedServices[sortedServices.length - 1]
 
   // Format times
   const startTime = dayjs(firstService.start).format('h:mm A')
   const endTime = dayjs(lastService.end).format('h:mm A')
 
-  // Calculate total distance and travel time
-  const totalDistance = techServices.reduce(
-    (sum, service) => sum + (service.distanceFromPrevious || 0),
-    0,
-  )
-  const totalTravelTime = techServices.reduce(
-    (sum, service) => sum + (service.travelTimeFromPrevious || 0),
-    0,
-  )
-
   // Log tech header
   console.log(`${firstService.techId} (${startTime} - ${endTime}):`)
 
-  // Log tech services
-  for (const [i, service] of techServices.entries()) {
-    const time = dayjs(service.start).format('h:mm A')
-    const duration = service.time.duration
-    const distance = service.distanceFromPrevious?.toFixed(1) || 0
+  // Track overlapping services
+  const overlappingGroups = []
+  let currentGroup = []
+
+  // Log tech services in scheduled order
+  for (const [i, service] of sortedServices.entries()) {
+    if (!service.start || !service.end || !service.location) continue
+
+    // Check if this service overlaps with any in the current group
+    const serviceStart = new Date(service.start).getTime()
+    const serviceEnd = new Date(service.end).getTime()
+    
+    const overlapsWithCurrent = currentGroup.some(s => {
+      const existingStart = new Date(s.start).getTime()
+      const existingEnd = new Date(s.end).getTime()
+      return (serviceStart < existingEnd && serviceEnd > existingStart)
+    })
+
+    if (overlapsWithCurrent) {
+      currentGroup.push(service)
+    } else {
+      if (currentGroup.length > 1) {
+        overlappingGroups.push([...currentGroup])
+      }
+      currentGroup = [service]
+    }
+
+    const startTime = dayjs(service.start).format('h:mm A')
+    const endTime = dayjs(service.end).format('h:mm A')
+    const distance = service.distanceFromPrevious?.toFixed(1) || '0.0'
     const travelTime = service.travelTimeFromPrevious || 0
+    const location = service.location ? 
+      `(${service.location.latitude.toFixed(3)}, ${service.location.longitude.toFixed(3)})` : ''
+    
+    const prevService = i > 0 ? sortedServices[i - 1] : null
+    const travelInfo = prevService && !overlapsWithCurrent
+      ? ` (${distance} mi, ${travelTime}m from ${prevService.company})`
+      : ''
+    
+    const conflictWarning = overlapsWithCurrent ? ' ⚠️ CONFLICT' : ''
+    
     console.log(
-      `  ${i + 1}. ${time} (${duration}m) - ${service.company} (${distance}mi, ${travelTime}m travel)`,
+      `  ${i + 1}. ${startTime} - ${endTime} - ${service.company} ${location}${travelInfo}${conflictWarning}`,
     )
   }
 
-  // Print tech stats
-  const distances = techServices
-    .map(s => s.distanceFromPrevious || 0)
-    .filter(d => d > 0)
-  const avgDistance =
-    distances.length > 0
-      ? distances.reduce((sum, d) => sum + d, 0) / distances.length
-      : 0
+  // Check last group
+  if (currentGroup.length > 1) {
+    overlappingGroups.push([...currentGroup])
+  }
 
-  const travelTimes = techServices
-    .map(s => s.travelTimeFromPrevious || 0)
-    .filter(t => t > 0)
-  const avgTravelTime =
-    travelTimes.length > 0
-      ? travelTimes.reduce((sum, t) => sum + t, 0) / travelTimes.length
-      : 0
+  // Log conflicts summary if any exist
+  if (overlappingGroups.length > 0) {
+    console.log('\n  ⚠️ Scheduling Conflicts:')
+    for (const [index, group] of overlappingGroups.entries()) {
+      console.log(`  Conflict Group ${index + 1}:`)
+      for (const service of group) {
+        const time = `${dayjs(service.start).format('h:mm A')} - ${dayjs(service.end).format('h:mm A')}`
+        console.log(`    - ${time} ${service.company}`)
+      }
+    }
+  }
 
-  console.log(
-    `  Stats: ${totalDistance.toFixed(1)}mi total, ${totalTravelTime}m travel time`,
-  )
-  console.log(
-    `  Averages: ${avgDistance.toFixed(1)}mi distance, ${Math.round(
-      avgTravelTime,
-    )}m travel time`,
-  )
-  console.log()
+  console.log('')
 }
 
 export function logScheduleActivity({ services, clusteringInfo }) {
@@ -140,60 +166,41 @@ export function logScheduleActivity({ services, clusteringInfo }) {
     return
   }
 
-  console.log('Clustering info:', clusteringInfo)
-
-  // Log clustering performance metrics
-  console.log('\nScheduling Performance:')
-  console.log(`Runtime: ${clusteringInfo.performanceDuration}ms`)
-  console.log(`Total techs: ${Object.keys(clusteringInfo.techAssignments || {}).length}`)
-  console.log(`Connected points: ${clusteringInfo.connectedPointsCount}`)
-
-  // Log tech statistics
-  const techs = new Set(services.map(s => s.techId).filter(Boolean))
-  console.log('\nTech Statistics:')
-  console.log(`Number of techs: ${techs.size}`)
-
-  // Calculate average services per tech
-  const servicesWithTechs = services.filter(s => s.techId).length
-  const avgServicesPerTech = servicesWithTechs / techs.size
-  console.log(`Average services per tech: ${avgServicesPerTech.toFixed(2)}`)
-
-  // Group services by tech
+  // Group services by tech, only including valid scheduled services
   const servicesByTech = new Map()
-  const servicesByCompany = new Map()
+  const scheduledServices = services.filter(s => (
+    s.techId && 
+    s.start && 
+    s.end && 
+    s.location &&
+    !isNaN(new Date(s.start).getTime()) && // Ensure valid dates
+    !isNaN(new Date(s.end).getTime())
+  ))
 
-  for (const service of services) {
-    // Group by tech
-    if (service.techId) {
-      if (!servicesByTech.has(service.techId)) {
-        servicesByTech.set(service.techId, [])
-      }
-      servicesByTech.get(service.techId).push(service)
+  for (const service of scheduledServices) {
+    if (!servicesByTech.has(service.techId)) {
+      servicesByTech.set(service.techId, [])
     }
-
-    // Group by company
-    const company = service.company
-    if (!servicesByCompany.has(company)) {
-      servicesByCompany.set(company, [])
-    }
-    servicesByCompany.get(company).push(service)
+    servicesByTech.get(service.techId).push(service)
   }
+
+  // Sort techs numerically
+  const sortedTechIds = [...servicesByTech.keys()].sort((a, b) => {
+    const numA = parseInt(a.replace('Tech ', ''))
+    const numB = parseInt(b.replace('Tech ', ''))
+    return numA - numB
+  })
 
   // Log tech details
   console.log('\nTech Details:')
-  for (const [techId, services] of servicesByTech) {
-    const sortedServices = [...services].sort((a, b) => {
-      if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
-        return a.sequenceNumber - b.sequenceNumber
-      }
-      return new Date(a.start) - new Date(b.start)
-    })
-    logTechServices(sortedServices)
+  for (const techId of sortedTechIds) {
+    const services = servicesByTech.get(techId)
+    logTechServices(services)
   }
 
-  // Log company distribution
-  console.log('\nCompany Distribution:')
-  for (const [company, services] of servicesByCompany) {
-    console.log(`${company}: ${services.length} services`)
-  }
+  // Log performance metrics at the end
+  console.log('\nScheduling Performance:')
+  console.log(`Runtime: ${clusteringInfo.performanceDuration}ms`)
+  console.log(`Total techs: ${servicesByTech.size}`)
+  console.log(`Scheduled services: ${scheduledServices.length}`)
 }
