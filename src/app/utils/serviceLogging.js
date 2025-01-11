@@ -173,7 +173,16 @@ export function logScheduleActivity({ services, clusteringInfo }) {
 
   // Log tech details
   console.log('\nTech Details:')
-  for (const [techId, services] of servicesByTech) {
+  
+  // Sort tech IDs numerically by the number portion
+  const sortedTechIds = [...servicesByTech.keys()].sort((a, b) => {
+    const numA = parseInt(a.replace('Tech ', ''))
+    const numB = parseInt(b.replace('Tech ', ''))
+    return numA - numB
+  })
+
+  for (const techId of sortedTechIds) {
+    const services = servicesByTech.get(techId)
     const sortedServices = [...services].sort((a, b) => {
       if (a.sequenceNumber !== undefined && b.sequenceNumber !== undefined) {
         return a.sequenceNumber - b.sequenceNumber
