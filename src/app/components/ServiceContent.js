@@ -25,7 +25,7 @@ export default function ServiceContent({ service }) {
           href={`https://app.pestpac.com/location/detail.asp?LocationID=${service.location.id}`}
           target="_new"
         >
-          <div>{capitalize(service.company)}</div>
+          <div>{capitalize(service.company)} ({service.placementOrder})</div>
           <div className="text-sm font-semibold">#{service.location.code}</div>
         </a>
       </h3>
