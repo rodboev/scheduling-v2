@@ -17,10 +17,21 @@ import {
 } from '../../utils/constants.js'
 import { getBorough } from '../../utils/boroughs.js'
 import { calculateTravelTime } from '../../map/utils/travelTime.js'
-import dayjs from 'dayjs'
+import { dayjsInstance as dayjs } from '../../utils/dayjs.js'
 import { findShiftGaps, canFitInGap, findGaps } from '../../utils/gaps.js'
 
 const SCORE_CACHE = new Map() // Cache for service compatibility scores
+
+// Track placement orders by tech and day
+const placementOrdersByTechDay = new Map() // Map<techId_date, number>
+
+function getNextPlacementOrder(techId, date) {
+  const key = `${techId}_${dayjs(date).format('YYYY-MM-DD')}`
+  const current = placementOrdersByTechDay.get(key) || 0
+  const next = current + 1
+  placementOrdersByTechDay.set(key, next)
+  return next
+}
 
 // Track tech start times across days
 const techStartTimes = new Map()
@@ -33,6 +44,53 @@ const MIN_REST_HOURS = 14
 const TARGET_REST_HOURS = 16
 const MIN_REST_MS = MIN_REST_HOURS * 60 * 60 * 1000
 const TARGET_REST_MS = TARGET_REST_HOURS * 60 * 60 * 1000
+
+// Helper function to calculate gap penalty
+function calculateGapPenalty(gapDuration) {
+  // Strongly penalize gaps over 2 hours
+  if (gapDuration > 2 * 60 * 60 * 1000) {
+    return -1000 * (gapDuration / (60 * 60 * 1000))
+  }
+  // Moderate penalty for gaps between 1-2 hours
+  if (gapDuration > 60 * 60 * 1000) {
+    return -500 * (gapDuration / (60 * 60 * 1000))
+  }
+  // Small penalty for gaps between 30-60 minutes
+  if (gapDuration > 30 * 60 * 1000) {
+    return -100 * (gapDuration / (60 * 60 * 1000))
+  }
+  // Minimal penalty for small gaps
+  return -10 * (gapDuration / (60 * 60 * 1000))
+}
+
+// Enhance calculateFitScore to consider gaps
+function calculateEnhancedFitScore(service, shift, tryStart, meanStartTime, distanceMatrix) {
+  const baseScore = calculateFitScore(service, shift, tryStart, meanStartTime, distanceMatrix)
+  
+  // Calculate gap penalties
+  let gapPenalty = 0
+  if (shift.services.length > 0) {
+    const sortedServices = [...shift.services].sort((a, b) => 
+      new Date(a.start).getTime() - new Date(b.start).getTime()
+    )
+    
+    // Find adjacent services
+    const prevService = sortedServices.find(s => new Date(s.end) <= tryStart)
+    const nextService = sortedServices.find(s => new Date(s.start) >= new Date(tryStart).getTime() + service.duration * 60000)
+    
+    if (prevService) {
+      const gap = new Date(tryStart).getTime() - new Date(prevService.end).getTime()
+      gapPenalty += calculateGapPenalty(gap)
+    }
+    
+    if (nextService) {
+      const gap = new Date(nextService.start).getTime() - (new Date(tryStart).getTime() + service.duration * 60000)
+      gapPenalty += calculateGapPenalty(gap)
+    }
+  }
+  
+  return baseScore + gapPenalty
+}
 
 function parseDate(dateStr) {
   const date = new Date(dateStr)
@@ -399,12 +457,31 @@ function processServices(services, distanceMatrix) {
   try {
     const startTime = performance.now()
     SCORE_CACHE.clear()
+    placementOrdersByTechDay.clear() // Clear placement orders at start of processing
 
     console.log('Worker received services:', services.length)
     
     // Track scheduled services by ID AND start time to catch duplicates with different times
     const scheduledServiceTracker = new Map() // Map<serviceId, Set<startTime>>
     
+    // Helper function to schedule a service
+    const scheduleService = (service, shift, matchInfo) => {
+      const techId = `Tech ${shift.cluster}`
+      const order = getNextPlacementOrder(techId, matchInfo.start)
+      
+      const scheduledService = createScheduledService(service, shift, matchInfo, distanceMatrix)
+      scheduledService.placementOrder = order
+      shift.services.push(scheduledService)
+      
+      // Track the scheduled service
+      if (!scheduledServiceTracker.has(service.id)) {
+        scheduledServiceTracker.set(service.id, new Set())
+      }
+      scheduledServiceTracker.get(service.id).add(new Date(matchInfo.start).getTime())
+      
+      return scheduledService
+    }
+
     // Pre-track any services that already have start/end times
     services.forEach(service => {
       if (service.start && service.end) {
@@ -412,6 +489,10 @@ function processServices(services, distanceMatrix) {
           scheduledServiceTracker.set(service.id, new Set())
         }
         scheduledServiceTracker.get(service.id).add(new Date(service.start).getTime())
+        
+        // Also track placement order
+        const order = getNextPlacementOrder(service.tech.code, service.start)
+        service.placementOrder = order
       }
     })
     
@@ -510,7 +591,7 @@ function processServices(services, distanceMatrix) {
 
           const matchInfo = tryFitServiceInShift(service, shift, shifts, distanceMatrix)
           if (matchInfo && !isServiceScheduled(service.id, matchInfo.start)) {
-            const score = calculateFitScore(service, shift, matchInfo.start, service.meanStartTime, distanceMatrix)
+            const score = calculateEnhancedFitScore(service, shift, matchInfo.start, service.meanStartTime, distanceMatrix)
             if (score > bestScore) {
               bestScore = score
               bestMatch = matchInfo
@@ -534,14 +615,8 @@ function processServices(services, distanceMatrix) {
 
         // Only schedule if we haven't already scheduled this service at this time
         if (!isServiceScheduled(service.id, bestMatch.start)) {
-          const techId = `Tech ${bestShift.cluster}`
-          const placementOrder = (placementOrderByTech.get(techId) || 0) + 1
-          placementOrderByTech.set(techId, placementOrder)
-
-          const scheduledService = createScheduledService(service, bestShift, bestMatch, distanceMatrix)
-          scheduledService.placementOrder = placementOrder
-          bestShift.services.push(scheduledService)
-          trackScheduledService(service.id, bestMatch.start)
+          const scheduledService = scheduleService(service, bestShift, bestMatch)
+          console.log('Scheduled service with order:', scheduledService.placementOrder)
         }
       }
 
@@ -746,7 +821,6 @@ function tryMergeShifts(shifts, distanceMatrix) {
         const firstService = shift2.services[0]
         const distance = getDistance(lastService, firstService, distanceMatrix)
 
-        // Rest of existing merge validation...
         if (!distance || distance > HARD_MAX_RADIUS_MILES) continue
         
         const travelTime = calculateTravelTime(distance)
@@ -757,14 +831,34 @@ function tryMergeShifts(shifts, distanceMatrix) {
         const totalServices = shift1.services.length + shift2.services.length
         if (totalServices > 14) continue
 
-        const combinedServices = [...shift1.services, ...shift2.services]
+        const combinedServices = [...shift1.services]
+        
+        // Update placement orders for shift2 services
+        const techId = `Tech ${shift1.cluster}`
+        
+        // Add shift2 services with new placement orders
+        for (const service of shift2.services) {
+          const serviceDate = service.start || service.time.range[0]
+          const order = getNextPlacementOrder(techId, serviceDate)
+          combinedServices.push({
+            ...service,
+            placementOrder: order,
+            cluster: shift1.cluster
+          })
+        }
+        
         const workingDuration = calculateWorkingDuration(combinedServices)
-
         if (workingDuration > SHIFT_DURATION) continue
 
-        // If we get here, merge is possible and we know services are unique
-        // ... rest of merge logic ...
+        // If we get here, merge is possible
+        shift1.services = combinedServices
+        shift1.mergeAttempts++
+        shift2.mergeAttempts++
+        shifts.splice(j, 1)
+        merged = true
+        break
       }
+      if (merged) break
     }
   } while (merged)
 
@@ -1029,67 +1123,79 @@ function canAddServiceToShift(service, shift, existingShifts, distanceMatrix) {
   return true
 }
 
+function isWithinTimeWindow(tryStart, tryEnd, timeWindow) {
+  // Convert all times to NY timezone using dayjs
+  const timeZone = 'America/New_York'
+  const localTryStart = dayjs(tryStart).tz(timeZone)
+  const localTryEnd = dayjs(tryEnd).tz(timeZone)
+  const localWindowStart = dayjs(timeWindow[0]).tz(timeZone)
+  const localWindowEnd = dayjs(timeWindow[1]).tz(timeZone)
+
+  // Get time-only values for comparison (in minutes since midnight)
+  const tryStartMinutes = localTryStart.hour() * 60 + localTryStart.minute()
+  const tryEndMinutes = localTryEnd.hour() * 60 + localTryEnd.minute()
+  const windowStartMinutes = localWindowStart.hour() * 60 + localWindowStart.minute()
+  const windowEndMinutes = localWindowEnd.hour() * 60 + localWindowEnd.minute()
+
+  // Handle cases where window crosses midnight
+  if (windowEndMinutes < windowStartMinutes) {
+    // Window crosses midnight (e.g., 11:00 PM - 2:00 AM)
+    return (tryStartMinutes >= windowStartMinutes || tryStartMinutes <= windowEndMinutes) &&
+           (tryEndMinutes >= windowStartMinutes || tryEndMinutes <= windowEndMinutes)
+  } else {
+    // Normal window within same day
+    return tryStartMinutes >= windowStartMinutes && tryEndMinutes <= windowEndMinutes
+  }
+}
+
 function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
-  // Create a snapshot of current service IDs in the shift for atomic checking
+  // Track current services to prevent duplicates
   const currentShiftServiceIds = new Set(shift.services.map(s => s.id))
   const currentTechServiceIds = new Set()
   
-  // Gather all service IDs for this tech on this day
-  const serviceDate = dayjs(service.time.range[0]).format('YYYY-MM-DD')
-  shifts.forEach(otherShift => {
-    if (otherShift.techId === shift.techId) {
-      otherShift.services.forEach(s => {
-        const otherDate = dayjs(s.time.range[0]).format('YYYY-MM-DD')
-        if (serviceDate === otherDate) {
-          currentTechServiceIds.add(s.id)
-        }
-      })
+  // Get all services for this tech on this day
+  for (const s of shifts.flatMap(s => s.services)) {
+    if (s.tech === service.tech) {
+      currentTechServiceIds.add(s.id)
     }
-  })
-
-  // Atomic duplicate checking
-  if (currentShiftServiceIds.has(service.id)) {
-    console.log('Prevented duplicate service in shift (atomic check):', service.id, shift.techId)
-    return null
   }
 
-  if (currentTechServiceIds.has(service.id)) {
-    console.log('Prevented duplicate service for tech on same day (atomic check):', service.id, shift.techId)
+  // Prevent duplicates
+  if (currentShiftServiceIds.has(service.id) || currentTechServiceIds.has(service.id)) {
+    console.log('Duplicate service prevented:', service.id)
     return null
   }
 
   const serviceDuration = service.duration * 60000
-  const timeWindowStart = new Date(service.time.range[0])
-  const timeWindowEnd = new Date(service.time.range[1])
   
-  // Helper function to validate time window
-  const isWithinTimeWindow = (tryStart, tryEnd) => {
-    // Both start and end must be within the original time window
-    return tryStart >= timeWindowStart && 
-           tryStart <= timeWindowEnd &&
-           tryEnd >= timeWindowStart &&
-           tryEnd <= timeWindowEnd
+  // Helper function to validate time window and check for conflicts
+  const validateTimeSlot = (tryStart, tryEnd) => {
+    // Strict time window validation
+    if (!isWithinTimeWindow(tryStart, tryEnd, service.time.range)) {
+      console.log('Service outside time window:', service.id, 
+        new Date(tryStart).toLocaleTimeString(), 
+        new Date(tryEnd).toLocaleTimeString(),
+        'Window:', new Date(service.time.range[0]).toLocaleTimeString(),
+        new Date(service.time.range[1]).toLocaleTimeString())
+      return false
+    }
+
+    const mockService = { ...service, start: tryStart, end: tryEnd }
+    if (!canAddServiceToShift(mockService, shift, shifts, distanceMatrix)) {
+      console.log('Service conflicts with existing services:', service.id)
+      return false
+    }
+
+    return true
   }
-  
+
   // If this is the first service in the shift, use mean time
   if (shift.services.length === 0) {
     const meanStartTime = service.meanStartTime
     const tryStart = new Date(meanStartTime)
     const tryEnd = new Date(tryStart.getTime() + serviceDuration)
     
-    // Verify this time window works
-    if (isWithinTimeWindow(tryStart, tryEnd)) {
-      const mockService = { ...service, start: tryStart, end: tryEnd }
-      if (!canAddServiceToShift(mockService, shift, shifts, distanceMatrix)) {
-        return null
-      }
-
-      // Double-check no duplicates were added while we were checking
-      if (currentShiftServiceIds.has(service.id) || currentTechServiceIds.has(service.id)) {
-        console.log('Late duplicate detection prevented service addition:', service.id)
-        return null
-      }
-
+    if (validateTimeSlot(tryStart, tryEnd)) {
       return {
         start: tryStart,
         end: tryEnd,
@@ -1098,7 +1204,7 @@ function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
     }
     return null
   }
-  
+
   // For subsequent services, try to pack tightly before or after existing services
   const sortedServices = [...shift.services].sort((a, b) => 
     new Date(a.start).getTime() - new Date(b.start).getTime()
@@ -1107,7 +1213,7 @@ function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
   // Try each possible placement, checking rest periods
   const tryPlacements = []
 
-  // Try before first
+  // Try before first service
   const firstService = sortedServices[0]
   const firstServiceStart = new Date(firstService.start)
   const distance = getDistance(service, firstService, distanceMatrix)
@@ -1117,26 +1223,19 @@ function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
     const tryEndTime = new Date(firstServiceStart.getTime() - (travelTime * 60000))
     const tryStartTime = new Date(tryEndTime.getTime() - serviceDuration)
     
-    if (isWithinTimeWindow(tryStartTime, tryEndTime)) {
-      const mockService = { ...service, start: tryStartTime, end: tryEndTime }
-      
-      // Verify no overlaps AND no duplicates atomically
-      if (canAddServiceToShift(mockService, shift, shifts, distanceMatrix) &&
-          !currentShiftServiceIds.has(service.id) && 
-          !currentTechServiceIds.has(service.id)) {
-        const score = calculateFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
-        if (score > -Infinity) {
-          tryPlacements.push({
-            start: tryStartTime,
-            end: tryEndTime,
-            score
-          })
-        }
+    if (validateTimeSlot(tryStartTime, tryEndTime)) {
+      const score = calculateEnhancedFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
+      if (score > -Infinity) {
+        tryPlacements.push({
+          start: tryStartTime,
+          end: tryEndTime,
+          score
+        })
       }
     }
   }
 
-  // Try after last
+  // Try after last service
   const lastService = sortedServices[sortedServices.length - 1]
   const lastServiceEnd = new Date(lastService.end)
   const lastDistance = getDistance(lastService, service, distanceMatrix)
@@ -1146,21 +1245,14 @@ function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
     const tryStartTime = new Date(lastServiceEnd.getTime() + (travelTime * 60000))
     const tryEndTime = new Date(tryStartTime.getTime() + serviceDuration)
     
-    if (isWithinTimeWindow(tryStartTime, tryEndTime)) {
-      const mockService = { ...service, start: tryStartTime, end: tryEndTime }
-      
-      // Verify no overlaps AND no duplicates atomically
-      if (canAddServiceToShift(mockService, shift, shifts, distanceMatrix) &&
-          !currentShiftServiceIds.has(service.id) && 
-          !currentTechServiceIds.has(service.id)) {
-        const score = calculateFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
-        if (score > -Infinity) {
-          tryPlacements.push({
-            start: tryStartTime,
-            end: tryEndTime,
-            score
-          })
-        }
+    if (validateTimeSlot(tryStartTime, tryEndTime)) {
+      const score = calculateEnhancedFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
+      if (score > -Infinity) {
+        tryPlacements.push({
+          start: tryStartTime,
+          end: tryEndTime,
+          score
+        })
       }
     }
   }
@@ -1191,25 +1283,22 @@ function tryFitServiceInShift(service, shift, shifts, distanceMatrix) {
     
     // Check if service duration fits in this gap
     if (latestEnd.getTime() - earliestStart.getTime() >= serviceDuration) {
-      // Try to place as early as possible in the gap while respecting time window
-      let tryStartTime = earliestStart
-      if (tryStartTime < timeWindowStart) {
-        tryStartTime = new Date(timeWindowStart)
+      // Try to place at mean time if possible, otherwise as early as possible
+      let tryStartTime = new Date(service.meanStartTime)
+      if (tryStartTime < earliestStart) {
+        tryStartTime = earliestStart
       }
       
       const tryEndTime = new Date(tryStartTime.getTime() + serviceDuration)
       
-      if (isWithinTimeWindow(tryStartTime, tryEndTime) && tryEndTime <= latestEnd) {
-        const mockService = { ...service, start: tryStartTime, end: tryEndTime }
-        if (canAddServiceToShift(mockService, shift, shifts, distanceMatrix)) {
-          const score = calculateFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
-          if (score > -Infinity) {
-            tryPlacements.push({
-              start: tryStartTime,
-              end: tryEndTime,
-              score
-            })
-          }
+      if (validateTimeSlot(tryStartTime, tryEndTime) && tryEndTime <= latestEnd) {
+        const score = calculateEnhancedFitScore(service, shift, tryStartTime, service.meanStartTime, distanceMatrix)
+        if (score > -Infinity) {
+          tryPlacements.push({
+            start: tryStartTime,
+            end: tryEndTime,
+            score
+          })
         }
       }
     }
