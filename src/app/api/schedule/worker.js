@@ -781,9 +781,12 @@ function processServices(services, distanceMatrix) {
           const remainingServices = regularServices.filter(s => !scheduledServiceTracker.has(s.id))
           const newShift = createNewShift(service, shifts, distanceMatrix)
           bestShift = newShift
+          
+          // Use earliest allowed start time for new shifts
+          const earliestStart = new Date(service.time.range[0])
           bestMatch = {
-            start: service.meanStartTime,
-            end: new Date(service.meanStartTime.getTime() + service.duration * 60000),
+            start: earliestStart,
+            end: new Date(earliestStart.getTime() + service.duration * 60000),
             score: 0
           }
           shifts.push(newShift)
@@ -1409,62 +1412,61 @@ function isWithinTimeWindow(tryStart, tryEnd, timeWindow) {
 }
 
 function tryFitServiceInShift(service, shift, proposedStartOrShifts, distanceMatrix) {
-  // Get proposed start time
-  let proposedStart = proposedStartOrShifts instanceof Date || typeof proposedStartOrShifts === 'string'
-    ? new Date(proposedStartOrShifts)
-    : new Date(service.meanStartTime)
-
-  // If we have a previous service, adjust for travel time
-  if (shift.services.length > 0 && distanceMatrix) {
-    const lastService = shift.services[shift.services.length - 1]
-    const distance = getDistance(lastService, service, distanceMatrix) || 0
-    const travelTime = calculateTravelTime(distance)
-    const earliestPossibleStart = new Date(new Date(lastService.end).getTime() + travelTime * 60000)
-    
-    // Use the later of the proposed start or earliest possible start
-    if (earliestPossibleStart > proposedStart) {
-      proposedStart = earliestPossibleStart
-    }
-  }
-
-  if (isNaN(proposedStart.getTime())) {
-    return false
-  }
-
-  // Check time window constraints
+  // First check: validate time window
   const timeWindow = service.time.range
   if (!timeWindow || !timeWindow[0] || !timeWindow[1]) return false
   
   const earliestStart = new Date(timeWindow[0])
   const latestStart = new Date(timeWindow[1])
-  
-  // The proposed start must be between earliest and latest start times
-  const proposedStartTime = proposedStart.getTime()
-  if (proposedStartTime < earliestStart.getTime() || proposedStartTime > latestStart.getTime()) {
-    console.log(`Service ${service.id} proposed start ${proposedStart.toISOString()} outside allowed window ${earliestStart.toISOString()} - ${latestStart.toISOString()}`)
+
+  // Get proposed start time
+  let proposedStart
+  if (proposedStartOrShifts instanceof Date || typeof proposedStartOrShifts === 'string') {
+    // If given a specific time, use it
+    proposedStart = new Date(proposedStartOrShifts)
+  } else if (shift.services.length > 0) {
+    // If we have previous services, calculate based on last service
+    const lastService = shift.services[shift.services.length - 1]
+    const distance = getDistance(lastService, service, distanceMatrix) || 0
+    const travelTime = calculateTravelTime(distance)
+    proposedStart = new Date(new Date(lastService.end).getTime() + travelTime * 60000)
+  } else {
+    // For first service in shift, use earliest allowed start time
+    proposedStart = earliestStart
+  }
+
+  // If proposed start is before earliest allowed start, use earliest start
+  if (proposedStart < earliestStart) {
+    proposedStart = earliestStart
+  }
+
+  // If proposed start is after latest allowed start, reject immediately
+  if (proposedStart > latestStart) {
+    console.log(`Service ${service.id} (${service.company}) proposed start ${proposedStart.toISOString()} is after latest allowed start ${latestStart.toISOString()}`)
     return false
   }
-  
+
   // Check for overlaps with existing services
   for (const existingService of shift.services) {
     const existingStart = new Date(existingService.start)
     const existingEnd = new Date(existingService.end)
+    const proposedEnd = new Date(proposedStart.getTime() + service.duration * 60000)
     
-    if (proposedStart < existingEnd && new Date(proposedStart.getTime() + service.duration * 60000) > existingStart) {
+    if (proposedStart < existingEnd && proposedEnd > existingStart) {
       return false
     }
   }
-  
+
   // Check shift span including the proposed service
   const proposedEnd = new Date(proposedStart.getTime() + service.duration * 60000)
   const testServices = [...shift.services, { start: proposedStart.toISOString(), end: proposedEnd.toISOString() }]
   const shiftSpan = calculateShiftSpan(testServices)
   
   if (shiftSpan > MAX_SHIFT_SPAN) {
-    console.log(`Service ${service.id} would exceed max shift span: ${(shiftSpan / (1000 * 60 * 60)).toFixed(2)} hours`)
+    console.log(`Service ${service.id} (${service.company}) would exceed max shift span: ${(shiftSpan / (1000 * 60 * 60)).toFixed(2)} hours`)
     return false
   }
-  
+
   return {
     start: proposedStart,
     end: proposedEnd
