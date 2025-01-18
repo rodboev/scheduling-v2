@@ -27,7 +27,7 @@ export default function ServiceContent({ service }) {
         >
           <div>({service.placementOrder}) {capitalize(service.company)}</div>
           <div className="text-sm font-semibold">#{service.location.code}</div>
-        </a>
+        </a> <span className="text-sm font-semibold text-gray-500">id: {service.id}</span>
       </h3>
 
       {service.borough && (
