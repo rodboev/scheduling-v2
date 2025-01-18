@@ -69,7 +69,6 @@ function createServicesForRange(setup, startDate, endDate) {
       // Validate scheduled times fall within range bounds
       if (!scheduledStart.isBetween(rangeStart, rangeEnd, null, '[]') ||
           !scheduledEnd.isBetween(rangeStart, rangeEnd, null, '[]')) {
-        console.warn(`Scheduled time outside range for service ${setup.id} on ${date.format('YYYY-MM-DD')}`)
         continue
       }
 
