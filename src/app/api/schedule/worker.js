@@ -334,54 +334,49 @@ function createScheduledService(service, shift, matchInfo, distanceMatrix) {
 }
 
 function createNewShift(service, clusterIndex, remainingServices, distanceMatrix, shifts = []) {
-  // Find optimal start time that maximizes potential services
-  const shiftStart = findBestShiftStart(service, remainingServices, distanceMatrix)
-  
-  // Ensure shift doesn't exceed max duration
-  const shiftEnd = new Date(shiftStart.getTime() + SHIFT_DURATION_MS)
-
-  // Find least utilized tech
+  // Calculate current tech utilization
   const techUtilization = new Map()
   for (const shift of shifts) {
-    const techId = shift.techId
-    const utilization = shift.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-    techUtilization.set(techId, (techUtilization.get(techId) || 0) + utilization)
+    const techId = shift.services[0]?.techId
+    if (!techId) continue
+    const currentDuration = techUtilization.get(techId) || 0
+    techUtilization.set(techId, currentDuration + shift.services.reduce((sum, s) => sum + s.duration, 0))
   }
 
-  // Find the least utilized tech or create a new one
-  let leastUtilizedTech = null
-  let minUtilization = Infinity
-  for (const [techId, utilization] of techUtilization) {
-    if (utilization < minUtilization) {
-      minUtilization = utilization
-      leastUtilizedTech = techId
+  // Get all tech numbers currently in use
+  const usedTechs = new Set(shifts.map(s => s.services[0]?.techId).filter(Boolean))
+  
+  // Create array of potential techs (1-70)
+  const allTechs = Array.from({length: 70}, (_, i) => `Tech ${i + 1}`)
+  
+  // Sort techs by utilization (ascending) with randomization for equal utilization
+  const sortedTechs = allTechs.sort((a, b) => {
+    const utilizationA = techUtilization.get(a) || 0
+    const utilizationB = techUtilization.get(b) || 0
+    if (Math.abs(utilizationA - utilizationB) < 30) { // If utilization difference is less than 30 minutes
+      return Math.random() - 0.5 // Randomize order
     }
-  }
+    return utilizationA - utilizationB
+  })
 
-  const techNumber = leastUtilizedTech ? parseInt(leastUtilizedTech.replace('Tech ', '')) : clusterIndex + 1
+  // Select least utilized tech
+  const techNumber = sortedTechs[0]
+
+  // Create the new shift
   const shift = {
-    services: [],
-    startTime: shiftStart,
-    endTime: shiftEnd,
-    cluster: techNumber,
-    techId: `Tech ${techNumber}`,
+    services: [{
+      ...service,
+      cluster: clusterIndex,
+      techId: techNumber,
+      distanceFromPrevious: 0,
+      travelTimeFromPrevious: 0,
+      previousService: null,
+      previousCompany: null,
+      placementOrder: getNextPlacementOrder(techNumber, service.date),
+      sequenceNumber: 1
+    }],
     mergeAttempts: 0
   }
-
-  // Initialize the shift with the first service
-  const scheduledService = {
-    ...service,
-    cluster: techNumber,
-    techId: `Tech ${techNumber}`,
-    placementOrder: 1,
-    start: formatDate(shiftStart),
-    end: formatDate(new Date(shiftStart.getTime() + service.time.duration * 60000)),
-    distanceFromPrevious: 0,
-    travelTimeFromPrevious: 0,
-    previousService: null,
-    previousCompany: null
-  }
-  shift.services = [scheduledService]
 
   return shift
 }
@@ -1643,57 +1638,71 @@ function tryMoveService(service, fromShift, toShift, distanceMatrix) {
 function optimizeShifts(shifts, distanceMatrix) {
   let improved = true
   let iterations = 0
-  const MAX_ITERATIONS = 500 // Increased to allow more optimization attempts
+  const MAX_ITERATIONS = 500
 
   while (improved && iterations < MAX_ITERATIONS) {
     improved = false
     iterations++
 
-    // Sort shifts by utilization (ascending)
+    // Calculate tech utilization
+    const techUtilization = new Map()
+    for (const shift of shifts) {
+      const techId = shift.services[0]?.techId
+      if (!techId) continue
+      const currentDuration = techUtilization.get(techId) || 0
+      techUtilization.set(techId, currentDuration + shift.services.reduce((sum, s) => sum + s.duration, 0))
+    }
+
+    // Sort shifts by tech utilization (ascending) with randomization for similar utilization
     const sortedShifts = [...shifts].sort((a, b) => {
-      const utilizationA = a.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-      const utilizationB = b.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
+      const techA = a.services[0]?.techId
+      const techB = b.services[0]?.techId
+      const utilizationA = techUtilization.get(techA) || 0
+      const utilizationB = techUtilization.get(techB) || 0
+      if (Math.abs(utilizationA - utilizationB) < 30) { // If utilization difference is less than 30 minutes
+        return Math.random() - 0.5 // Randomize order
+      }
       return utilizationA - utilizationB
     })
 
-    // Try to move services from least utilized shifts to others
+    // Rest of optimization logic remains the same
     for (const fromShift of sortedShifts) {
-      // Skip if shift is well utilized
       const utilization = fromShift.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
       if (utilization >= SHIFT_DENSITY_TARGET) continue
 
-      // If shift has very low utilization (less than 50%), try to move all services
-      const isVeryUnderutilized = utilization < 0.5 // Increased threshold
-      
-      // Sort services by duration (descending) to move larger services first
+      const isVeryUnderutilized = utilization < 0.5
       const sortedServices = [...fromShift.services].sort((a, b) => b.duration - a.duration)
 
-      // Try to move all services if very underutilized
       if (isVeryUnderutilized) {
         let allServicesMoved = true
         for (const service of sortedServices) {
           let serviceMoved = false
           
-          // Try moving to shifts with higher utilization first
           const targetShifts = sortedShifts
             .filter(s => s !== fromShift)
             .sort((a, b) => {
-              const utilizationA = a.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-              const utilizationB = b.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-              // Prioritize shifts that are moderately utilized (70-90%)
-              const scoreA = Math.abs(utilizationA - 0.8)
-              const scoreB = Math.abs(utilizationB - 0.8)
-              return scoreA - scoreB
+              const techA = a.services[0]?.techId
+              const techB = b.services[0]?.techId
+              const utilizationA = techUtilization.get(techA) || 0
+              const utilizationB = techUtilization.get(techB) || 0
+              if (Math.abs(utilizationA - utilizationB) < 30) {
+                return Math.random() - 0.5
+              }
+              return utilizationA - utilizationB
             })
 
           for (const toShift of targetShifts) {
             if (toShift === fromShift) continue
-            if (toShift.services.length >= 16) continue // Increased max services per shift
+            if (toShift.services.length >= 16) continue
 
-            // Try moving the service
             if (tryMoveService(service, fromShift, toShift, distanceMatrix)) {
               serviceMoved = true
               improved = true
+              // Update utilization after move
+              const fromTech = fromShift.services[0]?.techId
+              const toTech = toShift.services[0]?.techId
+              if (fromTech) techUtilization.set(fromTech, (techUtilization.get(fromTech) || 0) - service.duration)
+              if (toTech) techUtilization.set(toTech, (techUtilization.get(toTech) || 0) + service.duration)
               break
             }
           }
@@ -1704,33 +1713,37 @@ function optimizeShifts(shifts, distanceMatrix) {
           }
         }
         
-        // If all services were moved, this shift can be removed
         if (allServicesMoved && fromShift.services.length === 0) {
           shifts.splice(shifts.indexOf(fromShift), 1)
           break
         }
       } else {
-        // For shifts with moderate utilization, try moving individual services
+        // Similar changes for moderate utilization case
         for (const service of sortedServices) {
-          // Try moving to shifts with higher utilization first
           const targetShifts = sortedShifts
             .filter(s => s !== fromShift)
             .sort((a, b) => {
-              const utilizationA = a.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-              const utilizationB = b.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-              // Prioritize shifts that are moderately utilized (70-90%)
-              const scoreA = Math.abs(utilizationA - 0.8)
-              const scoreB = Math.abs(utilizationB - 0.8)
-              return scoreA - scoreB
+              const techA = a.services[0]?.techId
+              const techB = b.services[0]?.techId
+              const utilizationA = techUtilization.get(techA) || 0
+              const utilizationB = techUtilization.get(techB) || 0
+              if (Math.abs(utilizationA - utilizationB) < 30) {
+                return Math.random() - 0.5
+              }
+              return utilizationA - utilizationB
             })
 
           for (const toShift of targetShifts) {
             if (toShift === fromShift) continue
-            if (toShift.services.length >= 16) continue // Increased max services per shift
+            if (toShift.services.length >= 16) continue
 
-            // Try moving the service
             if (tryMoveService(service, fromShift, toShift, distanceMatrix)) {
               improved = true
+              // Update utilization after move
+              const fromTech = fromShift.services[0]?.techId
+              const toTech = toShift.services[0]?.techId
+              if (fromTech) techUtilization.set(fromTech, (techUtilization.get(fromTech) || 0) - service.duration)
+              if (toTech) techUtilization.set(toTech, (techUtilization.get(toTech) || 0) + service.duration)
               break
             }
           }
@@ -1741,7 +1754,6 @@ function optimizeShifts(shifts, distanceMatrix) {
     }
   }
 
-  // Remove shifts with no services
   return shifts.filter(shift => shift.services.length > 0)
 }
 
