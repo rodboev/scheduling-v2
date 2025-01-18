@@ -288,8 +288,9 @@ function calculateServiceScore(
     return cachedScore
   }
 
-  // Quick distance check
+  // Quick distance check - enforce hard limit
   if (!distance || distance > HARD_MAX_RADIUS_MILES) {
+    console.log(`Service ${service.id} (${service.company}) rejected - distance ${distance} miles exceeds limit of ${HARD_MAX_RADIUS_MILES} miles`)
     return -Infinity
   }
 
@@ -1412,7 +1413,18 @@ function isWithinTimeWindow(tryStart, tryEnd, timeWindow) {
 }
 
 function tryFitServiceInShift(service, shift, proposedStartOrShifts, distanceMatrix) {
-  // First check: validate time window
+  // First check: if there are existing services, validate distance
+  if (shift.services.length > 0) {
+    const lastService = shift.services[shift.services.length - 1]
+    const distance = getDistance(lastService, service, distanceMatrix)
+    
+    if (!distance || distance > HARD_MAX_RADIUS_MILES) {
+      console.log(`Service ${service.id} (${service.company}) rejected - distance ${distance} miles exceeds limit of ${HARD_MAX_RADIUS_MILES} miles from ${lastService.company}`)
+      return false
+    }
+  }
+
+  // Validate time window
   const timeWindow = service.time.range
   if (!timeWindow || !timeWindow[0] || !timeWindow[1]) return false
   
