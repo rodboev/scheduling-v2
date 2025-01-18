@@ -1455,26 +1455,19 @@ function tryFitServiceInShift(service, shift, proposedStartOrShifts, distanceMat
     }
   }
   
-  // Check shift span
-  if (shift.services.length > 0) {
-    const firstService = shift.services[0]
-    const lastService = shift.services[shift.services.length - 1]
-    const shiftStart = new Date(firstService.start)
-    const shiftEnd = new Date(lastService.end)
-    const proposedEnd = new Date(proposedStart.getTime() + service.duration * 60000)
-    
-    const span = Math.max(
-      proposedEnd - shiftStart,
-      shiftEnd - proposedStart,
-      shiftEnd - shiftStart
-    ) / (1000 * 60 * 60)
-    
-    if (span > 8) return false
+  // Check shift span including the proposed service
+  const proposedEnd = new Date(proposedStart.getTime() + service.duration * 60000)
+  const testServices = [...shift.services, { start: proposedStart.toISOString(), end: proposedEnd.toISOString() }]
+  const shiftSpan = calculateShiftSpan(testServices)
+  
+  if (shiftSpan > MAX_SHIFT_SPAN) {
+    console.log(`Service ${service.id} would exceed max shift span: ${(shiftSpan / (1000 * 60 * 60)).toFixed(2)} hours`)
+    return false
   }
   
   return {
     start: proposedStart,
-    end: new Date(proposedStart.getTime() + service.duration * 60000)
+    end: proposedEnd
   }
 }
 
