@@ -112,7 +112,7 @@ export default function BigCalendar() {
           <Logo />
           <Button onClick={handleForceReschedule}>Force Reschedule</Button>
         </Header>
-        <div className="flex-grow p-4">
+        <div className="flex-grow p-4 h-[90vh]">
           <Calendar
             localizer={localizer}
             dayLayoutAlgorithm="no-overlap"
