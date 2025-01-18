@@ -654,31 +654,45 @@ function processServices(services, distanceMatrix) {
 }
 
 function canMergeShifts(shift1, shift2, distanceMatrix) {
-  // If either shift has more than 12 services, don't merge
-  if (shift1.services.length + shift2.services.length > 12) return false
-
-  const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
-  const shift2Start = new Date(shift2.services[0].start)
-  const shift1Start = new Date(shift1.services[0].start)
-  const shift2End = new Date(shift2.services[shift2.services.length - 1].end)
+  // Calculate total working duration if merged
+  const combinedServices = [...shift1.services, ...shift2.services]
+  const workingDuration = calculateWorkingDuration(combinedServices)
   
-  // Calculate travel time between shifts
+  // Don't merge if total working time would exceed shift duration
+  if (workingDuration > SHIFT_DURATION) return false
+  
+  // Don't merge if total services would exceed limit
+  if (combinedServices.length > 14) return false
+  
+  // Check for any overlapping services
+  combinedServices.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  for (let i = 0; i < combinedServices.length - 1; i++) {
+    const current = combinedServices[i]
+    const next = combinedServices[i + 1]
+    if (checkTimeOverlap(
+      new Date(current.start),
+      new Date(current.end),
+      new Date(next.start),
+      new Date(next.end)
+    )) {
+      return false
+    }
+  }
+  
+  // Check travel time between last service of shift1 and first service of shift2
   const lastService = shift1.services[shift1.services.length - 1]
   const firstNewService = shift2.services[0]
   const distance = getDistance(lastService, firstNewService, distanceMatrix)
-  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
   
-  // Add buffer for travel time
-  const earliestPossibleStart = new Date(shift1End.getTime() + (travelTime * 60 * 1000))
+  if (!distance || distance > HARD_MAX_RADIUS_MILES) return false
   
-  // If second shift starts after travel time from first shift, they can potentially merge
-  if (shift2Start >= earliestPossibleStart) {
-    // Check if total shift duration would be reasonable
-    const totalDuration = (shift2End - shift1Start) / (60 * 60 * 1000)
-    if (totalDuration <= HOURS_PER_SHIFT) return true
-  }
-
-  return false
+  const travelTime = calculateTravelTime(distance)
+  const earliestPossibleStart = new Date(new Date(lastService.end).getTime() + (travelTime * 60000))
+  
+  // Ensure there's enough time to travel between services
+  if (new Date(firstNewService.start) < earliestPossibleStart) return false
+  
+  return true
 }
 
 function tryMergeShifts(shifts, distanceMatrix) {
@@ -889,17 +903,38 @@ function canAddServiceToShift(service, shift, existingShifts, distanceMatrix) {
   const serviceEnd = new Date(serviceStart.getTime() + serviceDuration)
 
   // Check if this service would make shift too long
-  const shiftStart = new Date(shift.services[0]?.start || shift.startTime)
-  const shiftDuration = serviceEnd.getTime() - shiftStart.getTime()
-  if (shiftDuration > SHIFT_DURATION_MS) return false
+  const shiftServices = [...shift.services, { start: service.start, end: service.end }]
+  shiftServices.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  
+  const firstServiceStart = new Date(shiftServices[0].start)
+  const lastServiceEnd = new Date(shiftServices[shiftServices.length - 1].end)
+  
+  // Calculate actual working duration including this service
+  const workingDuration = calculateWorkingDuration(shiftServices)
+  if (workingDuration > SHIFT_DURATION) {
+    return false
+  }
+
+  // Validate no overlaps with existing services
+  for (const existingService of shift.services) {
+    const existingStart = new Date(existingService.start)
+    const existingEnd = new Date(existingService.end)
+    
+    if (checkTimeOverlap(existingStart, existingEnd, serviceStart, serviceEnd)) {
+      return false
+    }
+  }
 
   // Check rest periods against other shifts for this tech
   for (const otherShift of existingShifts) {
     if (otherShift === shift) continue
     if (otherShift.techId !== shift.techId) continue
 
-    const otherStart = new Date(otherShift.services[0]?.start || otherShift.startTime)
-    const otherEnd = new Date(otherShift.services[otherShift.services.length - 1]?.end || otherShift.endTime)
+    const otherServices = otherShift.services
+    if (!otherServices.length) continue
+
+    const otherStart = new Date(Math.min(...otherServices.map(s => new Date(s.start).getTime())))
+    const otherEnd = new Date(Math.max(...otherServices.map(s => new Date(s.end).getTime())))
 
     // Calculate rest periods
     const restAfter = otherStart.getTime() - serviceEnd.getTime()
@@ -912,22 +947,18 @@ function canAddServiceToShift(service, shift, existingShifts, distanceMatrix) {
     // If rest period is between 14-16 hours, only accept if no services are available
     // in the target window (16-18 hours later)
     if (restAfter > 0 && restAfter < TARGET_REST_MS) {
-      // Check if there are any unscheduled services that could fit in the target window
       const targetWindowStart = new Date(serviceEnd.getTime() + TARGET_REST_MS)
       const targetWindowEnd = new Date(serviceEnd.getTime() + TARGET_REST_MS + SHIFT_DURATION_MS)
       
-      // Look for any services that could be scheduled in the target window
       const hasServicesInTargetWindow = shift.services.some(s => {
         const serviceTimeStart = new Date(s.time.range[0])
         const serviceTimeEnd = new Date(s.time.range[1])
         return (serviceTimeStart <= targetWindowEnd && serviceTimeEnd >= targetWindowStart)
       })
 
-      // Only accept this placement if no services could fit in the target window
       if (hasServicesInTargetWindow) return false
     }
 
-    // Same check for rest period before this shift
     if (restBefore > 0 && restBefore < TARGET_REST_MS) {
       const targetWindowStart = new Date(otherEnd.getTime() + TARGET_REST_MS)
       const targetWindowEnd = new Date(otherEnd.getTime() + TARGET_REST_MS + SHIFT_DURATION_MS)

@@ -130,7 +130,7 @@ export function logTechServices(techServices) {
     // Format time range
     const rangeStart = dayjs(service.time.range[0]).format('h:mm A')
     const rangeEnd = dayjs(service.time.range[1]).format('h:mm A')
-    const timeRange = `${rangeStart} - ${rangeEnd})`
+    const timeRange = `${rangeStart} - ${rangeEnd}`
     
     const prevService = i > 0 ? sortedServices[i - 1] : null
     const travelInfo = prevService && !overlapsWithCurrent
@@ -138,9 +138,10 @@ export function logTechServices(techServices) {
       : ''
     
     const conflictWarning = overlapsWithCurrent ? ' ⚠️ CONFLICT' : ''
+    const placementOrder = service.placementOrder ? ` (#${service.placementOrder})` : ''
     
     console.log(
-      `  ${i + 1}. ${startTime} - ${endTime} - ${service.company} ${location} ${timeRange}${travelInfo}${conflictWarning}`,
+      `  ${i + 1}. ${startTime} - ${endTime} - ${placementOrder} ${service.company} ${location} (${timeRange})${travelInfo}${conflictWarning}`
     )
   }
 
