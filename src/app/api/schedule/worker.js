@@ -349,17 +349,41 @@ function createNewShift(service, clusterIndex, remainingServices, distanceMatrix
   // Create array of potential techs (1-70)
   const allTechs = Array.from({length: 70}, (_, i) => `Tech ${i + 1}`)
   
-  // Sort techs by utilization (ascending) with randomization for equal utilization
+  // Calculate average utilization
+  let totalUtilization = 0
+  let techCount = 0
+  for (const [_, utilization] of techUtilization) {
+    totalUtilization += utilization
+    techCount++
+  }
+  const avgUtilization = techCount > 0 ? totalUtilization / techCount : 0
+  
+  // Sort techs by how close they are to target utilization
+  const targetUtilization = SHIFT_DURATION_MS * 0.8 // Target 80% of shift duration
   const sortedTechs = allTechs.sort((a, b) => {
     const utilizationA = techUtilization.get(a) || 0
     const utilizationB = techUtilization.get(b) || 0
-    if (Math.abs(utilizationA - utilizationB) < 30) { // If utilization difference is less than 30 minutes
-      return Math.random() - 0.5 // Randomize order
+    
+    // If both techs are unused, randomize
+    if (!usedTechs.has(a) && !usedTechs.has(b)) {
+      return Math.random() - 0.5
     }
-    return utilizationA - utilizationB
+    
+    // If one tech is unused and we're below average utilization, prefer the unused tech
+    if (!usedTechs.has(a) && avgUtilization < targetUtilization) return -1
+    if (!usedTechs.has(b) && avgUtilization < targetUtilization) return 1
+    
+    // Otherwise score based on distance from target
+    const scoreA = Math.abs(utilizationA - targetUtilization)
+    const scoreB = Math.abs(utilizationB - targetUtilization)
+    
+    if (Math.abs(scoreA - scoreB) < 30) { // If scores are close, add some randomization
+      return Math.random() - 0.5
+    }
+    return scoreA - scoreB
   })
 
-  // Select least utilized tech
+  // Select best tech
   const techNumber = sortedTechs[0]
 
   // Create the new shift
@@ -404,27 +428,99 @@ function assignTechsToShifts(shifts, dateStr) {
   const sortedDates = Array.from(shiftsByDate.keys()).sort()
   const firstDate = sortedDates[0]
 
-  // Sort first day's shifts by start time and assign techs sequentially
+  // Calculate initial tech assignments based on geographic clusters and time windows
   const firstDayShifts = shiftsByDate.get(firstDate)
-  firstDayShifts.sort((a, b) => {
-    if (!a?.services?.length) return 1
-    if (!b?.services?.length) return -1
-    return new Date(a.services[0].start) - new Date(b.services[0].start)
-  })
+  
+  // Group shifts by rough time windows (morning, afternoon, evening)
+  const timeWindows = {
+    morning: [],   // 5am-11am
+    afternoon: [], // 11am-5pm
+    evening: []    // 5pm-5am
+  }
 
-  // First day: Assign tech numbers sequentially (Tech 1, Tech 2, etc.)
-  firstDayShifts.forEach((shift, index) => {
+  for (const shift of firstDayShifts) {
+    if (!shift?.services?.length) continue
+    const startHour = new Date(shift.services[0].start).getHours()
+    if (startHour >= 5 && startHour < 11) {
+      timeWindows.morning.push(shift)
+    } else if (startHour >= 11 && startHour < 17) {
+      timeWindows.afternoon.push(shift)
+    } else {
+      timeWindows.evening.push(shift)
+    }
+  }
+
+  // Calculate geographic clusters within each time window
+  for (const window of Object.values(timeWindows)) {
+    // Sort by location to group nearby services
+    window.sort((a, b) => {
+      if (!a?.services?.[0]?.location || !b?.services?.[0]?.location) return 0
+      const latDiff = a.services[0].location.latitude - b.services[0].location.latitude
+      const lngDiff = a.services[0].location.longitude - b.services[0].location.longitude
+      return latDiff !== 0 ? latDiff : lngDiff
+    })
+  }
+
+  // Assign techs in a round-robin fashion across time windows
+  let techCounter = 1
+  const maxTechs = 70 // Maximum number of techs to use
+  const assignedTechs = new Set()
+
+  // Helper function to assign tech to shift
+  const assignTechToShift = (shift) => {
     if (!shift?.services?.length) return
-    const techNumber = index + 1  // Tech 1, Tech 2, Tech 3...
-    const techId = `Tech ${techNumber}`
-    const startTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
-    techStartTimes.set(techId, startTime)
-    shift.techId = techId
-    shift.cluster = techNumber // Cluster number becomes tech number
-    techAssignmentsByDate.get(firstDate).add(techId)
-  })
 
-  // Subsequent days: Try to match previous start times
+    // Find the least utilized tech among those already assigned
+    let selectedTech = null
+    let minServices = Infinity
+
+    if (assignedTechs.size > 0) {
+      for (const techId of assignedTechs) {
+        const techServices = shifts.reduce((count, s) => 
+          count + (s.techId === techId ? s.services.length : 0), 0)
+        if (techServices < minServices) {
+          minServices = techServices
+          selectedTech = techId
+        }
+      }
+    }
+
+    // If no suitable tech found or all are heavily utilized, create new tech
+    if (!selectedTech || minServices >= 7) {
+      if (techCounter <= maxTechs) {
+        selectedTech = `Tech ${techCounter++}`
+        assignedTechs.add(selectedTech)
+      } else {
+        // If we've hit the max techs, find the least utilized
+        selectedTech = Array.from(assignedTechs)
+          .reduce((best, techId) => {
+            const techServices = shifts.reduce((count, s) => 
+              count + (s.techId === techId ? s.services.length : 0), 0)
+            return techServices < minServices ? techId : best
+          })
+      }
+    }
+
+    // Assign the selected tech
+    const startTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
+    techStartTimes.set(selectedTech, startTime)
+    shift.techId = selectedTech
+    shift.cluster = parseInt(selectedTech.replace('Tech ', ''))
+    techAssignmentsByDate.get(firstDate).add(selectedTech)
+  }
+
+  // Assign techs in a balanced way across time windows
+  while (timeWindows.morning.length || timeWindows.afternoon.length || timeWindows.evening.length) {
+    // Rotate through time windows
+    for (const window of Object.values(timeWindows)) {
+      if (window.length > 0) {
+        const shift = window.shift() // Take the next shift from this window
+        assignTechToShift(shift)
+      }
+    }
+  }
+
+  // For subsequent days, try to maintain tech assignments while balancing workload
   for (const date of sortedDates.slice(1)) {
     const dateShifts = shiftsByDate.get(date)
     const assignedTechs = techAssignmentsByDate.get(date)
@@ -436,42 +532,36 @@ function assignTechsToShifts(shifts, dateStr) {
       return new Date(a.services[0].start) - new Date(b.services[0].start)
     })
 
-    // For each shift, find best matching tech based on start time
+    // For each shift, try to find a tech with similar start time and balanced workload
     for (const shift of dateShifts) {
       if (!shift?.services?.length) continue
+
       const shiftStartTime = new Date(shift.services[0].start).getTime() % (24 * 60 * 60 * 1000)
       let bestTech = null
-      let bestVariance = TECH_START_TIME_VARIANCE
+      let bestScore = -Infinity
 
-      // Try to find tech with closest start time
-      for (const [techId, prefStartTime] of techStartTimes) {
-        if (assignedTechs.has(techId)) continue
-        const variance = Math.abs(shiftStartTime - prefStartTime)
-        if (variance <= TECH_START_TIME_VARIANCE && variance < bestVariance) {
+      // Score each tech based on start time similarity and workload
+      for (const techId of assignedTechs) {
+        const techStartTime = techStartTimes.get(techId) || 0
+        const startTimeDiff = Math.abs(techStartTime - shiftStartTime)
+        const techServices = shifts.reduce((count, s) => 
+          count + (s.techId === techId ? s.services.length : 0), 0)
+        
+        // Score based on start time similarity and inverse of workload
+        const score = (1 - startTimeDiff / (12 * 60 * 60 * 1000)) * 0.7 + // 70% weight on time
+                     (1 - techServices / 10) * 0.3                         // 30% weight on workload
+
+        if (score > bestScore) {
+          bestScore = score
           bestTech = techId
-          bestVariance = variance
         }
       }
 
+      // Assign the best matching tech
       if (bestTech) {
         shift.techId = bestTech
-        shift.cluster = parseInt(bestTech.replace('Tech ', '')) // Extract number from techId
-        assignedTechs.add(bestTech)
-      } else {
-        // If no tech found within variance, create new tech
-        const techNumber = techStartTimes.size + 1
-        const newTechId = `Tech ${techNumber}`
-        shift.techId = newTechId
-        shift.cluster = techNumber
-        techStartTimes.set(newTechId, shiftStartTime)
-        assignedTechs.add(newTechId)
+        shift.cluster = parseInt(bestTech.replace('Tech ', ''))
       }
-
-      // Update all services in shift with tech ID and cluster
-      shift.services.forEach(service => {
-        service.techId = shift.techId
-        service.cluster = shift.cluster
-      })
     }
   }
 
@@ -1635,126 +1725,56 @@ function tryMoveService(service, fromShift, toShift, distanceMatrix) {
   return true
 }
 
+// Increase max iterations to allow more optimization attempts
+const MAX_ITERATIONS = 600 // Increased from 500 to 600
+
+// Adjust threshold for identifying very overloaded shifts
+function isShiftOverloaded(shift) {
+  const totalDuration = shift.services.reduce((sum, service) => sum + service.duration, 0)
+  const shiftSpan = new Date(shift.services[shift.services.length - 1].end).getTime() - new Date(shift.services[0].start).getTime()
+  return totalDuration / (shiftSpan / (60 * 1000)) > 0.85 // Lower threshold from 0.9 to 0.85
+}
+
 function optimizeShifts(shifts, distanceMatrix) {
-  let improved = true
-  let iterations = 0
-  const MAX_ITERATIONS = 500
+  // Sort shifts by utilization
+  shifts.sort((a, b) => {
+    const aUtilization = calculateShiftUtilization(a)
+    const bUtilization = calculateShiftUtilization(b)
+    return bUtilization - aUtilization
+  })
 
-  while (improved && iterations < MAX_ITERATIONS) {
-    improved = false
-    iterations++
+  // For each overloaded shift, try to move services to less loaded shifts
+  for (const shift of shifts) {
+    if (isShiftOverloaded(shift)) {
+      // Sort services by duration (largest first)
+      const services = [...shift.services].sort((a, b) => b.duration - a.duration)
+      
+      // Try to move each service
+      for (const service of services) {
+        // Find target shifts with utilization between 60-80%
+        const targetShifts = shifts.filter(s => {
+          const utilization = calculateShiftUtilization(s)
+          return utilization >= 0.6 && utilization <= 0.8 && s !== shift
+        })
 
-    // Calculate tech utilization
-    const techUtilization = new Map()
-    for (const shift of shifts) {
-      const techId = shift.services[0]?.techId
-      if (!techId) continue
-      const currentDuration = techUtilization.get(techId) || 0
-      techUtilization.set(techId, currentDuration + shift.services.reduce((sum, s) => sum + s.duration, 0))
-    }
+        // Sort target shifts by utilization (ascending)
+        targetShifts.sort((a, b) => {
+          const aUtilization = calculateShiftUtilization(a)
+          const bUtilization = calculateShiftUtilization(b)
+          return aUtilization - bUtilization
+        })
 
-    // Sort shifts by tech utilization (ascending) with randomization for similar utilization
-    const sortedShifts = [...shifts].sort((a, b) => {
-      const techA = a.services[0]?.techId
-      const techB = b.services[0]?.techId
-      const utilizationA = techUtilization.get(techA) || 0
-      const utilizationB = techUtilization.get(techB) || 0
-      if (Math.abs(utilizationA - utilizationB) < 30) { // If utilization difference is less than 30 minutes
-        return Math.random() - 0.5 // Randomize order
-      }
-      return utilizationA - utilizationB
-    })
-
-    // Rest of optimization logic remains the same
-    for (const fromShift of sortedShifts) {
-      const utilization = fromShift.services.reduce((total, s) => total + s.duration, 0) / SHIFT_DURATION_MS
-      if (utilization >= SHIFT_DENSITY_TARGET) continue
-
-      const isVeryUnderutilized = utilization < 0.5
-      const sortedServices = [...fromShift.services].sort((a, b) => b.duration - a.duration)
-
-      if (isVeryUnderutilized) {
-        let allServicesMoved = true
-        for (const service of sortedServices) {
-          let serviceMoved = false
-          
-          const targetShifts = sortedShifts
-            .filter(s => s !== fromShift)
-            .sort((a, b) => {
-              const techA = a.services[0]?.techId
-              const techB = b.services[0]?.techId
-              const utilizationA = techUtilization.get(techA) || 0
-              const utilizationB = techUtilization.get(techB) || 0
-              if (Math.abs(utilizationA - utilizationB) < 30) {
-                return Math.random() - 0.5
-              }
-              return utilizationA - utilizationB
-            })
-
-          for (const toShift of targetShifts) {
-            if (toShift === fromShift) continue
-            if (toShift.services.length >= 16) continue
-
-            if (tryMoveService(service, fromShift, toShift, distanceMatrix)) {
-              serviceMoved = true
-              improved = true
-              // Update utilization after move
-              const fromTech = fromShift.services[0]?.techId
-              const toTech = toShift.services[0]?.techId
-              if (fromTech) techUtilization.set(fromTech, (techUtilization.get(fromTech) || 0) - service.duration)
-              if (toTech) techUtilization.set(toTech, (techUtilization.get(toTech) || 0) + service.duration)
-              break
-            }
-          }
-          
-          if (!serviceMoved) {
-            allServicesMoved = false
+        // Try to move service to each target shift
+        for (const targetShift of targetShifts) {
+          if (tryMoveService(service, shift, targetShift)) {
             break
           }
         }
-        
-        if (allServicesMoved && fromShift.services.length === 0) {
-          shifts.splice(shifts.indexOf(fromShift), 1)
-          break
-        }
-      } else {
-        // Similar changes for moderate utilization case
-        for (const service of sortedServices) {
-          const targetShifts = sortedShifts
-            .filter(s => s !== fromShift)
-            .sort((a, b) => {
-              const techA = a.services[0]?.techId
-              const techB = b.services[0]?.techId
-              const utilizationA = techUtilization.get(techA) || 0
-              const utilizationB = techUtilization.get(techB) || 0
-              if (Math.abs(utilizationA - utilizationB) < 30) {
-                return Math.random() - 0.5
-              }
-              return utilizationA - utilizationB
-            })
-
-          for (const toShift of targetShifts) {
-            if (toShift === fromShift) continue
-            if (toShift.services.length >= 16) continue
-
-            if (tryMoveService(service, fromShift, toShift, distanceMatrix)) {
-              improved = true
-              // Update utilization after move
-              const fromTech = fromShift.services[0]?.techId
-              const toTech = toShift.services[0]?.techId
-              if (fromTech) techUtilization.set(fromTech, (techUtilization.get(fromTech) || 0) - service.duration)
-              if (toTech) techUtilization.set(toTech, (techUtilization.get(toTech) || 0) + service.duration)
-              break
-            }
-          }
-          if (improved) break
-        }
       }
-      if (improved) break
     }
   }
 
-  return shifts.filter(shift => shift.services.length > 0)
+  return shifts
 }
 
 function calculateShiftSpan(services) {
