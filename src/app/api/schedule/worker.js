@@ -1677,7 +1677,102 @@ function canFitCluster(cluster, targetShift, distanceMatrix) {
   return true
 }
 
-function optimizeShifts(shifts) {
+function optimizeGaps(shifts, distanceMatrix) {
+  // Sort shifts by their largest gap size (descending)
+  const shiftsWithGaps = shifts.map(shift => ({
+    shift,
+    largestGap: findLargestGap(shift.services)
+  })).sort((a, b) => b.largestGap - a.largestGap)
+
+  // Process shifts with gaps larger than 45 minutes
+  for (const { shift, largestGap } of shiftsWithGaps) {
+    if (largestGap <= MAX_PREFERRED_GAP) continue // Skip if gap is acceptable
+
+    // Sort services by start time
+    const services = [...shift.services].sort((a, b) => 
+      new Date(a.start).getTime() - new Date(b.start).getTime()
+    )
+
+    // Find the large gaps
+    for (let i = 0; i < services.length - 1; i++) {
+      const currentEnd = new Date(services[i].end).getTime()
+      const nextStart = new Date(services[i + 1].start).getTime()
+      const gap = nextStart - currentEnd
+
+      if (gap > MAX_PREFERRED_GAP) {
+        // Look for services from other shifts that could fit in this gap
+        const gapStart = new Date(currentEnd)
+        const gapEnd = new Date(nextStart)
+        
+        // Search other shifts for potential services to move
+        for (const otherShift of shifts) {
+          if (otherShift === shift) continue
+          if (otherShift.services.length <= 4) continue // Don't steal from small shifts
+
+          for (const service of otherShift.services) {
+            const serviceStart = new Date(service.start)
+            const serviceEnd = new Date(service.end)
+            
+            // Check if service's time window overlaps with the gap
+            if (serviceStart >= gapEnd || serviceEnd <= gapStart) continue
+            
+            // Check if moving this service would create too large a gap in its current shift
+            const currentShiftGap = findLargestGap(otherShift.services.filter(s => s !== service))
+            if (currentShiftGap > MAX_PREFERRED_GAP) continue
+
+            // Try to fit the service in the gap
+            const matchInfo = tryFitServiceInShift(service, shift, gapStart, distanceMatrix)
+            if (matchInfo) {
+              // Remove from old shift
+              otherShift.services = otherShift.services.filter(s => s !== service)
+              
+              // Add to new shift at the gap position
+              service.start = matchInfo.start.toISOString()
+              service.end = matchInfo.end.toISOString()
+              service.techId = shift.techId
+              
+              // Insert at correct position to maintain time order
+              const insertIndex = shift.services.findIndex(s => 
+                new Date(s.start) > matchInfo.start
+              )
+              if (insertIndex === -1) {
+                shift.services.push(service)
+              } else {
+                shift.services.splice(insertIndex, 0, service)
+              }
+              
+              // Update sequence numbers and previous service info
+              shift.services.forEach((s, idx) => {
+                s.sequenceNumber = idx + 1
+                if (idx > 0) {
+                  const prevService = shift.services[idx - 1]
+                  s.previousService = prevService.id
+                  s.previousCompany = prevService.company
+                  const distance = getDistance(prevService, s, distanceMatrix) || 0
+                  s.distanceFromPrevious = distance
+                  s.travelTimeFromPrevious = calculateTravelTime(distance)
+                } else {
+                  s.previousService = null
+                  s.previousCompany = null
+                  s.distanceFromPrevious = 0
+                  s.travelTimeFromPrevious = 0
+                }
+              })
+              
+              // Break both loops since we filled this gap
+              break
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Remove any shifts that became empty
+  return shifts.filter(shift => shift.services.length > 0)
+}
+
+function optimizeShifts(shifts, distanceMatrix) {
   // First pass: handle overloaded shifts (more than 7 services)
   const overloadedShifts = shifts.filter(shift => shift.services.length > 7)
   
@@ -1745,6 +1840,9 @@ function optimizeShifts(shifts) {
       }
     }
   }
+
+  // Third pass: try to fill large gaps
+  shifts = optimizeGaps(shifts, distanceMatrix)
 
   // Remove empty shifts
   return shifts.filter(shift => shift.services.length > 0)
