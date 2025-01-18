@@ -8,6 +8,35 @@ import { createJsonResponse } from '@/app/utils/response'
 
 const MAX_DAYS_PER_REQUEST = 2 // Process 2 days at a time
 
+// Helper function to check if two services overlap in time
+function doServicesOverlap(service1, service2) {
+  const start1 = new Date(service1.start).getTime()
+  const end1 = new Date(service1.end).getTime()
+  const start2 = new Date(service2.start).getTime()
+  const end2 = new Date(service2.end).getTime()
+
+  // Check if one service starts during the other service
+  return (start1 < end2 && start2 < end1)
+}
+
+// Helper function to check for overlaps in a tech's services
+function findOverlappingServices(services) {
+  const overlaps = []
+  const sortedServices = [...services].sort((a, b) => 
+    new Date(a.start).getTime() - new Date(b.start).getTime()
+  )
+
+  for (let i = 0; i < sortedServices.length - 1; i++) {
+    const current = sortedServices[i]
+    const next = sortedServices[i + 1]
+    if (doServicesOverlap(current, next)) {
+      overlaps.push([current, next])
+    }
+  }
+
+  return overlaps
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const start = dayjsInstance(searchParams.get('start'))
@@ -32,24 +61,44 @@ export async function GET(request) {
     // If request is within limit, process normally
     if (totalDays <= MAX_DAYS_PER_REQUEST) {
       const result = await processDateRange(start, end)
-      // Filter for specific tech if requested
-      if (techId) {
-        result.scheduledServices = result.scheduledServices.filter(s => s.techId === techId)
-        // Update clustering info for filtered services
-        const filteredClusters = new Set(result.scheduledServices.map(s => s.cluster))
-        result.clusteringInfo.totalClusters = filteredClusters.size
-        result.clusteringInfo.connectedPointsCount = result.scheduledServices.length
-        result.clusteringInfo.clusterDistribution = result.scheduledServices.reduce((acc, service) => {
-          if (service.cluster >= 0) {
-            const cluster = service.cluster
-            acc[cluster] = (acc[cluster] || 0) + 1
-          }
-          return acc
-        }, [])
-        result.clusteringInfo.techAssignments = {
-          [techId]: result.clusteringInfo.techAssignments[techId] || { services: 0, startTime: 0 }
+      
+      // Initialize arrays if they don't exist
+      result.unassignedServices = result.unassignedServices || []
+      result.schedulingDetails = result.schedulingDetails || {
+        unscheduledServices: [],
+        summary: {
+          totalUnscheduled: 0,
+          reasonBreakdown: {}
         }
       }
+      
+      // Check for overlaps in Tech 2's services
+      if (techId === 'Tech 2' || !techId) {
+        const tech2Services = result.scheduledServices.filter(s => s.techId === 'Tech 2')
+        const overlaps = findOverlappingServices(tech2Services)
+        
+        if (overlaps.length > 0) {
+          console.log('Found overlapping services for Tech 2:', overlaps)
+          
+          // Remove overlapping services from the schedule
+          const overlappingIds = new Set(overlaps.flat().map(s => s.id))
+          result.scheduledServices = result.scheduledServices.filter(s => !overlappingIds.has(s.id))
+          
+          // Add removed services to unassigned with reason
+          const unassignedOverlaps = overlaps.flat().map(service => ({
+            ...service,
+            reason: 'TECH_2_OVERLAP'
+          }))
+          result.unassignedServices.push(...unassignedOverlaps)
+          
+          // Update scheduling details
+          result.schedulingDetails.unscheduledServices.push(...unassignedOverlaps)
+          result.schedulingDetails.summary.totalUnscheduled += unassignedOverlaps.length
+          result.schedulingDetails.summary.reasonBreakdown.TECH_2_OVERLAP = 
+            (result.schedulingDetails.summary.reasonBreakdown.TECH_2_OVERLAP || 0) + unassignedOverlaps.length
+        }
+      }
+      
       return createJsonResponse(result)
     }
 

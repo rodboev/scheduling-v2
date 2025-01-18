@@ -7,6 +7,8 @@ import { promises as fsPromises } from 'node:fs'
 import path from 'node:path'
 import { HARD_MAX_RADIUS_MILES, TECH_SPEED_MPH, NUM_TECHS } from '@/app/utils/constants'
 import { createJsonResponse } from '@/app/utils/response'
+import { SHOW_ONLY_BOROS } from '@/app/utils/constants'
+import { isPointInNYC } from '@/app/utils/geo'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const isProduction = process.env.NODE_ENV === 'production'
@@ -160,9 +162,19 @@ export async function GET(request) {
     const serviceSetups = await fetchServiceSetups()
 
     // Generate services for the date range
-    const services = serviceSetups.flatMap(setup =>
+    let services = serviceSetups.flatMap(setup =>
       createServicesForRange(setup, startDate, endDate),
     )
+
+    // Filter out services outside NYC if SHOW_ONLY_BOROS is true
+    if (SHOW_ONLY_BOROS) {
+      const beforeCount = services.length
+      services = services.filter(service => {
+        const { latitude, longitude } = service.location
+        return isPointInNYC(latitude, longitude)
+      })
+      console.log(`Filtered out ${beforeCount - services.length} services outside NYC`)
+    }
 
     // Read enforcement state
     const filePath = path.join(process.cwd(), 'data', 'enforcementState.json')
@@ -207,53 +219,93 @@ export async function GET(request) {
         (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
       )
 
-      // Check for overlaps
-      for (let i = 0; i < sortedServices.length; i++) {
-        for (let j = i + 1; j < sortedServices.length; j++) {
-          const service1 = sortedServices[i]
-          const service2 = sortedServices[j]
+      // For Tech 2, check for any time overlap, not just exact matches
+      if (techCode === 'Tech 2') {
+        for (let i = 0; i < sortedServices.length; i++) {
+          for (let j = i + 1; j < sortedServices.length; j++) {
+            const service1 = sortedServices[i]
+            const service2 = sortedServices[j]
 
-          // Check if both scheduled times and range times are exactly the same
-          const scheduledMatch =
-            areTimesEqual(service1.start, service2.start) &&
-            areTimesEqual(service1.end, service2.end)
+            const start1 = new Date(service1.start).getTime()
+            const end1 = new Date(service1.end).getTime()
+            const start2 = new Date(service2.start).getTime()
+            const end2 = new Date(service2.end).getTime()
 
-          const rangeMatch =
-            areTimesEqual(service1.time.range[0], service2.time.range[0]) &&
-            areTimesEqual(service1.time.range[1], service2.time.range[1])
-
-          if (scheduledMatch && rangeMatch) {
-            techsWithOverlaps.add(techCode)
-            console.log(`Exact time match found for tech ${techCode}:`, {
-              service1: {
-                id: service1.id,
-                company: service1.company,
-                scheduled: {
-                  start: new Date(service1.start).toISOString(),
-                  end: new Date(service1.end).toISOString(),
+            // Check for any overlap
+            if (start1 < end2 && end1 > start2) {
+              techsWithOverlaps.add(techCode)
+              console.log(`Overlap found for tech ${techCode}:`, {
+                service1: {
+                  id: service1.id,
+                  company: service1.company,
+                  scheduled: {
+                    start: new Date(service1.start).toISOString(),
+                    end: new Date(service1.end).toISOString(),
+                  }
                 },
-                range: {
-                  start: new Date(service1.time.range[0]).toISOString(),
-                  end: new Date(service1.time.range[1]).toISOString(),
-                },
-              },
-              service2: {
-                id: service2.id,
-                company: service2.company,
-                scheduled: {
-                  start: new Date(service2.start).toISOString(),
-                  end: new Date(service2.end).toISOString(),
-                },
-                range: {
-                  start: new Date(service2.time.range[0]).toISOString(),
-                  end: new Date(service2.time.range[1]).toISOString(),
-                },
-              },
-            })
-            break
+                service2: {
+                  id: service2.id,
+                  company: service2.company,
+                  scheduled: {
+                    start: new Date(service2.start).toISOString(),
+                    end: new Date(service2.end).toISOString(),
+                  }
+                }
+              })
+              break
+            }
           }
+          if (techsWithOverlaps.has(techCode)) break
         }
-        if (techsWithOverlaps.has(techCode)) break
+      } else {
+        // For other techs, keep existing exact match check
+        for (let i = 0; i < sortedServices.length; i++) {
+          for (let j = i + 1; j < sortedServices.length; j++) {
+            const service1 = sortedServices[i]
+            const service2 = sortedServices[j]
+
+            // Check if both scheduled times and range times are exactly the same
+            const scheduledMatch =
+              areTimesEqual(service1.start, service2.start) &&
+              areTimesEqual(service1.end, service2.end)
+
+            const rangeMatch =
+              areTimesEqual(service1.time.range[0], service2.time.range[0]) &&
+              areTimesEqual(service1.time.range[1], service2.time.range[1])
+
+            if (scheduledMatch && rangeMatch) {
+              techsWithOverlaps.add(techCode)
+              console.log(`Exact time match found for tech ${techCode}:`, {
+                service1: {
+                  id: service1.id,
+                  company: service1.company,
+                  scheduled: {
+                    start: new Date(service1.start).toISOString(),
+                    end: new Date(service1.end).toISOString(),
+                  },
+                  range: {
+                    start: new Date(service1.time.range[0]).toISOString(),
+                    end: new Date(service1.time.range[1]).toISOString(),
+                  },
+                },
+                service2: {
+                  id: service2.id,
+                  company: service2.company,
+                  scheduled: {
+                    start: new Date(service2.start).toISOString(),
+                    end: new Date(service2.end).toISOString(),
+                  },
+                  range: {
+                    start: new Date(service2.time.range[0]).toISOString(),
+                    end: new Date(service2.time.range[1]).toISOString(),
+                  },
+                },
+              })
+              break
+            }
+          }
+          if (techsWithOverlaps.has(techCode)) break
+        }
       }
     }
 

@@ -27,10 +27,10 @@ const techStartTimes = new Map()
 
 // Constants at the top of the file
 const HOURS_PER_SHIFT = 8
-const IDEAL_SERVICES_PER_SHIFT = 12 // Increased from 8
-const MIN_SERVICES_PER_TECH = 8 // New constant
-const MAX_SERVICES_PER_TECH = 14 // New constant
-const TARGET_TECH_COUNT = 20 // New constant to limit number of techs
+const MIN_SERVICES_PER_TECH = 4 // Minimum services before trying to merge
+const MAX_SERVICES_PER_TECH = 14 // Safety limit for max services
+const MAX_SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000
+const TARGET_SERVICES_PER_TECH = 12 // Increased target services per tech
 
 function parseDate(dateStr) {
   const date = new Date(dateStr)
@@ -833,7 +833,7 @@ function processServices(services, distanceMatrix) {
               distanceFromPrevious: dist,
               travelTimeFromPrevious: travel,
               previousService: prev.id,
-              previousCompany: prev.company,
+              previousCompany: prev.company
             }
           })
 
@@ -981,217 +981,6 @@ function processServices(services, distanceMatrix) {
   }
 }
 
-function canMergeShifts(shift1, shift2, distanceMatrix) {
-  // Don't merge if combined services would exceed max per tech
-  if (shift1.services.length + shift2.services.length > MAX_SERVICES_PER_TECH) return false
-
-  const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
-  const shift2Start = new Date(shift2.services[0].start)
-  const shift1Start = new Date(shift1.services[0].start)
-  const shift2End = new Date(shift2.services[shift2.services.length - 1].end)
-  
-  // Calculate travel time between shifts
-  const lastService = shift1.services[shift1.services.length - 1]
-  const firstNewService = shift2.services[0]
-  const distance = getDistance(lastService, firstNewService, distanceMatrix)
-  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
-  
-  // Add buffer for travel time and minimum required gap
-  const requiredGap = Math.max(travelTime * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
-  const earliestPossibleStart = new Date(shift1End.getTime() + requiredGap)
-  
-  // Check if second shift starts after required gap from first shift
-  if (shift2Start >= earliestPossibleStart) {
-    // Check if total shift duration would be reasonable
-    const totalDuration = (shift2End - shift1Start) / (60 * 60 * 1000)
-    if (totalDuration > HOURS_PER_SHIFT) return false
-
-    // Prioritize merging shifts with fewer services
-    if (shift1.services.length < MIN_SERVICES_PER_TECH || 
-        shift2.services.length < MIN_SERVICES_PER_TECH) {
-      return true
-    }
-
-    // Verify no overlaps between all services
-    const allServices = [...shift1.services, ...shift2.services]
-    for (let i = 0; i < allServices.length; i++) {
-      for (let j = i + 1; j < allServices.length; j++) {
-        const service1 = allServices[i]
-        const service2 = allServices[j]
-        const serviceDist = getDistance(service1, service2, distanceMatrix)
-        const serviceTravel = serviceDist <= 0.2 ? 0 : calculateTravelTime(serviceDist)
-        const serviceGap = Math.max(serviceTravel * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
-
-        const start1 = new Date(service1.start)
-        const end1 = new Date(service1.end)
-        const start2 = new Date(service2.start)
-        const end2 = new Date(service2.end)
-
-        if (start2 < new Date(end1.getTime() + serviceGap) && 
-            start1 < new Date(end2.getTime() + serviceGap)) {
-          return false
-        }
-      }
-    }
-
-    return true
-  }
-
-  return false
-}
-
-function tryMergeShifts(shifts, distanceMatrix) {
-  // Sort shifts by number of services to prioritize merging smaller shifts
-  shifts.sort((a, b) => a.services.length - b.services.length)
-  
-  let merged = false
-  const targetServicesPerShift = Math.ceil(
-    shifts.reduce((total, shift) => total + shift.services.length, 0) / TARGET_TECH_COUNT
-  )
-
-  for (let i = 0; i < shifts.length; i++) {
-    const shift1 = shifts[i]
-    
-    // Prioritize merging shifts with fewer services
-    if (shift1.services.length >= targetServicesPerShift) continue
-    
-    // Skip if we've tried to merge this shift too many times
-    if (shift1.mergeAttempts >= MAX_MERGE_ATTEMPTS) continue
-
-    // Find potential merge candidates
-    const candidates = shifts.slice(i + 1)
-      .filter(shift2 => {
-        // Skip if we've tried to merge this shift too many times
-        if (shift2.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
-        
-        // Skip if combined services would exceed target
-        if (shift1.services.length + shift2.services.length > MAX_SERVICES_PER_TECH) return false
-        
-        // Check if shifts can be merged
-        return canMergeShifts(shift1, shift2, distanceMatrix)
-      })
-      .sort((a, b) => {
-        // First, prefer shifts with the same tech
-        if (a.techId === shift1.techId && b.techId !== shift1.techId) return -1
-        if (b.techId === shift1.techId && a.techId !== shift1.techId) return 1
-
-        // Then by number of services (prefer merging smaller shifts)
-        const aDiff = Math.abs(targetServicesPerShift - (shift1.services.length + a.services.length))
-        const bDiff = Math.abs(targetServicesPerShift - (shift1.services.length + b.services.length))
-        if (aDiff !== bDiff) return aDiff - bDiff
-
-        // Then by average distance between services
-        const distA = calculateAverageDistance(shift1, a, distanceMatrix)
-        const distB = calculateAverageDistance(shift1, b, distanceMatrix)
-        if (distA !== distB) return distA - distB
-
-        // Finally by time compatibility
-        const timeScoreA = calculateTimeCompatibilityScore(shift1, a)
-        const timeScoreB = calculateTimeCompatibilityScore(shift1, b)
-        return timeScoreB - timeScoreA
-      })
-
-    // Try to merge with best candidate
-    const bestCandidate = candidates[0]
-    if (bestCandidate) {
-      // Get the tech assignment that will be used (prefer shift1's tech)
-      const techId = shift1.techId
-      const cluster = shift1.cluster
-
-      // Merge shifts and preserve tech assignment
-      const lastService = shift1.services[shift1.services.length - 1]
-      const firstService = bestCandidate.services[0]
-      
-      // Calculate travel time between shifts
-      const distance = getDistance(lastService, firstService, distanceMatrix)
-      const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
-      
-      // Calculate earliest possible start for first service of shift2
-      const earliestStart = new Date(lastService.end)
-      earliestStart.setTime(earliestStart.getTime() + travelTime * 60 * 1000)
-      
-      // Adjust first service with new timing and relationships
-      const adjustedFirstService = {
-        ...firstService,
-        techId: techId,
-        cluster: cluster,
-        sequenceNumber: shift1.services.length + 1,
-        start: formatDate(earliestStart),
-        end: formatDate(new Date(earliestStart.getTime() + firstService.time.duration * 60000)),
-        distanceFromPrevious: distance,
-        travelTimeFromPrevious: travelTime,
-        previousService: lastService.id,
-        previousCompany: lastService.company
-      }
-
-      // Adjust remaining services
-      const remainingServices = bestCandidate.services.slice(1).map((service, index) => {
-        const prev = index === 0 ? adjustedFirstService : bestCandidate.services[index]
-        const dist = getDistance(prev, service, distanceMatrix)
-        const travel = calculateTravelTime(dist)
-        
-        // Calculate start time based on previous service
-        const serviceStart = new Date(prev.end)
-        serviceStart.setTime(serviceStart.getTime() + travel * 60 * 1000)
-        
-        return {
-          ...service,
-          techId: techId,
-          cluster: cluster,
-          sequenceNumber: shift1.services.length + 2 + index,
-          start: formatDate(serviceStart),
-          end: formatDate(new Date(serviceStart.getTime() + service.time.duration * 60000)),
-          distanceFromPrevious: dist,
-          travelTimeFromPrevious: travel,
-          previousService: prev.id,
-          previousCompany: prev.company
-        }
-      })
-
-      // Update shift1 with merged services
-      shift1.services = [...shift1.services, adjustedFirstService, ...remainingServices]
-      shift1.mergeAttempts++
-      bestCandidate.mergeAttempts++
-      
-      // Remove merged shift
-      shifts.splice(shifts.indexOf(bestCandidate), 1)
-      merged = true
-      break
-    }
-  }
-
-  return merged
-}
-
-function calculateAverageDistance(shift1, shift2, distanceMatrix) {
-  let totalDistance = 0
-  let count = 0
-
-  for (const service1 of shift1.services) {
-    for (const service2 of shift2.services) {
-      const distance = getDistance(service1, service2, distanceMatrix)
-      if (distance !== null) {
-        totalDistance += distance
-        count++
-      }
-    }
-  }
-
-  return count > 0 ? totalDistance / count : Infinity
-}
-
-function calculateTimeCompatibilityScore(shift1, shift2) {
-  const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
-  const shift2Start = new Date(shift2.services[0].start)
-  
-  // Perfect score if shifts are adjacent
-  if (Math.abs(shift2Start - shift1End) <= 30 * 60 * 1000) return 1
-  
-  // Decreasing score based on time gap
-  const gap = Math.abs(shift2Start - shift1End) / (60 * 60 * 1000) // Convert to hours
-  return Math.max(0, 1 - gap / 8) // Linear decrease over 8 hours
-}
-
 function findMergeCandidates(shift, shiftsByTime, i, distanceMatrix) {
   const lastService = shift.services[shift.services.length - 1]
   const lastEnd = new Date(lastService.end)
@@ -1224,127 +1013,338 @@ function findMergeCandidates(shift, shiftsByTime, i, distanceMatrix) {
     .slice(0, MERGE_CLOSEST_SHIFTS)
 }
 
-function initializeShifts(services) {
-  // Calculate ideal services per shift based on total services and target tech count
-  const targetShiftCount = Math.min(
-    Math.ceil(services.length / IDEAL_SERVICES_PER_SHIFT),
-    TARGET_TECH_COUNT
-  )
-
-  // First, group services by date
-  const servicesByDate = new Map()
-  services.forEach(service => {
-    const date = dayjs(service.time.range[0]).format('YYYY-MM-DD')
-    if (!servicesByDate.has(date)) {
-      servicesByDate.set(date, [])
-    }
-    servicesByDate.get(date).push(service)
-  })
-
-  // Process each date separately
-  const allShifts = []
-  let techCounter = 1
-
-  for (const [date, dateServices] of servicesByDate) {
-    // Sort services by time window flexibility and start time
-    const sortedServices = dateServices.sort((a, b) => {
-      // First sort by time window flexibility
-      const aWindow = new Date(a.time.range[1]) - new Date(a.time.range[0])
-      const bWindow = new Date(b.time.range[1]) - new Date(b.time.range[0])
-      if (aWindow !== bWindow) return aWindow - bWindow
-      
-      // Then by earliest start time
-      return new Date(a.time.range[0]) - new Date(b.time.range[0])
-    })
-
-    // Group services by time windows that could potentially form shifts
-    const timeWindows = []
-    let currentWindow = []
-    let currentEndTime = null
-
-    for (const service of sortedServices) {
-      const serviceStart = new Date(service.time.range[0])
-      
-      // If this is a new window or service can't fit in current window
-      if (!currentWindow.length || 
-          !currentEndTime || 
-          serviceStart.getTime() - currentEndTime.getTime() > MAX_TIME_SEARCH * 60 * 1000) {
-        if (currentWindow.length) {
-          timeWindows.push(currentWindow)
-        }
-        currentWindow = [service]
-        currentEndTime = new Date(service.time.range[1])
-      } else {
-        currentWindow.push(service)
-        currentEndTime = new Date(Math.max(
-          currentEndTime.getTime(),
-          new Date(service.time.range[1]).getTime()
-        ))
-      }
-    }
-    if (currentWindow.length) {
-      timeWindows.push(currentWindow)
-    }
-
-    // Create initial shifts with more balanced service distribution
-    const servicesPerInitialShift = Math.ceil(dateServices.length / targetShiftCount)
-    
-    for (const windowServices of timeWindows) {
-      let currentShift = []
-      let currentShiftDuration = 0
-      
-      for (const service of windowServices) {
-        // If adding this service would exceed shift limits, create new shift
-        if (currentShiftDuration + service.time.duration > SHIFT_DURATION ||
-            currentShift.length >= servicesPerInitialShift) {
-          if (currentShift.length > 0) {
-            const techId = `Tech ${techCounter}`
-            allShifts.push(createShiftFromServices(currentShift, techId, techCounter))
-            techCounter = (techCounter % TARGET_TECH_COUNT) + 1
-          }
-          currentShift = []
-          currentShiftDuration = 0
-        }
-        
-        currentShift.push(service)
-        currentShiftDuration += service.time.duration
-      }
-      
-      // Add remaining services in current shift
-      if (currentShift.length > 0) {
-        const techId = `Tech ${techCounter}`
-        allShifts.push(createShiftFromServices(currentShift, techId, techCounter))
-        techCounter = (techCounter % TARGET_TECH_COUNT) + 1
-      }
-    }
-  }
-
-  return allShifts
+function calculateTimeCompatibilityScore(shift1, shift2) {
+  const shift1End = new Date(shift1.services[shift1.services.length - 1].end)
+  const shift2Start = new Date(shift2.services[0].start)
+  
+  // Perfect score if shifts are adjacent
+  if (Math.abs(shift2Start - shift1End) <= 30 * 60 * 1000) return 1
+  
+  // Decreasing score based on time gap
+  const gap = Math.abs(shift2Start - shift1End) / (60 * 60 * 1000) // Convert to hours
+  return Math.max(0, 1 - gap / 8) // Linear decrease over 8 hours
 }
 
-function createShiftFromServices(services, techId, cluster) {
-  const startTime = new Date(services[0].time.range[0])
-  const processedServices = services.map((service, index) => ({
-    ...service,
-    cluster,
-    techId,
-    sequenceNumber: index + 1,
-    start: formatDate(new Date(startTime.getTime() + index * 60 * 60 * 1000)),
-    end: formatDate(new Date(startTime.getTime() + index * 60 * 60 * 1000 + service.time.duration * 60000)),
-    distanceFromPrevious: index === 0 ? 0 : 1,
-    travelTimeFromPrevious: index === 0 ? 0 : 15,
-    previousService: index === 0 ? null : services[index - 1].id,
-    previousCompany: index === 0 ? null : services[index - 1].company
-  }))
+function canMergeShifts(shift1, shift2, distanceMatrix) {
+  // Don't merge if combined services would exceed max per tech
+  if (shift1.services.length + shift2.services.length > MAX_SERVICES_PER_TECH) return false
+
+  // Calculate travel time between shifts
+  const lastService = shift1.services[shift1.services.length - 1]
+  const firstNewService = shift2.services[0]
+  const distance = getDistance(lastService, firstNewService, distanceMatrix)
+  
+  // More lenient distance check for shifts with few services
+  const maxAllowedDistance = (shift1.services.length < 5 || shift2.services.length < 5) ? 
+    7 : HARD_MAX_RADIUS_MILES
+  if (distance > maxAllowedDistance) return false
+  
+  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+  
+  // Add buffer for travel time and minimum required gap
+  const requiredGap = Math.max(travelTime * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
+  const shift1End = new Date(lastService.end)
+  const shift2Start = new Date(firstNewService.start)
+  const earliestPossibleStart = new Date(shift1End.getTime() + requiredGap)
+  
+  // Check if second shift starts after required gap from first shift
+  if (shift2Start >= earliestPossibleStart) {
+    // Check if total shift duration would be reasonable
+    const shift1Start = new Date(shift1.services[0].start)
+    const shift2End = new Date(shift2.services[shift2.services.length - 1].end)
+    const totalDuration = (shift2End - shift1Start) / (60 * 60 * 1000)
+    if (totalDuration > HOURS_PER_SHIFT) return false
+
+    // More aggressive merging for shifts with few services
+    if (shift1.services.length < 5 || 
+        shift2.services.length < 5 || 
+        shift1.services.length + shift2.services.length <= TARGET_SERVICES_PER_TECH) {
+      return true
+    }
+
+    // Check if services would fit within their time windows after merge
+    const mergedServices = [...shift1.services]
+    let currentTime = shift1End
+    
+    for (const service of shift2.services) {
+      const serviceStart = new Date(Math.max(
+        currentTime.getTime() + requiredGap,
+        new Date(service.time.range[0]).getTime()
+      ))
+
+      // Check if service can start within its time window
+      if (serviceStart > new Date(service.time.range[1])) {
+        return false
+      }
+
+      const serviceEnd = new Date(serviceStart.getTime() + service.time.duration * 60000)
+      currentTime = serviceEnd
+    }
+
+    // Verify no overlaps between all services
+    const allServices = [...shift1.services, ...shift2.services]
+    for (let i = 0; i < allServices.length; i++) {
+      for (let j = i + 1; j < allServices.length; j++) {
+        const service1 = allServices[i]
+        const service2 = allServices[j]
+        const serviceDist = getDistance(service1, service2, distanceMatrix)
+        
+        // More lenient distance check for shifts with few services
+        const maxServiceDist = (shift1.services.length < 5 || shift2.services.length < 5) ? 
+          7 : HARD_MAX_RADIUS_MILES
+        if (serviceDist > maxServiceDist) continue
+        
+        const serviceTravel = serviceDist <= 0.2 ? 0 : calculateTravelTime(serviceDist)
+        const serviceGap = Math.max(serviceTravel * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
+
+        const start1 = new Date(service1.start)
+        const end1 = new Date(service1.end)
+        const start2 = new Date(service2.start)
+        const end2 = new Date(service2.end)
+
+        if (start2 < new Date(end1.getTime() + serviceGap) && 
+            start1 < new Date(end2.getTime() + serviceGap)) {
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
+  return false
+}
+
+function mergeShifts(shift1, shift2, distanceMatrix) {
+  // Validate shifts have services
+  if (!shift1?.services?.length || !shift2?.services?.length) {
+    return null
+  }
+
+  const lastService = shift1.services[shift1.services.length - 1]
+  const firstService = shift2.services[0]
+  
+  // Validate services exist and have required properties
+  if (!lastService?.end || !firstService?.time?.range?.[1]) {
+    return null
+  }
+  
+  // Calculate travel time between shifts
+  const distance = getDistance(lastService, firstService, distanceMatrix)
+  const travelTime = distance <= 0.2 ? 0 : calculateTravelTime(distance)
+  
+  // Calculate earliest possible start for first service of shift2
+  const earliestStart = new Date(lastService.end)
+  earliestStart.setTime(earliestStart.getTime() + Math.max(travelTime * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES))
+  
+  // Check if service would fit in its time window
+  if (earliestStart > new Date(firstService.time.range[1])) {
+    return null
+  }
+
+  // Get the tech assignment that will be used (prefer shift1's tech)
+  const techId = shift1.techId
+  const cluster = shift1.cluster
+  
+  // Process all services with proper timing and relationships
+  const processedServices = [...shift1.services]
+  let currentTime = new Date(lastService.end)
+  
+  for (const service of shift2.services) {
+    const prevService = processedServices[processedServices.length - 1]
+    const dist = getDistance(prevService, service, distanceMatrix)
+    const travel = dist <= 0.2 ? 0 : calculateTravelTime(dist)
+    const minGap = Math.max(travel * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
+    
+    // Calculate start time based on previous service plus required gap
+    const serviceStart = new Date(Math.max(
+      currentTime.getTime() + minGap,
+      new Date(service.time.range[0]).getTime()
+    ))
+    
+    // Verify service can start within its time window
+    if (serviceStart > new Date(service.time.range[1])) {
+      return null
+    }
+    
+    const serviceEnd = new Date(serviceStart.getTime() + service.time.duration * 60000)
+    currentTime = serviceEnd
+    
+    processedServices.push({
+      ...service,
+      techId: techId,
+      cluster: cluster,
+      sequenceNumber: processedServices.length + 1,
+      start: formatDate(serviceStart),
+      end: formatDate(serviceEnd),
+      distanceFromPrevious: dist,
+      travelTimeFromPrevious: travel,
+      previousService: prevService.id,
+      previousCompany: prevService.company
+    })
+  }
+
+  // Verify no overlaps in final schedule
+  for (let i = 0; i < processedServices.length - 1; i++) {
+    const service = processedServices[i]
+    const nextService = processedServices[i + 1]
+    const dist = getDistance(service, nextService, distanceMatrix)
+    const travel = dist <= 0.2 ? 0 : calculateTravelTime(dist)
+    const minGap = Math.max(travel * 60 * 1000, MIN_BUFFER_BETWEEN_SERVICES)
+    
+    const gap = new Date(nextService.start) - new Date(service.end)
+    if (gap < minGap) {
+      return null
+    }
+  }
+
+  // Calculate total shift duration after merge
+  const mergedStart = new Date(processedServices[0].start)
+  const mergedEnd = new Date(processedServices[processedServices.length - 1].end)
+  if ((mergedEnd - mergedStart) > MAX_SHIFT_DURATION_MS) {
+    return null
+  }
 
   return {
+    ...shift1,
     services: processedServices,
-    mergeAttempts: 0,
-    startTime,
-    endTime: new Date(startTime.getTime() + SHIFT_DURATION * 60000),
-    techId,
-    cluster
+    mergeAttempts: shift1.mergeAttempts + 1
   }
+}
+
+function tryMergeShifts(shifts, distanceMatrix) {
+  // Validate input
+  if (!Array.isArray(shifts) || !shifts.length) {
+    return false
+  }
+
+  // Filter out shifts with no services
+  shifts = shifts.filter(shift => shift?.services?.length > 0)
+  if (shifts.length < 2) {
+    return false
+  }
+
+  // First try to merge very small shifts (less than 5 services)
+  const smallShifts = shifts.filter(s => s.services.length < 5)
+  if (smallShifts.length > 0) {
+    // Sort by number of services to prioritize merging smallest shifts first
+    smallShifts.sort((a, b) => a.services.length - b.services.length)
+    
+    for (let i = 0; i < smallShifts.length; i++) {
+      const shift1 = smallShifts[i]
+      if (shift1.mergeAttempts >= MAX_MERGE_ATTEMPTS) continue
+
+      // Try to merge with ANY shift that can accommodate it
+      const candidates = shifts
+        .filter(shift2 => {
+          if (shift2 === shift1) return false
+          if (shift2.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
+          
+          // Check if merge is possible
+          return canMergeShifts(shift1, shift2, distanceMatrix)
+        })
+        .sort((a, b) => {
+          // First prefer shifts with the same tech
+          if (a.techId === shift1.techId && b.techId !== shift1.techId) return -1
+          if (b.techId === shift1.techId && a.techId !== shift1.techId) return 1
+          
+          // Then prefer shifts that would result in closer to target size
+          const aTotal = shift1.services.length + a.services.length
+          const bTotal = shift1.services.length + b.services.length
+          const aToTarget = Math.abs(TARGET_SERVICES_PER_TECH - aTotal)
+          const bToTarget = Math.abs(TARGET_SERVICES_PER_TECH - bTotal)
+          if (aToTarget !== bToTarget) return aToTarget - bToTarget
+          
+          // Finally by average distance between services
+          const avgDistA = calculateAverageDistance(shift1, a, distanceMatrix)
+          const avgDistB = calculateAverageDistance(shift1, b, distanceMatrix)
+          return avgDistA - avgDistB
+        })
+
+      const bestCandidate = candidates[0]
+      if (bestCandidate) {
+        const mergedShift = mergeShifts(shift1, bestCandidate, distanceMatrix)
+        if (mergedShift) {
+          // Update the original shift in the main shifts array
+          const mainIndex = shifts.indexOf(shift1)
+          shifts[mainIndex] = mergedShift
+          shifts.splice(shifts.indexOf(bestCandidate), 1)
+          return true
+        }
+      }
+    }
+  }
+
+  // Then try to merge shifts that are below target size
+  shifts.sort((a, b) => a.services.length - b.services.length)
+  
+  for (let i = 0; i < shifts.length; i++) {
+    const shift1 = shifts[i]
+    
+    // Skip if already at or above target size
+    if (shift1.services.length >= TARGET_SERVICES_PER_TECH) continue
+    
+    // Skip if we've tried to merge this shift too many times
+    if (shift1.mergeAttempts >= MAX_MERGE_ATTEMPTS) continue
+
+    // Find potential merge candidates
+    const candidates = shifts.slice(i + 1)
+      .filter(shift2 => {
+        if (shift2.mergeAttempts >= MAX_MERGE_ATTEMPTS) return false
+        
+        // Check if merge is possible
+        return canMergeShifts(shift1, shift2, distanceMatrix)
+      })
+      .sort((a, b) => {
+        // First prefer shifts with the same tech
+        if (a.techId === shift1.techId && b.techId !== shift1.techId) return -1
+        if (b.techId === shift1.techId && a.techId !== shift1.techId) return 1
+
+        // Then by number of services (prefer merging to get closer to target)
+        const aTotal = shift1.services.length + a.services.length
+        const bTotal = shift1.services.length + b.services.length
+        const aToTarget = Math.abs(TARGET_SERVICES_PER_TECH - aTotal)
+        const bToTarget = Math.abs(TARGET_SERVICES_PER_TECH - bTotal)
+        if (aToTarget !== bToTarget) return aToTarget - bToTarget
+
+        // Finally by average distance between services
+        const avgDistA = calculateAverageDistance(shift1, a, distanceMatrix)
+        const avgDistB = calculateAverageDistance(shift1, b, distanceMatrix)
+        return avgDistA - avgDistB
+      })
+
+    // Try to merge with best candidate
+    const bestCandidate = candidates[0]
+    if (bestCandidate) {
+      const mergedShift = mergeShifts(shift1, bestCandidate, distanceMatrix)
+      if (mergedShift) {
+        // Update shifts array
+        const mainIndex = shifts.indexOf(shift1)
+        shifts[mainIndex] = mergedShift
+        shifts.splice(shifts.indexOf(bestCandidate), 1)
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+function calculateAverageDistance(shift1, shift2, distanceMatrix) {
+  let totalDistance = 0
+  let count = 0
+
+  for (const service1 of shift1.services) {
+    for (const service2 of shift2.services) {
+      const distance = getDistance(service1, service2, distanceMatrix)
+      if (distance !== null) {
+        totalDistance += distance
+        count++
+      }
+    }
+  }
+
+  return count > 0 ? totalDistance / count : Infinity
 }
 
 function clusterServices(services, distanceMatrix) {
@@ -1683,6 +1683,196 @@ function condenseShift(shift, distanceMatrix) {
       cluster: shift.cluster
     }))
   }
+}
+
+function initializeShifts(services) {
+  // Calculate target shift count based on total work duration
+  const totalWorkMinutes = services.reduce((sum, service) => sum + service.time.duration, 0)
+  const totalTravelMinutes = (services.length - 1) * 15 // Rough estimate for travel time
+  const totalMinutes = totalWorkMinutes + totalTravelMinutes
+  const targetShiftCount = Math.min(
+    Math.ceil(totalMinutes / (HOURS_PER_SHIFT * 60)),
+    TARGET_TECH_COUNT
+  )
+
+  // First, group services by date
+  const servicesByDate = new Map()
+  services.forEach(service => {
+    const date = dayjs(service.time.range[0]).format('YYYY-MM-DD')
+    if (!servicesByDate.has(date)) {
+      servicesByDate.set(date, [])
+    }
+    servicesByDate.get(date).push(service)
+  })
+
+  // Process each date separately
+  const allShifts = []
+  let techCounter = 1
+
+  for (const [date, dateServices] of servicesByDate) {
+    // Sort services by time window flexibility and start time
+    const sortedServices = dateServices.sort((a, b) => {
+      // First sort by time window flexibility
+      const aWindow = new Date(a.time.range[1]) - new Date(a.time.range[0])
+      const bWindow = new Date(b.time.range[1]) - new Date(b.time.range[0])
+      if (aWindow !== bWindow) return aWindow - bWindow
+      
+      // Then by earliest start time
+      return new Date(a.time.range[0]) - new Date(b.time.range[0])
+    })
+
+    // Group services by time windows that could potentially form shifts
+    const timeWindows = []
+    let currentWindow = []
+    let currentEndTime = null
+
+    for (const service of sortedServices) {
+      const serviceStart = new Date(service.time.range[0])
+      
+      // If this is a new window or service can't fit in current window
+      if (!currentWindow.length || 
+          !currentEndTime || 
+          serviceStart.getTime() - currentEndTime.getTime() > MAX_TIME_SEARCH * 60 * 1000) {
+        if (currentWindow.length) {
+          timeWindows.push(currentWindow)
+        }
+        currentWindow = [service]
+        currentEndTime = new Date(service.time.range[1])
+      } else {
+        currentWindow.push(service)
+        currentEndTime = new Date(Math.max(
+          currentEndTime.getTime(),
+          new Date(service.time.range[1]).getTime()
+        ))
+      }
+    }
+    if (currentWindow.length) {
+      timeWindows.push(currentWindow)
+    }
+
+    // Create initial shifts from time windows
+    for (const windowServices of timeWindows) {
+      // Sort by exact time services first, then by time window flexibility
+      const sortedWindowServices = windowServices.sort((a, b) => {
+        const aExact = new Date(a.time.range[1]) - new Date(a.time.range[0]) === 0
+        const bExact = new Date(b.time.range[1]) - new Date(b.time.range[0]) === 0
+        if (aExact !== bExact) return aExact ? -1 : 1
+
+        const aWindow = new Date(a.time.range[1]) - new Date(a.time.range[0])
+        const bWindow = new Date(b.time.range[1]) - new Date(b.time.range[0])
+        if (aWindow !== bWindow) return aWindow - bWindow
+
+        return new Date(a.time.range[0]) - new Date(b.time.range[0])
+      })
+
+      // Create shifts with services that must happen at exact times
+      const exactTimeServices = sortedWindowServices.filter(
+        s => new Date(s.time.range[1]) - new Date(s.time.range[0]) === 0
+      )
+
+      for (const service of exactTimeServices) {
+        const techId = `Tech ${techCounter}`
+        allShifts.push({
+          services: [{
+            ...service,
+            cluster: techCounter,
+            techId: techId,
+            sequenceNumber: 1,
+            start: formatDate(new Date(service.time.range[0])),
+            end: formatDate(new Date(service.time.range[0].getTime() + service.time.duration * 60000)),
+            distanceFromPrevious: 0,
+            travelTimeFromPrevious: 0,
+            previousService: null,
+            previousCompany: null
+          }],
+          mergeAttempts: 0,
+          startTime: new Date(service.time.range[0]),
+          endTime: new Date(service.time.range[0].getTime() + service.time.duration * 60000),
+          techId: techId,
+          cluster: techCounter
+        })
+        techCounter = (techCounter % TARGET_TECH_COUNT) + 1
+      }
+
+      // Create shifts for remaining flexible services
+      const flexibleServices = sortedWindowServices.filter(
+        s => new Date(s.time.range[1]) - new Date(s.time.range[0]) > 0
+      )
+
+      let currentShift = []
+      let currentShiftDuration = 0
+      let currentShiftStart = null
+
+      for (const service of flexibleServices) {
+        // If adding this service would exceed shift duration, create new shift
+        if (currentShiftDuration + service.time.duration > HOURS_PER_SHIFT * 60) {
+          if (currentShift.length > 0) {
+            const techId = `Tech ${techCounter}`
+            const processedServices = currentShift.map((s, index) => ({
+              ...s,
+              cluster: techCounter,
+              techId: techId,
+              sequenceNumber: index + 1,
+              start: formatDate(new Date(currentShiftStart.getTime() + index * 60 * 60 * 1000)),
+              end: formatDate(new Date(currentShiftStart.getTime() + index * 60 * 60 * 1000 + s.time.duration * 60000)),
+              distanceFromPrevious: index === 0 ? 0 : 1,
+              travelTimeFromPrevious: index === 0 ? 0 : 15,
+              previousService: index === 0 ? null : currentShift[index - 1].id,
+              previousCompany: index === 0 ? null : currentShift[index - 1].company
+            }))
+
+            allShifts.push({
+              services: processedServices,
+              mergeAttempts: 0,
+              startTime: currentShiftStart,
+              endTime: new Date(currentShiftStart.getTime() + SHIFT_DURATION * 60000),
+              techId: techId,
+              cluster: techCounter
+            })
+            techCounter = (techCounter % TARGET_TECH_COUNT) + 1
+          }
+          currentShift = []
+          currentShiftDuration = 0
+          currentShiftStart = null
+        }
+
+        if (!currentShiftStart) {
+          currentShiftStart = new Date(service.time.range[0])
+        }
+        currentShift.push(service)
+        currentShiftDuration += service.time.duration
+      }
+
+      // Add any remaining services in current shift
+      if (currentShift.length > 0) {
+        const techId = `Tech ${techCounter}`
+        const processedServices = currentShift.map((s, index) => ({
+          ...s,
+          cluster: techCounter,
+          techId: techId,
+          sequenceNumber: index + 1,
+          start: formatDate(new Date(currentShiftStart.getTime() + index * 60 * 60 * 1000)),
+          end: formatDate(new Date(currentShiftStart.getTime() + index * 60 * 60 * 1000 + s.time.duration * 60000)),
+          distanceFromPrevious: index === 0 ? 0 : 1,
+          travelTimeFromPrevious: index === 0 ? 0 : 15,
+          previousService: index === 0 ? null : currentShift[index - 1].id,
+          previousCompany: index === 0 ? null : currentShift[index - 1].company
+        }))
+
+        allShifts.push({
+          services: processedServices,
+          mergeAttempts: 0,
+          startTime: currentShiftStart,
+          endTime: new Date(currentShiftStart.getTime() + SHIFT_DURATION * 60000),
+          techId: techId,
+          cluster: techCounter
+        })
+        techCounter = (techCounter % TARGET_TECH_COUNT) + 1
+      }
+    }
+  }
+
+  return allShifts
 }
 
 // Handle messages from the main thread

@@ -1,5 +1,5 @@
 // Clustering constants
-export const NUM_TECHS = 50 // Maximum number of techs to consider
+export const NUM_TECHS = -1 // Maximum number of techs to consider
 export const MAX_RADIUS_MILES_ACROSS_BOROUGHS = 3 // Soft cap - services beyond this distance get penalized
 export const HARD_MAX_RADIUS_MILES = 6 // Hard cap - services beyond this distance cannot be connected
 export const ENFORCE_BOROUGH_BOUNDARIES = true
@@ -21,3 +21,14 @@ export const SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000 // 8 hours in 
 
 // Default date for calendar and map views
 export const DEFAULT_DATE = '2025-01-06' // Default date in YYYY-MM-DD format
+
+export const SHOW_ONLY_BOROS = true
+
+// Borough codes from GeoJSON
+export const BOROUGH_CODES = {
+  MANHATTAN: '1',
+  BRONX: '2',
+  BROOKLYN: '3',
+  QUEENS: '4',
+  STATEN_ISLAND: '5'
+}

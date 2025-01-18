@@ -19,6 +19,7 @@ const UPDATE_INTERVAL = 100 // 100ms between UI updates
 
 const MIN_TIME = new Date(2024, 0, 1, 0, 0, 0) // 12:00 AM
 const MAX_TIME = new Date(2024, 0, 1, 23, 59, 59) // 11:59 PM
+const SCROLL_TO_TIME = new Date(2024, 0, 1, 4, 30, 0) // 4:30 AM
 
 // Create the localizer using react-big-calendar's factory function
 const localizer = createDayjsLocalizer(dayjs)
@@ -136,6 +137,7 @@ export default function BigCalendar() {
             resizable={false}
             min={MIN_TIME}
             max={MAX_TIME}
+            scrollToTime={SCROLL_TO_TIME}
             components={calendarComponents}
             selectable={false}
             onSelectEvent={null}

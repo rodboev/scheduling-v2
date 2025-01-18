@@ -20,6 +20,10 @@ const nextConfig = {
         },
       ],
     })
+    config.module.rules.push({
+      test: /\.geojson$/,
+      type: 'json',
+    })
     return config
   },
   staticPageGenerationTimeout: 120,
