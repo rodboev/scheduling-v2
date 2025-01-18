@@ -179,7 +179,7 @@ function calculateEnhancedFitScore(service, shift, proposedStart, meanStartTime,
     const lastService = shift.services[shift.services.length - 1]
     if (lastService) {
       const distance = getDistance(lastService, service, distanceMatrix)
-      distanceScore = Math.max(0, 1 - distance / MAX_PREFERRED_RADIUS_MILES)
+      distanceScore = Math.max(0, 1 - distance / HARD_MAX_RADIUS_MILES)
     }
   }
 
@@ -1408,12 +1408,25 @@ function isWithinTimeWindow(tryStart, tryEnd, timeWindow) {
   }
 }
 
-function tryFitServiceInShift(service, shift, proposedStart) {
-  // Ensure proposedStart is a Date object
-  if (!proposedStart || !(proposedStart instanceof Date)) {
-    proposedStart = new Date(proposedStart)
+function tryFitServiceInShift(service, shift, proposedStartOrShifts, distanceMatrix) {
+  // Get proposed start time
+  let proposedStart = proposedStartOrShifts instanceof Date || typeof proposedStartOrShifts === 'string'
+    ? new Date(proposedStartOrShifts)
+    : new Date(service.meanStartTime)
+
+  // If we have a previous service, adjust for travel time
+  if (shift.services.length > 0 && distanceMatrix) {
+    const lastService = shift.services[shift.services.length - 1]
+    const distance = getDistance(lastService, service, distanceMatrix) || 0
+    const travelTime = calculateTravelTime(distance)
+    const earliestPossibleStart = new Date(new Date(lastService.end).getTime() + travelTime * 60000)
+    
+    // Use the later of the proposed start or earliest possible start
+    if (earliestPossibleStart > proposedStart) {
+      proposedStart = earliestPossibleStart
+    }
   }
-  
+
   if (isNaN(proposedStart.getTime())) {
     return false
   }
@@ -1422,10 +1435,13 @@ function tryFitServiceInShift(service, shift, proposedStart) {
   const timeWindow = service.time.range
   if (!timeWindow || !timeWindow[0] || !timeWindow[1]) return false
   
-  const windowStart = new Date(timeWindow[0])
-  const windowEnd = new Date(timeWindow[1])
+  const earliestStart = new Date(timeWindow[0])
+  const latestStart = new Date(timeWindow[1])
   
-  if (proposedStart < windowStart || proposedStart > windowEnd) {
+  // The proposed start must be between earliest and latest start times
+  const proposedStartTime = proposedStart.getTime()
+  if (proposedStartTime < earliestStart.getTime() || proposedStartTime > latestStart.getTime()) {
+    console.log(`Service ${service.id} proposed start ${proposedStart.toISOString()} outside allowed window ${earliestStart.toISOString()} - ${latestStart.toISOString()}`)
     return false
   }
   
@@ -1456,7 +1472,31 @@ function tryFitServiceInShift(service, shift, proposedStart) {
     if (span > 8) return false
   }
   
-  return true
+  return {
+    start: proposedStart,
+    end: new Date(proposedStart.getTime() + service.duration * 60000)
+  }
+}
+
+function calculateProposedStart(service, shift, proposedStartOrShifts, distanceMatrix) {
+  if (proposedStartOrShifts instanceof Date || typeof proposedStartOrShifts === 'string') {
+    // Case 1: Called with a specific proposed start time
+    const proposedStart = new Date(proposedStartOrShifts)
+    return isNaN(proposedStart.getTime()) ? null : proposedStart
+  }
+  
+  if (shift.services.length > 0) {
+    // Case 2: Calculate based on last service in shift
+    const lastService = shift.services[shift.services.length - 1]
+    const distance = getDistance(lastService, service, distanceMatrix) || 0
+    const travelTime = calculateTravelTime(distance)
+    const proposedStart = new Date(new Date(lastService.end).getTime() + travelTime * 60000)
+    return isNaN(proposedStart.getTime()) ? null : proposedStart
+  }
+  
+  // Case 3: New shift, use service's mean start time
+  const proposedStart = new Date(service.meanStartTime)
+  return isNaN(proposedStart.getTime()) ? null : proposedStart
 }
 
 function preFilterServices(services) {
