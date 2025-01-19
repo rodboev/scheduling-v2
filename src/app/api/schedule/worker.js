@@ -1,24 +1,20 @@
+import dayjs from 'dayjs'
 import { performance } from 'node:perf_hooks'
 import { parentPort } from 'node:worker_threads'
-import { areSameBorough } from '../../utils/boroughs.js'
+import { calculateTravelTime } from '../../map/utils/travelTime.js'
+import { areSameBorough, getBorough } from '../../utils/boroughs.js'
 import {
-  MAX_RADIUS_MILES_ACROSS_BOROUGHS,
   HARD_MAX_RADIUS_MILES,
+  LONG_SERVICE_THRESHOLD,
+  MAX_MERGE_ATTEMPTS,
+  MAX_TIME_SEARCH,
+  MERGE_CLOSEST_SHIFTS,
+  MIN_BUFFER_BETWEEN_SERVICES,
   SHIFT_DURATION,
   SHIFT_DURATION_MS,
-  ENFORCE_BOROUGH_BOUNDARIES,
-  TECH_SPEED_MPH,
-  MAX_TIME_SEARCH,
-  MAX_MERGE_ATTEMPTS,
-  MERGE_CLOSEST_SHIFTS,
-  TECH_START_TIME_VARIANCE,
-  LONG_SERVICE_THRESHOLD,
-  MIN_BUFFER_BETWEEN_SERVICES,
+  TECH_START_TIME_VARIANCE
 } from '../../utils/constants.js'
-import { getBorough } from '../../utils/boroughs.js'
-import { calculateTravelTime } from '../../map/utils/travelTime.js'
-import dayjs from 'dayjs'
-import { findShiftGaps, canFitInGap, findGaps } from '../../utils/gaps.js'
+import { findShiftGaps } from '../../utils/gaps.js'
 
 const SCORE_CACHE = new Map() // Cache for service compatibility scores
 
