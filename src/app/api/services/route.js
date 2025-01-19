@@ -1,14 +1,12 @@
+import { HARD_MAX_RADIUS_MILES, NUM_TECHS, SHOW_ONLY_BOROS, TECH_SPEED_MPH } from '@/app/utils/constants'
 import { getDefaultDateRange } from '@/app/utils/dates'
 import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { parseTimeRange, parseTime, round } from '@/app/utils/timeRange'
+import { isPointInNYC } from '@/app/utils/geo'
+import { createJsonResponse } from '@/app/utils/response'
+import { parseTime } from '@/app/utils/timeRange'
 import axios from 'axios'
-import { NextResponse } from 'next/server'
 import { promises as fsPromises } from 'node:fs'
 import path from 'node:path'
-import { HARD_MAX_RADIUS_MILES, TECH_SPEED_MPH, NUM_TECHS } from '@/app/utils/constants'
-import { createJsonResponse } from '@/app/utils/response'
-import { SHOW_ONLY_BOROS } from '@/app/utils/constants'
-import { isPointInNYC } from '@/app/utils/geo'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const isProduction = process.env.NODE_ENV === 'production'
@@ -20,18 +18,18 @@ function createServicesForRange(setup, startDate, endDate) {
 
   // Validate time setup first
   if (!setup.time?.range || !Array.isArray(setup.time.range) || setup.time.range.length !== 2) {
-    console.warn(`Invalid time range setup for service ${setup.id}`)
+    console.warn(`Setup ${setup.id}: Invalid time range: ${JSON.stringify(setup.time?.range)}`)
     return services
   }
 
   // Validate location setup
   if (!setup.location?.id || !setup.location?.latitude || !setup.location?.longitude ||
       (setup.location.latitude === 0 && setup.location.longitude === 0)) {
-    console.warn(`Invalid location for service ${setup.id}: (${setup.location?.latitude}, ${setup.location?.longitude})`)
-    return services
+    console.warn(`Setup ${setup.id}: Potentially invalid location (${setup.location?.latitude}, ${setup.location?.longitude})`)
+    // Don't return early, let it continue
   }
 
-  // Create services for the date range, excluding the end date
+  // Log when service occurs
   for (let date = start; date.isBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
       // Create the service's time window based on its original range
@@ -44,14 +42,14 @@ function createServicesForRange(setup, startDate, endDate) {
 
       // Skip if either range bound is invalid
       if (!rangeStart || !rangeEnd) {
-        console.warn(`Invalid time range for service ${setup.id} on ${date.format('YYYY-MM-DD')}`)
+        console.warn(`Setup ${setup.id}: Invalid range bounds - start: ${rangeStart}, end: ${rangeEnd}`)
         continue
       }
 
       // Validate preferred time exists and is parseable
       const parsedPreferredTime = parseTime(setup.time.preferred)
       if (parsedPreferredTime === null) {
-        console.warn(`Invalid preferred time for service ${setup.id} on ${date.format('YYYY-MM-DD')}`)
+        console.warn(`Setup ${setup.id}: Could not parse preferred time: ${setup.time.preferred}`)
         continue
       }
 
@@ -59,8 +57,8 @@ function createServicesForRange(setup, startDate, endDate) {
       const duration = Math.round(setup.time.duration / 15) * 15
 
       // Validate duration
-      if (!duration || duration <= 0 || duration > 480) { // 480 = 8 hours
-        console.warn(`Invalid duration for service ${setup.id} on ${date.format('YYYY-MM-DD')}: ${duration}`)
+      if (!duration || duration <= 0 || duration > 480) {
+        console.warn(`Setup ${setup.id}: Invalid duration: ${duration}`)
         continue
       }
 
@@ -68,15 +66,9 @@ function createServicesForRange(setup, startDate, endDate) {
       const scheduledStart = preferred
       const scheduledEnd = dayjs(scheduledStart).add(duration, 'minutes')
 
-      // Validate scheduled times fall within range bounds
-      if (!scheduledStart.isBetween(rangeStart, rangeEnd, null, '[]') ||
-          !scheduledEnd.isBetween(rangeStart, rangeEnd, null, '[]')) {
-        continue
-      }
-
       // Only create service if scheduled times fall within the requested range
       if (scheduledStart.isBefore(end) && scheduledEnd.isAfter(start)) {
-        const { schedule, comments, route, ...serviceWithoutOmittedFields } = setup
+        const { schedule, comments, ...serviceWithoutOmittedFields } = setup
         
         services.push({
           ...serviceWithoutOmittedFields,
@@ -93,16 +85,14 @@ function createServicesForRange(setup, startDate, endDate) {
               preferred: setup.time.preferred,
             },
           },
-          route: {
-            time: setup.route.time,
-          },
-          // Ensure location coordinates are valid numbers
           location: {
             ...setup.location,
             latitude: parseFloat(setup.location.latitude),
             longitude: parseFloat(setup.location.longitude),
           }
         })
+      } else {
+        console.log(`Setup ${setup.id}: Service outside requested range`)
       }
     }
   }
@@ -160,11 +150,13 @@ export async function GET(request) {
 
   try {
     const serviceSetups = await fetchServiceSetups()
-
     // Generate services for the date range
-    let services = serviceSetups.flatMap(setup =>
-      createServicesForRange(setup, startDate, endDate),
-    )
+    let services = serviceSetups.flatMap(setup => {
+      const generatedServices = createServicesForRange(setup, startDate, endDate)
+      return generatedServices
+    })
+
+    console.log('Total services before any filtering:', services.length)
 
     // Filter out services outside NYC if SHOW_ONLY_BOROS is true
     if (SHOW_ONLY_BOROS) {

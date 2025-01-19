@@ -22,7 +22,7 @@ export const SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000 // 8 hours in 
 // Default date for calendar and map views
 export const DEFAULT_DATE = '2025-01-06' // Default date in YYYY-MM-DD format
 
-export const SHOW_ONLY_BOROS = true
+export const SHOW_ONLY_BOROS = false
 
 // Borough codes from GeoJSON
 export const BOROUGH_CODES = {

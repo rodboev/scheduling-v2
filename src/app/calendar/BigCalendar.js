@@ -1,6 +1,5 @@
 'use client'
 
-import React, { useMemo, useCallback, useEffect, useState } from 'react'
 import EnforceSwitch from '@/app/calendar/EnforceSwitch'
 import Header from '@/app/components/Header'
 import Logo from '@/app/components/Logo'
@@ -9,11 +8,11 @@ import Service from '@/app/components/Service'
 import { Button } from '@/app/components/ui/button'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useSchedule } from '@/app/hooks/useSchedule'
-import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
-import { Calendar, Views } from 'react-big-calendar'
-import { dayjsLocalizer as createDayjsLocalizer } from 'react-big-calendar'
-import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { DEFAULT_DATE } from '@/app/utils/constants'
+import { dayjsInstance as dayjs } from '@/app/utils/dayjs'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Calendar, dayjsLocalizer as createDayjsLocalizer, Views } from 'react-big-calendar'
+import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 const UPDATE_INTERVAL = 100 // 100ms between UI updates
 
@@ -83,11 +82,50 @@ export default function BigCalendar() {
     [updateServiceEnforcement],
   )
 
+  // Create custom toolbar component
+  const customToolbar = useCallback(
+    toolbar => {
+      const label = (
+        <>
+          {toolbar.label}
+          {!isScheduling && (
+            <span className="ml-10 text-gray-500">{assignedServices?.length > 0 ? `${assignedServices?.length} services` : ''}</span>
+          )}
+        </>
+      )
+      
+      return (
+        <div className="rbc-toolbar">
+          <span className="rbc-btn-group">
+            <button type="button" onClick={() => toolbar.onNavigate('PREV')}>Back</button>
+            <button type="button" onClick={() => toolbar.onNavigate('TODAY')}>Today</button>
+            <button type="button" onClick={() => toolbar.onNavigate('NEXT')}>Next</button>
+          </span>
+          <span className="rbc-toolbar-label ml-20">{label}</span>
+          <span className="rbc-btn-group">
+            {toolbar.views.map(view => (
+              <button
+                key={view}
+                type="button"
+                className={`capitalize ${view === toolbar.view ? 'rbc-active' : ''}`}
+                onClick={() => toolbar.onView(view)}
+              >
+                {view}
+              </button>
+            ))}
+          </span>
+        </div>
+      )
+    },
+    [isScheduling, assignedServices?.length]
+  )
+
   const calendarComponents = useMemo(
     () => ({
       event: eventComponent,
+      toolbar: customToolbar,  // Add custom toolbar component
     }),
-    [eventComponent],
+    [eventComponent, customToolbar]
   )
 
   // Add click capture handler
