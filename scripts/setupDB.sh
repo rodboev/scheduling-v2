@@ -55,22 +55,67 @@ if  [ -z "$SSH_TUNNEL_SERVER" ] || [ -z "$SQL_DATABASE" ] || [ -z "$SQL_USERNAME
     exit 1
 fi
 
-# Determine if we're on Windows or Linux
+# Create project folders that will be needed for FreeTDS on Windows
+# These folders are created regardless of OS to make sure they're in version control
+FREETDS_DIR="$PROJECT_ROOT/freetds"
+FREETDS_CONFIG_DIR="$FREETDS_DIR/config" 
+FREETDS_DLL_DIR="$FREETDS_DIR/dll"
+
+mkdir -p "$FREETDS_CONFIG_DIR"
+mkdir -p "$FREETDS_DLL_DIR"
+
+# OS-specific configuration
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     IS_WINDOWS=true
-    CONFIG_DIR="$USERPROFILE/freetds"
-    DRIVER_NAME="ODBC Driver 18 for SQL Server"
-else
-    IS_WINDOWS=false
-    CONFIG_DIR="/app/.apt/etc"
-    DRIVER_PATH="/app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so"
-fi
-
-# Create config directories
-mkdir -p "$CONFIG_DIR/freetds"
-
-# Create freetds.conf
-cat > "$CONFIG_DIR/freetds/freetds.conf" << EOL
+    
+    # For Windows, use the project's FreeTDS folders
+    WIN_CONFIG_DIR="$FREETDS_CONFIG_DIR"
+    
+    # Check if FreeTDS DLLs exist
+    if [ ! -f "$FREETDS_DLL_DIR/libsybdb-5.dll" ]; then
+        echo "⚠️ Warning: FreeTDS DLLs not found in $FREETDS_DLL_DIR"
+        echo "Please extract FreeTDS DLLs to the $FREETDS_DLL_DIR folder"
+        echo "Setup cannot continue without the DLL files"
+        exit 1
+    fi
+    
+    # For config file - need Windows path format with escaped backslashes
+    WINDOWS_DLL_PATH=$(echo "$FREETDS_DLL_DIR/libsybdb-5.dll" | sed 's/\//\\\\/g')
+    
+    # Create proper Windows path for registry (C:\ format)
+    # For Windows registry, we need a proper Windows path with drive letter
+    # Get the absolute path first
+    ABS_DLL_DIR="$(cd "$FREETDS_DLL_DIR" && pwd)"
+    DLL_FILENAME="libsybdb-5.dll"
+    
+    # Convert paths like /c/Users/... to C:\Users\...
+    if [[ "$ABS_DLL_DIR" =~ ^/([a-zA-Z])/ ]]; then
+        # This is a path starting with /c/ or similar
+        DRIVE_LETTER="${BASH_REMATCH[1]}"
+        # Remove the /c/ prefix and replace with C:\
+        WIN_ABS_PATH="${DRIVE_LETTER^^}:$(echo "$ABS_DLL_DIR" | sed "s|^/$DRIVE_LETTER/|\\\|")"
+        # Replace all forward slashes with backslashes
+        WIN_ABS_PATH=$(echo "$WIN_ABS_PATH" | sed 's|/|\\|g')
+    else
+        # Some other format - try best effort conversion
+        WIN_ABS_PATH=$(echo "$ABS_DLL_DIR" | sed 's|^/|C:\\|' | sed 's|/|\\|g')
+    fi
+    
+    # Create the full path to the DLL
+    REG_DLL_PATH="$WIN_ABS_PATH\\$DLL_FILENAME"
+    
+    # For registry, we need to double-escape the backslashes
+    REG_DLL_PATH=$(echo "$REG_DLL_PATH" | sed 's/\\/\\\\/g')
+    
+    # Debug - show the paths
+    echo "DLL path for config: $WINDOWS_DLL_PATH"
+    echo "DLL path for registry: $REG_DLL_PATH"
+    
+    # Create Windows config files
+    echo "Creating FreeTDS configuration files for Windows..."
+    
+    # Create freetds.conf
+    cat > "$WIN_CONFIG_DIR/freetds.conf" << EOL
 [global]
         tds version = 7.4
         client charset = UTF-8
@@ -78,42 +123,27 @@ cat > "$CONFIG_DIR/freetds/freetds.conf" << EOL
 
 [PestPac]
         host = ${SSH_TUNNEL_SERVER}
-        port = ${SSH_TUNNEL_PORT:-1022}
+        port = ${SSH_TUNNEL_PORT}
         tds version = 7.4
         database = ${SQL_DATABASE}
 EOL
 
-# Create odbcinst.ini
-if [ "$IS_WINDOWS" = true ]; then
-    cat > "$CONFIG_DIR/odbcinst.ini" << EOL
-[SQL Server]
-Description = Microsoft ODBC Driver for SQL Server
-Driver = ODBC Driver 18 for SQL Server
-UsageCount = 1
-EOL
-else
-    cat > "$CONFIG_DIR/odbcinst.ini" << EOL
+    # Create odbcinst.ini
+    cat > "$WIN_CONFIG_DIR/odbcinst.ini" << EOL
 [FreeTDS]
 Description = FreeTDS Driver
-Driver = ${DRIVER_PATH}
-Setup = ${DRIVER_PATH}
+Driver = ${WINDOWS_DLL_PATH}
+Setup = ${WINDOWS_DLL_PATH}
 UsageCount = 1
 EOL
-fi
 
-# Create odbc.ini
-if [ "$IS_WINDOWS" = true ]; then
-    ODBC_DRIVER="Driver = {ODBC Driver 18 for SQL Server}"
-else
-    ODBC_DRIVER="Driver = /app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so"
-fi
-
-cat > "$CONFIG_DIR/odbc.ini" << EOL
+    # Create odbc.ini
+    cat > "$WIN_CONFIG_DIR/odbc.ini" << EOL
 [ODBC Data Sources]
 PestPac6681=FreeTDS
 
 [PestPac6681]
-${ODBC_DRIVER}
+Driver = {FreeTDS}
 Description = PestPac SQL Connection
 Server = ${SSH_TUNNEL_SERVER}
 Port = ${SSH_TUNNEL_PORT}
@@ -121,57 +151,120 @@ Database = ${SQL_DATABASE}
 TDS_Version = 7.4
 EOL
 
-# Set environment variables
-if [ "$IS_WINDOWS" = true ]; then
-    export ODBCINI="$CONFIG_DIR/odbc.ini"
-    export ODBCINSTINI="$CONFIG_DIR/odbcinst.ini"
-    export FREETDSCONF="$CONFIG_DIR/freetds/freetds.conf"
+    # Dynamically create the registry file
+    REGISTRY_FILE="$FREETDS_DIR/register-freetds.reg"
+    echo "Creating Windows registry file at $REGISTRY_FILE..."
+    
+    cat > "$REGISTRY_FILE" << EOL
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\ODBC\\ODBCINST.INI\\ODBC Drivers]
+"FreeTDS"="Installed"
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\ODBC\\ODBCINST.INI\\FreeTDS]
+"Description"="FreeTDS Driver"
+"Driver"="${REG_DLL_PATH}"
+"Setup"="${REG_DLL_PATH}"
+"APILevel"="2"
+"ConnectFunctions"="YYY"
+"DriverODBCVer"="03.50"
+"FileUsage"="0"
+"SQLLevel"="1"
+"UsageCount"="1"
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\ODBC\\ODBC.INI\\ODBC Data Sources]
+"PestPac6681"="FreeTDS"
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\ODBC\\ODBC.INI\\PestPac6681]
+"Driver"="FreeTDS"
+"Description"="PestPac SQL Connection"
+"Server"="${SSH_TUNNEL_SERVER}"
+"Port"="${SSH_TUNNEL_PORT}"
+"Database"="${SQL_DATABASE}"
+"TDS_Version"="7.4"
+EOL
+
+    # Display registry information without checking or prompting
+    echo "ℹ️ If FreeTDS is not registered in Windows registry, please manually import the registry file:"
+    echo "Double-click on: $REGISTRY_FILE"
+    echo "Or if it's associated with something other than Registry Editor, use Open with > Registry Editor"
+    echo ""
+    echo "ℹ️ The application will first try to connect using the direct DLL path, which doesn't require registry entries."
+
+    # Set Windows environment variables
+    export ODBCINI="$WIN_CONFIG_DIR/odbc.ini"
+    export ODBCINSTINI="$WIN_CONFIG_DIR/odbcinst.ini"
+    export FREETDSCONF="$WIN_CONFIG_DIR/freetds.conf"
+    
+    # Check if folders and files exist
+    echo "Checking if required folders and files exist:"
+
+    folders_to_check=(
+        "$WIN_CONFIG_DIR"
+        "$FREETDS_DLL_DIR"
+    )
+
+    files_to_check=(
+        "$WIN_CONFIG_DIR/freetds.conf"
+        "$WIN_CONFIG_DIR/odbcinst.ini"
+        "$WIN_CONFIG_DIR/odbc.ini"
+        "$FREETDS_DLL_DIR/libsybdb-5.dll"
+        "$REGISTRY_FILE"
+    )
+
+    for folder in "${folders_to_check[@]}"; do
+        if [ -d "$folder" ]; then
+            echo "✅ Folder exists: $folder"
+        else
+            echo "❌ Folder does not exist: $folder"
+        fi
+    done
+
+    for file in "${files_to_check[@]}"; do
+        if [ -f "$file" ]; then
+            echo "✅ File exists: $file"
+            echo "Contents of $file:"
+            if [[ "$file" == *".dll" ]]; then
+                echo "(binary file)"
+            else
+                cat "$file"
+            fi
+            echo "-------------------"
+        else
+            echo "❌ File does not exist: $file"
+        fi
+    done
 else
-    export ODBCSYSINI="$CONFIG_DIR"
-    export ODBCINI="$CONFIG_DIR/odbc.ini"
-    export FREETDSCONF="$CONFIG_DIR/freetds/freetds.conf"
-    export LD_LIBRARY_PATH="/app/.apt/usr/lib/x86_64-linux-gnu:/app/.apt/usr/lib/x86_64-linux-gnu/odbc:$LD_LIBRARY_PATH"
+    IS_WINDOWS=false
+    # Linux uses its own system paths, don't modify them
+    LINUX_CONFIG_DIR="/app/.apt/etc"
+    LINUX_DRIVER_PATH="/app/.apt/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so"
+    
+    # No need to create config files for Linux - Heroku handles this
+    echo "Running on Linux - using system FreeTDS configuration"
 fi
-
-# Check if folders and files exist
-echo "Checking if required folders and files exist:"
-
-folders_to_check=(
-    "$CONFIG_DIR/freetds"
-)
-
-files_to_check=(
-    "$CONFIG_DIR/freetds/freetds.conf"
-    "$CONFIG_DIR/odbcinst.ini"
-    "$CONFIG_DIR/odbc.ini"
-)
-
-for folder in "${folders_to_check[@]}"; do
-    if [ -d "$folder" ]; then
-        echo "✅ Folder exists: $folder"
-    else
-        echo "❌ Folder does not exist: $folder"
-    fi
-done
-
-for file in "${files_to_check[@]}"; do
-    if [ -f "$file" ]; then
-        echo "✅ File exists: $file"
-        echo "Contents of $file:"
-        cat "$file"
-        echo "-------------------"
-    else
-        echo "❌ File does not exist: $file"
-    fi
-done
 
 # Test DB connection using existing db.js module
 echo "Testing SQL connection..."
-if node -e "import('./src/lib/db.js').then(({getPool}) => getPool().then(pool => pool.request().query('SELECT 1').then(() => process.exit(0))).catch(() => process.exit(1)))"; then
+if node -e "import('./src/lib/db.js').then(({getPool}) => getPool().then(pool => pool.request().query('SELECT 1').then(() => process.exit(0))).catch(err => { console.error('Database connection error:', err); process.exit(1); }))"; then
     echo "✅ SQL connection test successful"
 else
     echo "❌ SQL connection test failed"
     exit 1
+fi
+
+# Build Next.js application before exiting
+if [ -f "$PROJECT_ROOT/node_modules/.bin/next" ]; then
+    echo "Building Next.js application..."
+    "$PROJECT_ROOT/node_modules/.bin/next" build
+    if [ $? -eq 0 ]; then
+        echo "✅ Next.js build successful"
+    else
+        echo "❌ Next.js build failed"
+        exit 1
+    fi
+else
+    echo "⚠️ Warning: next command not found in node_modules. Please run 'yarn build' or 'npm run build' manually."
 fi
 
 echo "setupDB.sh script completed"
