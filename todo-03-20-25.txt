@@ -1,0 +1,33 @@
+3/20 Data consistency
+=====================
+- Debug why 343/370 are being rendered, where are the other 27? Only happens on calendar.
+  - Consolidation logic or BigCalendar? document.querySelectorAll(".rbc-event") reports 373.
+- Add 370/371 at top
+- Double-check that overnights are handled properly for time range (10P-2A)
+
+
+3/17
+====
+Routing is priority #1, lead gen is second priority
+
+--- Routing
+
+1. 389 services out of how many (bad dates, etc?) out of 401
+2. add dollar amounts above or below the tech - every service setup has a $ amount on it
+3. of 389 services, add dropdown/input box that lets you specify or hardcode 80% of the jobs--how many techs would it take?
+
+intellignt guess of what % is good for job utilization within the 8 hour limit
+
+debug week view make sure its working properly
+
+doubles are a bug
+
+--- Lead gen
+
+View button useless
+Without contacts useless
+311 needs to be split up and combined based on request URI length
+Can DOH with contacts be formatted, where col B is wrapped anmd whorter, col a is longer
+col G phone # needs to be formatteed as a phone number
+No caching of what they last looked at
+Crl+T to to make it intoa table

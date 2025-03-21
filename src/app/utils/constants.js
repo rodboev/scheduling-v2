@@ -20,7 +20,7 @@ export const SHIFT_DURATION = HOURS_PER_SHIFT * MINUTES_PER_HOUR
 export const SHIFT_DURATION_MS = HOURS_PER_SHIFT * 60 * 60 * 1000 // 8 hours in milliseconds
 
 // Default date for calendar and map views
-export const DEFAULT_DATE = '2025-01-06' // Default date in YYYY-MM-DD format
+export const DEFAULT_DATE = '2025-03-24' // Default date in YYYY-MM-DD format
 
 export const SHOW_ONLY_BOROS = false
 

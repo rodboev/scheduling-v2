@@ -72,33 +72,6 @@ export async function GET(request) {
         }
       }
       
-      // Check for overlaps in Tech 2's services
-      if (techId === 'Tech 2' || !techId) {
-        const tech2Services = result.scheduledServices.filter(s => s.techId === 'Tech 2')
-        const overlaps = findOverlappingServices(tech2Services)
-        
-        if (overlaps.length > 0) {
-          console.log('Found overlapping services for Tech 2:', overlaps)
-          
-          // Remove overlapping services from the schedule
-          const overlappingIds = new Set(overlaps.flat().map(s => s.id))
-          result.scheduledServices = result.scheduledServices.filter(s => !overlappingIds.has(s.id))
-          
-          // Add removed services to unassigned with reason
-          const unassignedOverlaps = overlaps.flat().map(service => ({
-            ...service,
-            reason: 'TECH_2_OVERLAP'
-          }))
-          result.unassignedServices.push(...unassignedOverlaps)
-          
-          // Update scheduling details
-          result.schedulingDetails.unscheduledServices.push(...unassignedOverlaps)
-          result.schedulingDetails.summary.totalUnscheduled += unassignedOverlaps.length
-          result.schedulingDetails.summary.reasonBreakdown.TECH_2_OVERLAP = 
-            (result.schedulingDetails.summary.reasonBreakdown.TECH_2_OVERLAP || 0) + unassignedOverlaps.length
-        }
-      }
-      
       return createJsonResponse(result)
     }
 
