@@ -253,18 +253,4 @@ else
     exit 1
 fi
 
-# Build Next.js application before exiting
-if [ -f "$PROJECT_ROOT/node_modules/.bin/next" ]; then
-    echo "Building Next.js application..."
-    "$PROJECT_ROOT/node_modules/.bin/next" build
-    if [ $? -eq 0 ]; then
-        echo "✅ Next.js build successful"
-    else
-        echo "❌ Next.js build failed"
-        exit 1
-    fi
-else
-    echo "⚠️ Warning: next command not found in node_modules. Please run 'yarn build' or 'npm run build' manually."
-fi
-
 echo "setupDB.sh script completed"
