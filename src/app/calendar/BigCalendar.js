@@ -40,6 +40,9 @@ export default function BigCalendar() {
     updateAllServicesEnforcement,
     allServicesEnforced,
     refetchSchedule,
+    totalServices,
+    unscheduledServices,
+    schedulingDetails
   } = useSchedule(currentViewRange)
 
   // Add debugging logs
@@ -47,9 +50,11 @@ export default function BigCalendar() {
     console.log('Calendar data:', {
       assignedServices: assignedServices?.length,
       resources: resources?.length,
+      totalServices,
+      unscheduledServices,
       currentViewRange,
     })
-  }, [assignedServices, resources, currentViewRange])
+  }, [assignedServices, resources, currentViewRange, totalServices, unscheduledServices])
 
   // Effect to ensure UI updates regularly during scheduling
   useEffect(() => {
@@ -82,14 +87,106 @@ export default function BigCalendar() {
     [updateServiceEnforcement],
   )
 
+  // Count services that are actually rendered in the current view
+  const countRenderedServices = useCallback(() => {
+    if (!assignedServices?.length) return 0
+    
+    // For day view, count services that start on the current date
+    if (view === Views.DAY) {
+      const currentDateStr = dayjs(date).format('YYYY-MM-DD')
+      return assignedServices.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === currentDateStr
+      ).length
+    }
+    
+    // For other views, return total services
+    return assignedServices.length
+  }, [assignedServices, date, view])
+  
+  // Get rendered services count and debug invisible services
+  const renderedServicesCount = useMemo(() => {
+    const count = countRenderedServices()
+    
+    // Debug invisible services for day view 
+    if (view === Views.DAY && assignedServices?.length) {
+      const currentDateStr = dayjs(date).format('YYYY-MM-DD')
+      const nextDateStr = dayjs(date).add(1, 'day').format('YYYY-MM-DD')
+      
+      const visibleServices = assignedServices.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === currentDateStr
+      )
+      
+      const invisibleServices = assignedServices.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') !== currentDateStr
+      )
+      
+      const nextDayServices = assignedServices.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === nextDateStr
+      )
+      
+      // Create a more detailed debugging object for invisible services
+      const invisibleServicesDetails = invisibleServices.map(service => {
+        // Get the shift this service belongs to
+        const shift = assignedServices
+          .filter(s => s.techId === service.techId)
+          .sort((a, b) => new Date(a.start) - new Date(b.start))
+        
+        // Find first service in the shift on the current day (if any)
+        const firstServiceInShift = shift.find(s => 
+          dayjs(s.start).format('YYYY-MM-DD') === currentDateStr
+        )
+        
+        return {
+          id: service.id,
+          company: service.company,
+          start: service.start,
+          startFormatted: dayjs(service.start).format('YYYY-MM-DD HH:mm'),
+          end: service.end,
+          endFormatted: dayjs(service.end).format('YYYY-MM-DD HH:mm'),
+          techId: service.techId,
+          // Reference to the shift's first service on current day (if exists)
+          relatedShiftService: firstServiceInShift ? {
+            id: firstServiceInShift.id,
+            company: firstServiceInShift.company,
+            start: firstServiceInShift.start,
+            startFormatted: dayjs(firstServiceInShift.start).format('YYYY-MM-DD HH:mm')
+          } : null
+        }
+      })
+      
+      // Log invisible services in a separate, more prominent log
+      console.log('Invisible services:', invisibleServicesDetails)
+      
+      console.log('Services debug:', {
+        currentDate: currentDateStr,
+        nextDate: nextDateStr,
+        initialTotal: totalServices,
+        validServices: totalServices - unscheduledServices,
+        unscheduledServices,
+        assignedTotal: assignedServices.length,
+        visible: visibleServices.length,
+        invisible: invisibleServices.length,
+        nextDay: nextDayServices.length
+      })
+    }
+    
+    return count
+  }, [countRenderedServices, assignedServices, date, view, lastUpdateTime, totalServices, unscheduledServices])
+
   // Create custom toolbar component
   const customToolbar = useCallback(
     toolbar => {
+      const validServices = totalServices - unscheduledServices
+      const renderedServices = renderedServicesCount
+      const notVisibleCount = validServices - renderedServices
+      
       const label = (
         <>
           {toolbar.label}
-          {!isScheduling && (
-            <span className="ml-10 text-gray-500">{assignedServices?.length > 0 ? `${assignedServices?.length} services` : ''}</span>
+          {!isScheduling && totalServices > 0 && (
+            <span className="ml-10 text-gray-500">
+              {`${validServices}/${totalServices} valid, ${renderedServices} visible ${notVisibleCount > 0 ? `(${notVisibleCount} on next day)` : ''}`}
+            </span>
           )}
         </>
       )
@@ -117,7 +214,7 @@ export default function BigCalendar() {
         </div>
       )
     },
-    [isScheduling, assignedServices?.length]
+    [isScheduling, totalServices, unscheduledServices, renderedServicesCount, view]
   )
 
   const calendarComponents = useMemo(

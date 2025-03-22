@@ -604,10 +604,6 @@
       -73.990836,
       40.718638
     ],
-    "3815": [
-      -73.978188,
-      40.670982
-    ],
     "3839": [
       -74.008059,
       40.714213
@@ -1651,10 +1647,6 @@
     "6928": [
       -73.996821,
       40.638927
-    ],
-    "6937": [
-      -73.961573,
-      40.80102
     ],
     "6946": [
       -73.949221,
@@ -6880,10 +6872,6 @@
       -73.93592,
       40.84122
     ],
-    "48275": [
-      -73.97091,
-      40.75162
-    ],
     "48289": [
       -73.95095,
       40.77469
@@ -6897,8 +6885,8 @@
       40.67953
     ],
     "48324": [
-      -73.951601,
-      40.725624
+      -73.951799,
+      40.72557
     ],
     "48331": [
       -74.16007,
@@ -6943,10 +6931,6 @@
     "48534": [
       -73.96202,
       40.64912
-    ],
-    "48535": [
-      -74.172856,
-      40.734734
     ],
     "48536": [
       -73.921183,
@@ -7587,6 +7571,10 @@
     "51472": [
       -73.97181,
       40.78378
+    ],
+    "51509": [
+      -73.97791,
+      40.74201
     ],
     "51523": [
       -73.98286,
@@ -8452,10 +8440,6 @@
       -73.81044,
       40.98615
     ],
-    "52966": [
-      -73.91089,
-      40.67856
-    ],
     "52972": [
       -74.31779,
       40.70483
@@ -8687,10 +8671,6 @@
     "53495": [
       -73.83588,
       40.704601
-    ],
-    "53503": [
-      -73.83586,
-      40.92561
     ],
     "53507": [
       -73.83688,
@@ -9111,10 +9091,6 @@
     "54354": [
       -73.91905,
       40.63614
-    ],
-    "54367": [
-      -73.96807,
-      40.57952
     ],
     "54383": [
       -74.160756,
@@ -9900,10 +9876,6 @@
       -74.405299,
       40.70641
     ],
-    "55789": [
-      -73.96852,
-      40.57753
-    ],
     "55790": [
       -73.94254,
       40.60391
@@ -10495,10 +10467,6 @@
     "56668": [
       -73.95046,
       40.77644
-    ],
-    "56673": [
-      -74.00795,
-      40.60443
     ],
     "56675": [
       -73.93838,
@@ -11287,10 +11255,6 @@
     "58070": [
       -73.88766,
       40.73852
-    ],
-    "58075": [
-      -73.84839,
-      40.91261
     ],
     "58079": [
       -74.06748,
@@ -13468,10 +13432,6 @@
       -73.98266,
       40.61925
     ],
-    "61501": [
-      -74.14291,
-      40.92609
-    ],
     "61502": [
       -73.78212,
       40.697312
@@ -13583,10 +13543,6 @@
     "61671": [
       -73.98459,
       40.74354
-    ],
-    "61672": [
-      -73.98659,
-      40.75144
     ],
     "61673": [
       -73.96988,
@@ -15056,10 +15012,6 @@
       -73.90251,
       40.90453
     ],
-    "63902": [
-      -73.98008,
-      40.57557
-    ],
     "63904": [
       -73.98996,
       40.60977
@@ -16191,10 +16143,6 @@
     "65304": [
       -73.98824,
       40.28461
-    ],
-    "65309": [
-      -74.00701,
-      40.62558
     ],
     "65310": [
       -73.987299,
@@ -18024,10 +17972,6 @@
       -73.68549,
       40.688801
     ],
-    "67235": [
-      -74.326166,
-      40.57394
-    ],
     "67236": [
       -73.82213,
       40.75943
@@ -18399,10 +18343,6 @@
     "67649": [
       -73.85223,
       40.69329
-    ],
-    "67654": [
-      -74.34111,
-      40.57116
     ],
     "67655": [
       -73.97086,
@@ -19023,10 +18963,6 @@
     "68387": [
       -74.00109,
       40.63606
-    ],
-    "68388": [
-      -73.99289,
-      40.694401
     ],
     "68396": [
       -73.97411,
@@ -19652,10 +19588,6 @@
       -73.98993,
       40.76214
     ],
-    "68995": [
-      -73.93581,
-      40.75333
-    ],
     "68997": [
       -73.84071,
       40.71814
@@ -19677,8 +19609,8 @@
       40.74182
     ],
     "69022": [
-      0,
-      0
+      -74.170499,
+      40.74181
     ],
     "69023": [
       -73.992094,
@@ -19703,10 +19635,6 @@
     "69035": [
       -73.96885,
       40.76998
-    ],
-    "69047": [
-      -74.00367,
-      40.72539
     ],
     "69052": [
       -74.10005,
@@ -20344,10 +20272,6 @@
       -73.95107,
       40.597601
     ],
-    "69597": [
-      -73.95974,
-      40.68754
-    ],
     "69598": [
       -73.91497,
       40.70168
@@ -20920,6 +20844,10 @@
       -73.83217,
       40.75937
     ],
+    "70055": [
+      -73.63511,
+      40.84548
+    ],
     "70056": [
       -73.62898,
       40.86382
@@ -20947,10 +20875,6 @@
     "70075": [
       -74.11912,
       40.97969
-    ],
-    "70080": [
-      -73.87604,
-      41.014201
     ],
     "70092": [
       -73.63138,
@@ -21092,10 +21016,6 @@
       -73.70981,
       40.70825
     ],
-    "70230": [
-      -74.00042,
-      40.73008
-    ],
     "70232": [
       -73.83877,
       40.68632
@@ -21143,6 +21063,10 @@
     "70278": [
       -74.23668,
       40.52508
+    ],
+    "70281": [
+      -74.00096,
+      40.72944
     ],
     "70282": [
       -73.96708,
@@ -21276,10 +21200,6 @@
       -73.97831,
       40.57549
     ],
-    "70397": [
-      -73.94041,
-      40.68035
-    ],
     "70403": [
       -74.07546,
       40.63769
@@ -21323,6 +21243,10 @@
     "70450": [
       -73.71356,
       40.968501
+    ],
+    "70456": [
+      -74.29263,
+      40.67668
     ],
     "70459": [
       -73.86727,
@@ -21372,10 +21296,6 @@
       -73.96637,
       40.69371
     ],
-    "70509": [
-      -73.97299,
-      40.693255
-    ],
     "70517": [
       -73.96268,
       40.79951
@@ -21387,6 +21307,10 @@
     "70519": [
       -74.24615,
       40.89311
+    ],
+    "70520": [
+      -74.288999,
+      40.56784
     ],
     "70521": [
       -74.245501,
@@ -21424,9 +21348,17 @@
       -73.62074,
       40.71931
     ],
+    "70561": [
+      -73.60565,
+      40.65095
+    ],
     "70563": [
       -73.96788,
       40.68038
+    ],
+    "70569": [
+      -73.45927,
+      40.73166
     ],
     "70572": [
       -74.09141,
@@ -21440,13 +21372,13 @@
       -73.92842,
       40.69313
     ],
-    "70588": [
-      -73.99326,
-      40.758701
-    ],
     "70599": [
       -73.91534,
       40.77611
+    ],
+    "70606": [
+      -73.97796,
+      40.59364
     ],
     "70611": [
       -74.04213,
@@ -21455,6 +21387,18 @@
     "70615": [
       -73.83005,
       40.71329
+    ],
+    "70621": [
+      -74.457099,
+      40.57007
+    ],
+    "70626": [
+      -73.64125,
+      40.86777
+    ],
+    "70642": [
+      -73.96929,
+      40.79553
     ]
   },
   "companies": {
@@ -21609,7 +21553,6 @@
     "3773": "Steve's Deli",
     "3796": "FLORENCE PRIME MEAT MARKET",
     "3808": "MISRAHI REALTY",
-    "3815": "TRUE MANAGEMENT",
     "3839": "ZLOT REALTY CORP.",
     "3842": "PINO'S PRIME MEATS",
     "3849": "Z.REISS & ASSOCIATES",
@@ -21871,7 +21814,6 @@
     "6907": "LEEMAR MANAGEMENT CORP",
     "6927": "HEARTSHARE KIWANIS FIRST STEP CENTE",
     "6928": "UROLOGIC SURGICAL ASSOCIATES, PC",
-    "6937": "FREDAS SOUL CUISINE",
     "6946": "AGGO LLC",
     "6951": "ANTONIOS FEGGOUDAKIS",
     "6952": "ANTONIOS FEGGOUDAKIS",
@@ -23178,7 +23120,6 @@
     "48249": "SUSHI AND CO",
     "48266": "HMJ",
     "48269": "Angela Cake",
-    "48275": "Keats Bar",
     "48289": "RALPHS ITALIAN ICES",
     "48291": "PALERMO PIZZERIA AND RESTAURANT",
     "48309": "Jamit Bistro",
@@ -23194,7 +23135,6 @@
     "48467": "BROOKLYN WALDORF SCHOOL",
     "48468": "JOU JOU",
     "48534": "THE 26TH E 19TH ST CONDO ASSOC.",
-    "48535": "DOWNTOWN CARIBBEAN EATS",
     "48536": "JOHN MCENROE TENNIS ADADEMY/CAFE",
     "48559": "AOI KITCHEN",
     "48588": "SPA 88",
@@ -23355,6 +23295,7 @@
     "51446": "PQ Coffee",
     "51453": "F AND F PIZZA",
     "51472": "GUMLEY HAFT",
+    "51509": "SURREAL CREAMERY",
     "51523": "2850 WEST 15TH ST DEVELOPMENT LLC",
     "51526": "MEGAN SMITH",
     "51540": "TRINI GIRL",
@@ -23571,7 +23512,6 @@
     "52962": "RESIDENTIAL",
     "52964": "STELLAR MANAGEMENT",
     "52965": "STELLAR MANAGEMENT",
-    "52966": "BEETS CAFE",
     "52972": "Halo Roasters",
     "52988": "Early Bird 111 EC, INC",
     "52989": "GENESIS STUDIO",
@@ -23630,7 +23570,6 @@
     "53465": "TRILOBITE LLC",
     "53475": "BRIGHT SIDE",
     "53495": "PETER ZUCCARELLO",
-    "53503": "VALENTINA'S RISTORANTE",
     "53507": "THE MEAT UP GRILL",
     "53514": "BORO HOTEL",
     "53520": "LA GRANDE BOUCHERIE",
@@ -23736,7 +23675,6 @@
     "54342": "Shawn Specially Pharmacy",
     "54349": "MY JARABACOA #1 RESTAURANT",
     "54354": "1669 GALAXY DELI",
-    "54367": "Trump Village #1",
     "54383": "BITOL CANTINA",
     "54389": "JEREMY WACHALTER & WIFE LINDSEY",
     "54392": "CAVATAPPI",
@@ -23933,7 +23871,6 @@
     "55772": "VITAL HEALTH FOODS LLC",
     "55773": "PENNY BRIDGE STORE",
     "55786": "BACCI BRICK OVEN ITALIAN GRILL",
-    "55789": "Trump Village #2",
     "55790": "Lawrence Towers Apartments",
     "55791": "Lawrence gardens Apartments",
     "55792": "Nautilus Hall Apartments",
@@ -24082,7 +24019,6 @@
     "56661": "Cantina Taco & Tequila Bar",
     "56663": "LA CHACRA RESTAURANT INC",
     "56668": "Luna Rossa",
-    "56673": "RESIDENTIAL",
     "56675": "El Condor Latin Fusion",
     "56686": "CROSTA",
     "56687": "Queens Bully",
@@ -24280,7 +24216,6 @@
     "58054": "Mimmi's Pizza",
     "58059": "RESIDENTIAL",
     "58070": "SECURE SELF STORAGE",
-    "58075": "R & M MANAGEMENT",
     "58079": "VIP DINER/RESTAURANT- BARSHAY'S",
     "58090": "ORGANIC LOVE",
     "58091": "Savory Deli",
@@ -24390,7 +24325,7 @@
     "58690": "DOUGLASTON DELI",
     "58692": "IL TESORO",
     "58697": "Elim Sda church",
-    "58700": "Giardino Dero",
+    "58700": "Giardino Doro",
     "58713": "QUEENS EXPRESS PHARMACY",
     "58716": "VITALS PHARMACY",
     "58719": "Volvo Cars Brooklyn",
@@ -24825,7 +24760,6 @@
     "61478": "LUANNE WILD GINGER FRANKLIN",
     "61484": "ASAP Pizza Stop",
     "61496": "DANIELLE RESIDENTIAL MULTIUNIT BUIL",
-    "61501": "Hacienda",
     "61502": "MERRICK PARK GARDEN CO-OP",
     "61503": "Barney Brown",
     "61514": "La Esquinita NY",
@@ -24854,7 +24788,6 @@
     "61656": "BANCHETTO FEAST",
     "61661": "William Pintado",
     "61671": "SANDBERG MANAGEMENT",
-    "61672": "VANBARTON SERVICES LLC",
     "61673": "International Student Youth Hostel",
     "61679": "Romantic Depot",
     "61690": "KINGSTON BAKERY",
@@ -25222,7 +25155,6 @@
     "63877": "THIRTEEN WATER",
     "63881": "Park Lane at Sea View",
     "63885": "EMILIANO'S MARKET",
-    "63902": "TEURA RESTAURANT",
     "63904": "LINDA TATELBAUM",
     "63907": "CASA GIUSEPPE",
     "63912": "TWO 8 TWO BAR AND BURGER",
@@ -25506,7 +25438,6 @@
     "65299": "PAYNTERS RIDGE",
     "65300": "NAUVO GRILL CLUB",
     "65304": "SABOR DO BRAZIL",
-    "65309": "Nicolas bibedeo",
     "65310": "Pierre Loti",
     "65318": "MOTHER MOUSSE",
     "65343": "LOS 3 CARNALES MEXICAN RESTAURANT",
@@ -25964,7 +25895,6 @@
     "67232": "Narzanaa",
     "67233": "ANKER MANAGEMENT",
     "67234": "EASTERN MEAT FARMS",
-    "67235": "SAREE BAZAR",
     "67236": "CLAYBURNE OWNERS CORP",
     "67242": "Mandy Cheng",
     "67245": "NO MORE CAFE",
@@ -26058,7 +25988,6 @@
     "67646": "HIP HOP BURGER",
     "67648": "IVY CAFE",
     "67649": "TAQUERIA DOWNTOWN",
-    "67654": "Fabric Guy",
     "67655": "Metropolitan Property Services, Inc",
     "67657": "WAHIZZA",
     "67670": "TimeOut  MARKET",
@@ -26214,7 +26143,6 @@
     "68381": "MOKSHA EATS",
     "68386": "Nima Restaurant",
     "68387": "HOME FIXTURES LLC",
-    "68388": "MONTY Q'S",
     "68396": "HEARTHLY BURGER",
     "68399": "67 REMSEN STREET",
     "68405": "NEIRS TAVERN",
@@ -26371,7 +26299,6 @@
     "68978": "Bagels By Jarrett",
     "68981": "Classic Pizza",
     "68989": "EATS ON 48TH",
-    "68995": "Yianni Katsifas",
     "68997": "White Radish",
     "69009": "CHOCOLATE HOUSE",
     "69010": "ROSINA VELTRI",
@@ -26384,7 +26311,6 @@
     "69032": "Hot Bagels",
     "69033": "Barley Time Bakery & Dessert Bar",
     "69035": "Douglas Elliman Property Management",
-    "69047": "Haraz coffee shop",
     "69052": "The New Park Tavern",
     "69060": "Libelula Bakery & Kitchen",
     "69061": "Little Armenia Cafe",
@@ -26544,7 +26470,6 @@
     "69587": "Van Hook Cheese",
     "69592": "KPOT Korean BBQ & Hot Pot",
     "69593": "2620 OCEAN PKWY LLC",
-    "69597": "Clementine Bakery",
     "69598": "Rafaqaa",
     "69607": "Overflow Coffee",
     "69608": "The Black Cow Coffee Company",
@@ -26680,7 +26605,7 @@
     "70024": "ADAMS EUROPEAN IRVINE ST",
     "70025": "The Olive Bistro",
     "70026": "Unveiled",
-    "70031": "SUSHIXU SHIN INC",
+    "70031": "SOUR AJI",
     "70034": "Napoli Italian Restaurant",
     "70035": "Westbury Fish Co",
     "70037": "Primetime",
@@ -26688,6 +26613,7 @@
     "70047": "Mt. Fuji Japanese Sushi & Hibachi",
     "70050": "Canasta's Bakery",
     "70051": "HOME MADE SOUP",
+    "70055": "Jeanine's American Bistro",
     "70056": "While in Kathmandu",
     "70068": "Shanai Restaurant & Party Hall",
     "70070": "Spice Bazaar",
@@ -26695,7 +26621,6 @@
     "70073": "Temple Beth El",
     "70074": "RED COFFEE STAND",
     "70075": "Blue Ridge Cafe",
-    "70080": "Climbing Wolf Coffee & Beer",
     "70092": "Henry's Confectionery",
     "70103": "Matari Coffee Company",
     "70111": "Poke Mahi",
@@ -26731,7 +26656,6 @@
     "70222": "Wahizza Bayonne",
     "70228": "Saranada Cafe",
     "70229": "Nuevo Nazaro Restaurant",
-    "70230": "NYC Bites",
     "70232": "Punjabi Chaap Corner",
     "70233": "101 A pizza",
     "70234": "Papa Thai Chef",
@@ -26744,6 +26668,7 @@
     "70271": "MURRAY HILL",
     "70275": "COUNTYWIDE MASONRY",
     "70278": "ARIANA'S SOUTH",
+    "70281": "Bora Bora Macdougal",
     "70282": "Chocolate Connects",
     "70284": "Brooklyn Deli",
     "70287": "Surf Pizza & Wings",
@@ -26777,7 +26702,6 @@
     "70378": "Lucy's Juice Shop",
     "70381": "Verona Avenue Daycare",
     "70387": "SOPHIA RESTAURANT",
-    "70397": "More Than Just Lobster",
     "70403": "Raval Steakhouse",
     "70405": "Vanity Cafe NYC",
     "70407": "Heritage Bakery, Pizza & Restaurant",
@@ -26789,6 +26713,7 @@
     "70447": "All Seasons Diner",
     "70448": "Blue Heron Tea & Coffee",
     "70450": "Casa D' Italia Sandwich Shop",
+    "70456": "Residential",
     "70459": "Chaman Restaurant",
     "70461": "Shawarma Bay",
     "70462": "JOE MARCHICA",
@@ -26801,10 +26726,10 @@
     "70500": "Maria's Brunch",
     "70504": "BAYA BAR",
     "70505": "HONEYDEW DROP DAYCARE",
-    "70509": "Taqueria Green Valley",
     "70517": "Coma Bueno Restaurant",
     "70518": "Krauser's",
     "70519": "Dervish Turkish Restaurant",
+    "70520": "KPOT Korean BBQ & Hot Pot",
     "70521": "Taqueria El Prieto",
     "70526": "El Lado Taco",
     "70531": "Eden Wok New Rochelle",
@@ -26814,13 +26739,18 @@
     "70548": "QAWAH HOUSE",
     "70553": "West Orange Cafe",
     "70558": "Antonio's Pizzeria 2",
+    "70561": "Three Guys Bagels",
     "70563": "Breakfast By Salts Cure",
+    "70569": "3 Brothers Pizza Cafe",
     "70572": "Arka Restaurant",
     "70578": "Birds Caribbean & American Cuisine",
     "70579": "Cafeteria",
-    "70588": "West Bank Cafe",
     "70599": "Zio Pepe's Pizzeria",
+    "70606": "FANNY FROM SHAKING CRAB",
     "70611": "Galapagos Ecuadorian Cuisine",
-    "70615": "KEW GARDENS CHICKEN"
+    "70615": "KEW GARDENS CHICKEN",
+    "70621": "Cedar Grove Cafe & Catering",
+    "70626": "Delicious Pizzeria",
+    "70642": "Tsumo UWS"
   }
 }

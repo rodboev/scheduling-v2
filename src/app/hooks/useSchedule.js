@@ -29,6 +29,9 @@ export function useSchedule(currentViewRange) {
   const [result, setResult] = useState({
     assignedServices: [],
     resources: [],
+    totalServices: 0,
+    unscheduledServices: 0,
+    schedulingDetails: null
   })
   const dataRef = useRef(null)
   const progressRef = useRef(0)
@@ -49,8 +52,13 @@ export function useSchedule(currentViewRange) {
     [],
   )
 
-  const processDataBatch = useCallback(startIndex => {
-    const { scheduledServices, unassignedServices, clusteringInfo } = dataRef.current
+  const processDataBatch = useCallback((startIndex) => {
+    if (!dataRef.current?.scheduledServices?.length) {
+      setLoading(false)
+      return
+    }
+
+    const { scheduledServices, unassignedServices, clusteringInfo, schedulingDetails } = dataRef.current
     const totalServices = scheduledServices?.length || 0
 
     // Update progress based on how many services we've processed
@@ -155,6 +163,9 @@ export function useSchedule(currentViewRange) {
       setResult(prevResult => ({
         ...prevResult,
         resources,
+        totalServices: dataRef.current.schedulingDetails?.totalServices || scheduledServices.length + (unassignedServices?.length || 0),
+        unscheduledServices: unassignedServices?.length || 0,
+        schedulingDetails
       }))
 
       // Final progress update
@@ -186,6 +197,7 @@ export function useSchedule(currentViewRange) {
 
       const data = await response.json()
       console.log('Schedule API response:', {
+        initialServices: data.initialServices,
         scheduledServices: data.scheduledServices?.length,
         unassignedServices: data.unassignedServices?.length,
         sample: data.scheduledServices?.[0],
@@ -197,6 +209,8 @@ export function useSchedule(currentViewRange) {
       dataRef.current = {
         scheduledServices: data.scheduledServices || [],
         unassignedServices: data.unassignedServices || [],
+        schedulingDetails: data.schedulingDetails || {},
+        initialServices: data.initialServices || 0,
         clusteringInfo: {
           ...data.clusteringInfo,
           performanceDuration: Math.round(performance.now() - startTimeRef.current),
@@ -207,6 +221,9 @@ export function useSchedule(currentViewRange) {
       setResult({
         assignedServices: [],
         resources: [],
+        totalServices: data.initialServices || 0,
+        unscheduledServices: data.unassignedServices?.length || 0,
+        schedulingDetails: data.schedulingDetails
       })
 
       // Start processing batches
@@ -261,5 +278,8 @@ export function useSchedule(currentViewRange) {
     allServicesEnforced,
     refetchSchedule: fetchSchedule,
     scheduleServices,
+    totalServices: result.totalServices,
+    unscheduledServices: result.unscheduledServices,
+    schedulingDetails: result.schedulingDetails
   }
 }
