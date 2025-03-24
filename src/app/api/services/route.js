@@ -32,6 +32,9 @@ function createServicesForRange(setup, startDate, endDate) {
   // Log when service occurs
   for (let date = start; date.isBefore(end); date = date.add(1, 'day')) {
     if (shouldServiceOccur(setup.schedule.string, date)) {
+      // Add detailed logging to track which setups generate services on which days
+      console.log(`Service should occur: Setup ${setup.id} on ${date.format('YYYY-MM-DD')}`)
+      
       // Create the service's time window based on its original range
       const rangeStart = setup.time.range[0] !== null
         ? date.startOf('day').add(setup.time.range[0], 'seconds')
@@ -70,9 +73,13 @@ function createServicesForRange(setup, startDate, endDate) {
       if (scheduledStart.isBefore(end) && scheduledEnd.isAfter(start)) {
         const { schedule, comments, ...serviceWithoutOmittedFields } = setup
         
+        // Log the final created service ID for detailed tracking
+        const serviceId = `${setup.id}-${date.format('YYYY-MM-DD')}`
+        console.log(`Creating service: ${serviceId}, range: [${rangeStart.format('HH:mm')}-${rangeEnd.format('HH:mm')}]`)
+        
         services.push({
           ...serviceWithoutOmittedFields,
-          id: `${setup.id}-${date.format('YYYY-MM-DD')}`,
+          id: serviceId,
           date: date.toDate(),
           start: scheduledStart.toDate(),
           end: scheduledEnd.toDate(),
@@ -124,7 +131,7 @@ function shouldServiceOccur(scheduleString, date) {
     return false
   }
 
-  return scheduleString[scheduleIndex] === '1'
+  return shouldOccur
 }
 
 async function fetchServiceSetups() {
@@ -157,6 +164,22 @@ export async function GET(request) {
     })
 
     console.log('Total services before any filtering:', services.length)
+    
+    // Count services by serviceSetup ID to identify which setup might be generating an extra service
+    const setupCounts = {}
+    for (const service of services) {
+      const setupId = service.id.split('-')[0]
+      setupCounts[setupId] = (setupCounts[setupId] || 0) + 1
+    }
+    
+    // Log setups that generate more than 1 service for the current date range
+    const multiServiceSetups = Object.entries(setupCounts)
+      .filter(([_, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1])
+    console.log('Setups with multiple services:', multiServiceSetups.length)
+    
+    // Log all service setup IDs with their counts for reference
+    console.log('All setup IDs by count:', multiServiceSetups.map(([id, count]) => `${id}(${count})`).join(', '))
 
     // Filter out services outside NYC if SHOW_ONLY_BOROS is true
     if (SHOW_ONLY_BOROS) {

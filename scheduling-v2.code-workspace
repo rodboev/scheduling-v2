@@ -3,5 +3,8 @@
 	{
 		"path": "."
 	}
-]
+],
+"settings": {
+	"terminal.integrated.scrollback": 100000
+}
 }

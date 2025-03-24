@@ -163,7 +163,9 @@ export function useSchedule(currentViewRange) {
       setResult(prevResult => ({
         ...prevResult,
         resources,
-        totalServices: dataRef.current.schedulingDetails?.totalServices || scheduledServices.length + (unassignedServices?.length || 0),
+        totalServices: dataRef.current.schedulingDetails?.validServices || 
+                       dataRef.current.schedulingDetails?.totalServices || 
+                       scheduledServices.length + (unassignedServices?.length || 0),
         unscheduledServices: unassignedServices?.length || 0,
         schedulingDetails
       }))

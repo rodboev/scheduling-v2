@@ -505,7 +505,7 @@ function updateServiceRelationships(services, distanceMatrix) {
   return services
 }
 
-function processServices(services, distanceMatrix) {
+function processServices(services, distanceMatrix, mustScheduleAll = false) {
   try {
     const startTime = performance.now()
     SCORE_CACHE.clear()
@@ -518,41 +518,62 @@ function processServices(services, distanceMatrix) {
     const serviceMap = new Map()
     const scheduledServiceIds = new Set()
 
-    // Pre-filter and deduplicate services
-    services.forEach(service => {
-      // Check validity conditions
-      const isValid = service &&
-        service.time &&
-        service.time.range &&
-        service.time.range[0] &&
-        service.time.range[1] &&
-        service.location?.id
+    // When mustScheduleAll is true, we skip filtering and process all services
+    if (mustScheduleAll) {
+      console.log('mustScheduleAll=true: Processing all services without additional filtering')
+      
+      // Just deduplicate services, but don't do additional validation
+      services.forEach(service => {
+        // Only check for duplicates
+        if (serviceMap.has(service.id)) {
+          duplicates.add(service.id)
+          console.log('Skipping duplicate service:', service.id)
+          return
+        }
 
-      if (!isValid) {
-        invalidServices.add(service.id)
-        console.log('Worker filtered invalid service:', service.id, {
-          hasTime: !!service.time,
-          hasRange: !!service.time?.range,
-          hasStart: !!service.time?.range?.[0],
-          hasEnd: !!service.time?.range?.[1],
-          hasLocationId: !!service.location?.id
+        serviceMap.set(service.id, {
+          ...service,
+          duration: service.time.duration,
+          isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
         })
-        return
-      }
-
-      // Check for duplicates and already scheduled
-      if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
-        duplicates.add(service.id)
-        console.log('Worker found duplicate/already scheduled service:', service.id)
-        return
-      }
-
-      serviceMap.set(service.id, {
-        ...service,
-        duration: service.time.duration,
-        isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
       })
-    })
+    } else {
+      // Original filtering logic when mustScheduleAll is false
+      services.forEach(service => {
+        // Check validity conditions
+        const isValid = service &&
+          service.time &&
+          service.time.range &&
+          service.time.range[0] &&
+          service.time.range[1] &&
+          service.location?.id
+
+        if (!isValid) {
+          invalidServices.add(service.id)
+          console.log('Worker filtered invalid service:', service.id, {
+            hasTime: !!service.time,
+            hasRange: !!service.time?.range,
+            hasStart: !!service.time?.range?.[0],
+            hasEnd: !!service.time?.range?.[1],
+            hasLocationId: !!service.location?.id
+          })
+          return
+        }
+
+        // Check for duplicates and already scheduled
+        if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
+          duplicates.add(service.id)
+          console.log('Worker found duplicate/already scheduled service:', service.id)
+          return
+        }
+
+        serviceMap.set(service.id, {
+          ...service,
+          duration: service.time.duration,
+          isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
+        })
+      })
+    }
 
     // Convert to array and add metadata
     const sortedServices = Array.from(serviceMap.values())
@@ -599,12 +620,6 @@ function processServices(services, distanceMatrix) {
 
       // For zero-width time windows, try existing shifts first
       if (service.startTimeWindow === 0) {
-        console.log('Processing exact-time service:', {
-          id: service.id,
-          company: service.company,
-          start: service.earliestStart,
-          duration: service.duration
-        })
 
         let bestMatch = null
         let bestShift = null
@@ -1872,38 +1887,14 @@ function initializeShifts(services) {
 }
 
 // Handle messages from the main thread
-parentPort.on('message', async ({ services, distanceMatrix }) => {
+parentPort.on('message', ({ services, distanceMatrix, mustScheduleAll = false }) => {
+  console.log(`Worker starting with ${services.length} services, mustScheduleAll=${mustScheduleAll}`)
   try {
-    console.log('Worker received services:', services.length)
-    console.log(
-      'Distance matrix dimensions:',
-      distanceMatrix.length,
-      'x',
-      distanceMatrix[0]?.length,
-    )
-
-    const result = await processServices(services, distanceMatrix)
-    console.log('Worker processed services:', result.scheduledServices.length)
-    console.log(
-      'Services with clusters:',
-      result.scheduledServices.filter(s => s.cluster >= 0).length,
-    )
-
+    const result = processServices(services, distanceMatrix, mustScheduleAll)
     parentPort.postMessage(result)
   } catch (error) {
-    console.error('Error in clustering worker:', error)
-    parentPort.postMessage({
-      error: error.message,
-      scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
-      clusteringInfo: {
-        algorithm: 'shifts',
-        performanceDuration: 0,
-        connectedPointsCount: 0,
-        totalClusters: 0,
-        clusterSizes: [],
-        clusterDistribution: [],
-      },
-    })
+    console.error('Worker error:', error)
+    parentPort.postMessage({ error: error.message || 'Unknown worker error' })
   }
 })
 

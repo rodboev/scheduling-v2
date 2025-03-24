@@ -1,0 +1,591 @@
+ src/app/api/schedule/route.js | 197 ++++++++++++++++++++++++------------------
+ 1 file changed, 113 insertions(+), 84 deletions(-)
+
+diff --git a/src/app/api/schedule/route.js b/src/app/api/schedule/route.js
+index 0c900eeb..8af4b45c 100644
+--- a/src/app/api/schedule/route.js
++++ b/src/app/api/schedule/route.js
+@@ -211,49 +211,76 @@ async function processDateRange(start, end) {
+ 
+     console.log('Initial services from /services:', response.data.length)
+ 
+-    // Track services filtered due to missing time range
++    // STEP 1: Filter out services that cannot be scheduled (comprehensive filtering in one place)
++    // These are services with invalid data that should never be sent to the scheduler
++    const unschedulableServices = []
++    
++    // Check for missing time range
+     const missingTimeRangeServices = response.data.filter(service => {
+       if (!service.time.range[0] || !service.time.range[1]) {
+         console.log('Filtered out service missing time range:', service.id)
++        unschedulableServices.push({
++          id: service.id,
++          company: service.company,
++          location: {
++            id: service.location?.id,
++            address: service.location?.address
++          },
++          time: {
++            range: service.time.range,
++            duration: service.time.duration
++          },
++          reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
++        })
+         return true
+       }
+       return false
+-    }).map(service => ({
+-      id: service.id,
+-      company: service.company,
+-      location: {
+-        id: service.location?.id,
+-        address: service.location?.address
+-      },
+-      time: {
+-        range: service.time.range,
+-        duration: service.time.duration
+-      },
+-      reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
+-    }))
++    })
+ 
+-    const services = response.data.filter(service => {
++    // Filter for date range
++    const dateRangeServices = response.data.filter(service => {
+       if (!service.time.range[0] || !service.time.range[1]) return false
+       const serviceDate = dayjsInstance(service.date)
+       const isInRange = serviceDate.isBetween(start, end, null, '[)')
+       if (!isInRange) {
+-        console.log('Filtered out service outside date range:', service.id, {
+-          serviceDate: serviceDate.format(),
+-          start: start.format(),
+-          end: end.format()
++        console.log('Filtered out service outside date range:', service.id)
++        unschedulableServices.push({
++          id: service.id,
++          company: service.company,
++          location: {
++            id: service.location?.id,
++            address: service.location?.address
++          },
++          time: {
++            range: service.time.range,
++            duration: service.time.duration
++          },
++          reason: 'OUTSIDE_DATE_RANGE'
+         })
++        return false
+       }
+-      return isInRange
++      return true
+     })
+ 
+-    console.log('Services after date/time filtering:', services.length)
+-
+-    // Track invalid services before filtering
+-    const invalidServices = services.filter(service => {
++    // Check for missing location or invalid coordinates
++    const locationFilteredServices = dateRangeServices.filter(service => {
+       // Check for missing location ID
+       if (!service.location?.id?.toString()) {
+         console.log('Service missing location ID:', service.id)
+-        return true
++        unschedulableServices.push({
++          id: service.id,
++          company: service.company,
++          location: {
++            id: service.location?.id,
++            address: service.location?.address
++          },
++          time: {
++            range: service.time.range,
++            duration: service.time.duration
++          },
++          reason: 'MISSING_LOCATION'
++        })
++        return false
+       }
+       
+       // Check for invalid coordinates (0,0 or missing)
+@@ -261,42 +288,39 @@ async function processDateRange(start, end) {
+       const lng = service.location.longitude
+       if (!lat || !lng || (lat === 0 && lng === 0)) {
+         console.log('Service has invalid coordinates:', service.id, { lat, lng })
+-        return true
++        unschedulableServices.push({
++          id: service.id,
++          company: service.company,
++          location: {
++            id: service.location?.id,
++            address: service.location?.address,
++            coordinates: {
++              latitude: service.location?.latitude,
++              longitude: service.location?.longitude
++            }
++          },
++          time: {
++            range: service.time.range,
++            duration: service.time.duration
++          },
++          reason: `INVALID_COORDINATES: (${service.location.latitude},${service.location.longitude})`
++        })
++        return false
+       }
+       
+-      return false
+-    }).map(service => ({
+-      id: service.id,
+-      company: service.company,
+-      location: {
+-        id: service.location?.id,
+-        address: service.location?.address,
+-        coordinates: {
+-          latitude: service.location?.latitude,
+-          longitude: service.location?.longitude
+-        }
+-      },
+-      time: {
+-        range: service.time.range,
+-        duration: service.time.duration
+-      },
+-      reason: !service.location?.id?.toString() 
+-        ? 'MISSING_LOCATION' 
+-        : `INVALID_COORDINATES: (${service.location.latitude},${service.location.longitude})`
+-    }))
+-
+-    console.log('Invalid services:', invalidServices.length, invalidServices)
+-
+-    // Update validServices filter accordingly
+-    const validServices = services.filter(service => {
+-      if (!service.location?.id?.toString()) return false
+-      const lat = service.location.latitude
+-      const lng = service.location.longitude
+-      if (!lat || !lng || (lat === 0 && lng === 0)) return false
+       return true
+     })
+ 
+-    console.log('Valid services:', validServices.length)
++    // Final valid services that will be sent to the worker
++    const validServices = locationFilteredServices
++
++    console.log('After all filtering:')
++    console.log('- Valid services:', validServices.length)
++    console.log('- Unschedulable services:', unschedulableServices.length)
++
++    // At this point, EVERY service in validServices MUST be schedulable
++    // Let's make this absolutely clear in a log
++    console.log('ONLY VALID SERVICES SENT TO WORKER - ALL MUST BE SCHEDULED')
+ 
+     // Add originalIndex to each service before sending to worker
+     const validServicesWithIndex = validServices.map((service, index) => ({
+@@ -335,37 +359,36 @@ async function processDateRange(start, end) {
+       })
+ 
+       // Pass the indexed services to worker
+-      worker.postMessage({ services: validServicesWithIndex, distanceMatrix })
++      worker.postMessage({ 
++        services: validServicesWithIndex, 
++        distanceMatrix,
++        // Add flag to ensure all services are scheduled
++        mustScheduleAll: true
++      })
+     })
+ 
+-    // Now that we have the result, identify unscheduled services
++    // Verify that ALL valid services were scheduled
+     const scheduledServiceIds = new Set(result.scheduledServices.map(s => s.id))
+-    const unscheduledValidServices = validServices
+-      .filter(s => !scheduledServiceIds.has(s.id))
+-      .map(service => {
+-        const reason = determineUnscheduledReason(service, result.scheduledServices)
+-        console.log('Unscheduled valid service:', service.id, 'Reason:', reason)
+-        return {
+-          id: service.id,
+-          company: service.company,
+-          location: {
+-            id: service.location.id,
+-            address: service.location.address
+-          },
+-          time: {
+-            range: service.time.range,
+-            duration: service.time.duration
+-          },
+-          reason
+-        }
+-      })
+-
+-    console.log('Unscheduled valid services:', unscheduledValidServices.length)
+-
+-    // When combining unscheduled services, include the missing time range ones
+-    const unscheduledServices = [...missingTimeRangeServices, ...invalidServices, ...unscheduledValidServices]
+-    console.log('Total unscheduled services:', unscheduledServices.length)
++    const unscheduledValidServices = validServices.filter(s => !scheduledServiceIds.has(s.id))
++    
++    if (unscheduledValidServices.length > 0) {
++      console.error('ERROR: Some valid services were not scheduled! This should never happen.', 
++        unscheduledValidServices.map(s => s.id));
++    }
+ 
++    // For consistency, we'll keep the unscheduledServices array in the output
++    // but it should only contain services filtered out in the initial validation
++    const unscheduledServices = [...unschedulableServices]
++    
++    // Log the final breakdown
++    console.log('FINAL SERVICE BREAKDOWN:')
++    console.log('- Initial services from API:', response.data.length)
++    console.log('- Unschedulable services:', unschedulableServices.length)
++    console.log('- Valid services sent to worker:', validServices.length)
++    console.log('- Services scheduled by worker:', result.scheduledServices.length)
++    console.log('- Scheduled IDs match all valid IDs:', unscheduledValidServices.length === 0)
++
++    // Calculate clusters and tech data
+     const totalConnectedPoints = result.scheduledServices.filter(s => s.cluster >= 0).length
+     const totalClusters = new Set(result.scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
+ 
+@@ -387,7 +410,13 @@ async function processDateRange(start, end) {
+         techAssignments: result.clusteringInfo?.techAssignments || {},
+       },
+       schedulingDetails: {
+-        totalServices: services.length,
++        // The total is the sum of valid (scheduled) plus unschedulable
++        totalServices: response.data.length,
++        // This is what matters - the number of valid services that should be visible
++        validServices: validServices.length,
++        // These are invalid services that were filtered out
++        invalidServices: unschedulableServices.length,
++        // Should equal validServices
+         scheduledServices: result.scheduledServices.length,
+         unscheduledServices,
+         summary: {
+ src/app/api/schedule/worker.js | 119 ++++++++++++++++++++---------------------
+ 1 file changed, 58 insertions(+), 61 deletions(-)
+
+diff --git a/src/app/api/schedule/worker.js b/src/app/api/schedule/worker.js
+index d86d7d46..4d309fae 100644
+--- a/src/app/api/schedule/worker.js
++++ b/src/app/api/schedule/worker.js
+@@ -505,7 +505,7 @@ function updateServiceRelationships(services, distanceMatrix) {
+   return services
+ }
+ 
+-function processServices(services, distanceMatrix) {
++function processServices(services, distanceMatrix, mustScheduleAll = false) {
+   try {
+     const startTime = performance.now()
+     SCORE_CACHE.clear()
+@@ -518,41 +518,62 @@ function processServices(services, distanceMatrix) {
+     const serviceMap = new Map()
+     const scheduledServiceIds = new Set()
+ 
+-    // Pre-filter and deduplicate services
+-    services.forEach(service => {
+-      // Check validity conditions
+-      const isValid = service &&
+-        service.time &&
+-        service.time.range &&
+-        service.time.range[0] &&
+-        service.time.range[1] &&
+-        service.location?.id
+-
+-      if (!isValid) {
+-        invalidServices.add(service.id)
+-        console.log('Worker filtered invalid service:', service.id, {
+-          hasTime: !!service.time,
+-          hasRange: !!service.time?.range,
+-          hasStart: !!service.time?.range?.[0],
+-          hasEnd: !!service.time?.range?.[1],
+-          hasLocationId: !!service.location?.id
++    // When mustScheduleAll is true, we skip filtering and process all services
++    if (mustScheduleAll) {
++      console.log('mustScheduleAll=true: Processing all services without additional filtering')
++      
++      // Just deduplicate services, but don't do additional validation
++      services.forEach(service => {
++        // Only check for duplicates
++        if (serviceMap.has(service.id)) {
++          duplicates.add(service.id)
++          console.log('Skipping duplicate service:', service.id)
++          return
++        }
++
++        serviceMap.set(service.id, {
++          ...service,
++          duration: service.time.duration,
++          isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
+         })
+-        return
+-      }
++      })
++    } else {
++      // Original filtering logic when mustScheduleAll is false
++      services.forEach(service => {
++        // Check validity conditions
++        const isValid = service &&
++          service.time &&
++          service.time.range &&
++          service.time.range[0] &&
++          service.time.range[1] &&
++          service.location?.id
++
++        if (!isValid) {
++          invalidServices.add(service.id)
++          console.log('Worker filtered invalid service:', service.id, {
++            hasTime: !!service.time,
++            hasRange: !!service.time?.range,
++            hasStart: !!service.time?.range?.[0],
++            hasEnd: !!service.time?.range?.[1],
++            hasLocationId: !!service.location?.id
++          })
++          return
++        }
+ 
+-      // Check for duplicates and already scheduled
+-      if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
+-        duplicates.add(service.id)
+-        console.log('Worker found duplicate/already scheduled service:', service.id)
+-        return
+-      }
++        // Check for duplicates and already scheduled
++        if (serviceMap.has(service.id) || scheduledServiceIds.has(service.id)) {
++          duplicates.add(service.id)
++          console.log('Worker found duplicate/already scheduled service:', service.id)
++          return
++        }
+ 
+-      serviceMap.set(service.id, {
+-        ...service,
+-        duration: service.time.duration,
+-        isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
++        serviceMap.set(service.id, {
++          ...service,
++          duration: service.time.duration,
++          isLongService: service.time.duration >= LONG_SERVICE_THRESHOLD
++        })
+       })
+-    })
++    }
+ 
+     // Convert to array and add metadata
+     const sortedServices = Array.from(serviceMap.values())
+@@ -1872,38 +1893,14 @@ function initializeShifts(services) {
+ }
+ 
+ // Handle messages from the main thread
+-parentPort.on('message', async ({ services, distanceMatrix }) => {
++parentPort.on('message', ({ services, distanceMatrix, mustScheduleAll = false }) => {
++  console.log(`Worker starting with ${services.length} services, mustScheduleAll=${mustScheduleAll}`)
+   try {
+-    console.log('Worker received services:', services.length)
+-    console.log(
+-      'Distance matrix dimensions:',
+-      distanceMatrix.length,
+-      'x',
+-      distanceMatrix[0]?.length,
+-    )
+-
+-    const result = await processServices(services, distanceMatrix)
+-    console.log('Worker processed services:', result.scheduledServices.length)
+-    console.log(
+-      'Services with clusters:',
+-      result.scheduledServices.filter(s => s.cluster >= 0).length,
+-    )
+-
++    const result = processServices(services, distanceMatrix, mustScheduleAll)
+     parentPort.postMessage(result)
+   } catch (error) {
+-    console.error('Error in clustering worker:', error)
+-    parentPort.postMessage({
+-      error: error.message,
+-      scheduledServices: services.map(service => ({ ...service, cluster: -1 })),
+-      clusteringInfo: {
+-        algorithm: 'shifts',
+-        performanceDuration: 0,
+-        connectedPointsCount: 0,
+-        totalClusters: 0,
+-        clusterSizes: [],
+-        clusterDistribution: [],
+-      },
+-    })
++    console.error('Worker error:', error)
++    parentPort.postMessage({ error: error.message || 'Unknown worker error' })
+   }
+ })
+ 
+ src/app/calendar/BigCalendar.js | 97 ++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 81 insertions(+), 16 deletions(-)
+
+diff --git a/src/app/calendar/BigCalendar.js b/src/app/calendar/BigCalendar.js
+index 2b7e4534..fbd5c652 100644
+--- a/src/app/calendar/BigCalendar.js
++++ b/src/app/calendar/BigCalendar.js
+@@ -112,6 +112,7 @@ export default function BigCalendar() {
+       const currentDateStr = dayjs(date).format('YYYY-MM-DD')
+       const nextDateStr = dayjs(date).add(1, 'day').format('YYYY-MM-DD')
+       
++      // Calculate these directly to ensure accuracy
+       const visibleServices = assignedServices.filter(service => 
+         dayjs(service.start).format('YYYY-MM-DD') === currentDateStr
+       )
+@@ -143,6 +144,7 @@ export default function BigCalendar() {
+           startFormatted: dayjs(service.start).format('YYYY-MM-DD HH:mm'),
+           end: service.end,
+           endFormatted: dayjs(service.end).format('YYYY-MM-DD HH:mm'),
++          originalService: service,
+           techId: service.techId,
+           // Reference to the shift's first service on current day (if exists)
+           relatedShiftService: firstServiceInShift ? {
+@@ -154,19 +156,36 @@ export default function BigCalendar() {
+         }
+       })
+       
+-      // Log invisible services in a separate, more prominent log
++      // Get unscheduled services array from schedulingDetails and log it properly
++      const unscheduledServicesArray = schedulingDetails?.unscheduledServices || []
++      console.log('Unassigned services:', unscheduledServicesArray.length > 0 ? unscheduledServicesArray : 'None')
+       console.log('Invisible services:', invisibleServicesDetails)
+       
++      // Count services directly from filtering the assignedServices
++      const nextDayCount = assignedServices.filter(service => 
++        dayjs(service.start).format('YYYY-MM-DD') === nextDateStr
++      ).length
++      
++      // Calculate valid services based on what's actually assigned
++      const validServicesCount = assignedServices.length
++      
++      // Calculate total including unscheduled
++      const totalServicesCount = validServicesCount + unscheduledServicesArray.length
++      
+       console.log('Services debug:', {
+         currentDate: currentDateStr,
+         nextDate: nextDateStr,
+-        initialTotal: totalServices,
+-        validServices: totalServices - unscheduledServices,
+-        unscheduledServices,
++        initialTotal: totalServicesCount,
++        validServices: validServicesCount,
++        unscheduledCount: unscheduledServicesArray.length,
+         assignedTotal: assignedServices.length,
+         visible: visibleServices.length,
+         invisible: invisibleServices.length,
+-        nextDay: nextDayServices.length
++        nextDay: nextDayServices.length,
++        // Add check that invisible === invisible directly counted
++        invisibleMatchesCount: invisibleServices.length === (assignedServices.length - visibleServices.length),
++        // Check that next day count matches what's in invisibles
++        nextDayMatchesInvisible: nextDayServices.length === nextDayCount
+       })
+     }
+     
+@@ -176,16 +195,68 @@ export default function BigCalendar() {
+   // Create custom toolbar component
+   const customToolbar = useCallback(
+     toolbar => {
+-      const validServices = totalServices - unscheduledServices
+-      const renderedServices = renderedServicesCount
+-      const notVisibleCount = validServices - renderedServices
++      // Create a comprehensive debug log to help diagnose count mismatches
++      console.log('DETAILED COUNT DEBUGGING:', {
++        // Raw counts
++        totalServices,
++        assignedServicesLength: assignedServices?.length || 0,
++        unscheduledServicesCount: schedulingDetails?.unscheduledServices?.length || 0,
++        
++        // Scheduling details from API
++        schedulingDetailsTotal: schedulingDetails?.totalServices,
++        schedulingDetailsValid: schedulingDetails?.validServices,
++        schedulingDetailsInvalid: schedulingDetails?.invalidServices,
++        
++        // Directly calculated counts
++        visibleCount: assignedServices?.filter(service => 
++          dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).format('YYYY-MM-DD')
++        ).length || 0,
++        nextDayCount: assignedServices?.filter(service => 
++          dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).add(1, 'day').format('YYYY-MM-DD')
++        ).length || 0
++      })
++      
++      // 1. Total Services = All services from the API (valid + invalid)
++      const totalServicesCount = schedulingDetails?.totalServices || totalServices;
++      
++      // 2. Valid Services = Only those that passed validation and were sent to scheduler
++      const validServicesCount = schedulingDetails?.validServices || assignedServices?.length || 0;
++      
++      // 3. Visible Services = Valid services visible in current day view
++      const visibleServicesCount = assignedServices?.filter(service => 
++        dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).format('YYYY-MM-DD')
++      ).length || 0;
++      
++      // 4. Next Day Services = Valid services scheduled for next day (not visible in current day view)
++      const nextDayCount = assignedServices?.filter(service => 
++        dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).add(1, 'day').format('YYYY-MM-DD')
++      ).length || 0;
++      
++      // Verify the counts are consistent
++      console.log('COUNT VERIFICATION:', {
++        validEqualsAssigned: validServicesCount === assignedServices?.length,
++        visiblePlusNextDayEqualsValid: (visibleServicesCount + nextDayCount) === validServicesCount,
++        totalEqualsValidPlusInvalid: totalServicesCount === (validServicesCount + (schedulingDetails?.invalidServices || 0))
++      });
++      
++      // Calculate unique tech counts
++      const techCount = resources?.length || 0
++      
++      // Count unique original tech codes from service.tech.code
++      const pestPacTechCodes = new Set()
++      assignedServices?.forEach(service => {
++        if (service.tech?.code) {
++          pestPacTechCodes.add(service.tech.code)
++        }
++      })
++      const pestPacTechCount = pestPacTechCodes.size
+       
+       const label = (
+         <>
+           {toolbar.label}
+           {!isScheduling && totalServices > 0 && (
+             <span className="ml-10 text-gray-500">
+-              {`${validServices}/${totalServices} valid, ${renderedServices} visible ${notVisibleCount > 0 ? `(${notVisibleCount} on next day)` : ''}`}
++              {`${validServicesCount}/${totalServicesCount} valid, ${visibleServicesCount} visible ${nextDayCount > 0 ? `(${nextDayCount} on next day)` : ''}, in ${techCount} techs ( ${pestPacTechCount} in PestPac)`}
+             </span>
+           )}
+         </>
+@@ -214,7 +285,7 @@ export default function BigCalendar() {
+         </div>
+       )
+     },
+-    [isScheduling, totalServices, unscheduledServices, renderedServicesCount, view]
++    [isScheduling, totalServices, view, assignedServices, resources, schedulingDetails, date]
+   )
+ 
+   const calendarComponents = useMemo(
+@@ -225,12 +296,6 @@ export default function BigCalendar() {
+     [eventComponent, customToolbar]
+   )
+ 
+-  // Add click capture handler
+-  const handleClickCapture = useCallback(e => {
+-    e.stopPropagation()
+-    e.preventDefault()
+-  }, [])
+-
+   return (
+     <div className="flex h-screen">
+       {isScheduling && (
+ src/app/hooks/useSchedule.js | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/app/hooks/useSchedule.js b/src/app/hooks/useSchedule.js
+index 03288492..0f9264d1 100644
+--- a/src/app/hooks/useSchedule.js
++++ b/src/app/hooks/useSchedule.js
+@@ -163,7 +163,9 @@ export function useSchedule(currentViewRange) {
+       setResult(prevResult => ({
+         ...prevResult,
+         resources,
+-        totalServices: dataRef.current.schedulingDetails?.totalServices || scheduledServices.length + (unassignedServices?.length || 0),
++        totalServices: dataRef.current.schedulingDetails?.validServices || 
++                       dataRef.current.schedulingDetails?.totalServices || 
++                       scheduledServices.length + (unassignedServices?.length || 0),
+         unscheduledServices: unassignedServices?.length || 0,
+         schedulingDetails
+       }))

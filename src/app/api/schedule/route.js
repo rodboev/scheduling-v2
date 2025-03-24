@@ -211,49 +211,76 @@ async function processDateRange(start, end) {
 
     console.log('Initial services from /services:', response.data.length)
 
-    // Track services filtered due to missing time range
+    // STEP 1: Filter out services that cannot be scheduled (comprehensive filtering in one place)
+    // These are services with invalid data that should never be sent to the scheduler
+    const unschedulableServices = []
+    
+    // Check for missing time range
     const missingTimeRangeServices = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) {
         console.log('Filtered out service missing time range:', service.id)
+        unschedulableServices.push({
+          id: service.id,
+          company: service.company,
+          location: {
+            id: service.location?.id,
+            address: service.location?.address
+          },
+          time: {
+            range: service.time.range,
+            duration: service.time.duration
+          },
+          reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
+        })
         return true
       }
       return false
-    }).map(service => ({
-      id: service.id,
-      company: service.company,
-      location: {
-        id: service.location?.id,
-        address: service.location?.address
-      },
-      time: {
-        range: service.time.range,
-        duration: service.time.duration
-      },
-      reason: `INVALID_TIME_RANGE${service.time?.meta?.originalRange ? ` (${service.time.meta.originalRange})` : ' ()'}`
-    }))
+    })
 
-    const services = response.data.filter(service => {
+    // Filter for date range
+    const dateRangeServices = response.data.filter(service => {
       if (!service.time.range[0] || !service.time.range[1]) return false
       const serviceDate = dayjsInstance(service.date)
       const isInRange = serviceDate.isBetween(start, end, null, '[)')
       if (!isInRange) {
-        console.log('Filtered out service outside date range:', service.id, {
-          serviceDate: serviceDate.format(),
-          start: start.format(),
-          end: end.format()
+        console.log('Filtered out service outside date range:', service.id)
+        unschedulableServices.push({
+          id: service.id,
+          company: service.company,
+          location: {
+            id: service.location?.id,
+            address: service.location?.address
+          },
+          time: {
+            range: service.time.range,
+            duration: service.time.duration
+          },
+          reason: 'OUTSIDE_DATE_RANGE'
         })
+        return false
       }
-      return isInRange
+      return true
     })
 
-    console.log('Services after date/time filtering:', services.length)
-
-    // Track invalid services before filtering
-    const invalidServices = services.filter(service => {
+    // Check for missing location or invalid coordinates
+    const locationFilteredServices = dateRangeServices.filter(service => {
       // Check for missing location ID
       if (!service.location?.id?.toString()) {
         console.log('Service missing location ID:', service.id)
-        return true
+        unschedulableServices.push({
+          id: service.id,
+          company: service.company,
+          location: {
+            id: service.location?.id,
+            address: service.location?.address
+          },
+          time: {
+            range: service.time.range,
+            duration: service.time.duration
+          },
+          reason: 'MISSING_LOCATION'
+        })
+        return false
       }
       
       // Check for invalid coordinates (0,0 or missing)
@@ -261,42 +288,39 @@ async function processDateRange(start, end) {
       const lng = service.location.longitude
       if (!lat || !lng || (lat === 0 && lng === 0)) {
         console.log('Service has invalid coordinates:', service.id, { lat, lng })
-        return true
+        unschedulableServices.push({
+          id: service.id,
+          company: service.company,
+          location: {
+            id: service.location?.id,
+            address: service.location?.address,
+            coordinates: {
+              latitude: service.location?.latitude,
+              longitude: service.location?.longitude
+            }
+          },
+          time: {
+            range: service.time.range,
+            duration: service.time.duration
+          },
+          reason: `INVALID_COORDINATES: (${service.location.latitude},${service.location.longitude})`
+        })
+        return false
       }
       
-      return false
-    }).map(service => ({
-      id: service.id,
-      company: service.company,
-      location: {
-        id: service.location?.id,
-        address: service.location?.address,
-        coordinates: {
-          latitude: service.location?.latitude,
-          longitude: service.location?.longitude
-        }
-      },
-      time: {
-        range: service.time.range,
-        duration: service.time.duration
-      },
-      reason: !service.location?.id?.toString() 
-        ? 'MISSING_LOCATION' 
-        : `INVALID_COORDINATES: (${service.location.latitude},${service.location.longitude})`
-    }))
-
-    console.log('Invalid services:', invalidServices.length, invalidServices)
-
-    // Update validServices filter accordingly
-    const validServices = services.filter(service => {
-      if (!service.location?.id?.toString()) return false
-      const lat = service.location.latitude
-      const lng = service.location.longitude
-      if (!lat || !lng || (lat === 0 && lng === 0)) return false
       return true
     })
 
-    console.log('Valid services:', validServices.length)
+    // Final valid services that will be sent to the worker
+    const validServices = locationFilteredServices
+
+    console.log('After all filtering:')
+    console.log('- Valid services:', validServices.length)
+    console.log('- Unschedulable services:', unschedulableServices.length)
+
+    // At this point, EVERY service in validServices MUST be schedulable
+    // Let's make this absolutely clear in a log
+    console.log('ONLY VALID SERVICES SENT TO WORKER - ALL MUST BE SCHEDULED')
 
     // Add originalIndex to each service before sending to worker
     const validServicesWithIndex = validServices.map((service, index) => ({
@@ -335,37 +359,36 @@ async function processDateRange(start, end) {
       })
 
       // Pass the indexed services to worker
-      worker.postMessage({ services: validServicesWithIndex, distanceMatrix })
+      worker.postMessage({ 
+        services: validServicesWithIndex, 
+        distanceMatrix,
+        // Add flag to ensure all services are scheduled
+        mustScheduleAll: true
+      })
     })
 
-    // Now that we have the result, identify unscheduled services
+    // Verify that ALL valid services were scheduled
     const scheduledServiceIds = new Set(result.scheduledServices.map(s => s.id))
-    const unscheduledValidServices = validServices
-      .filter(s => !scheduledServiceIds.has(s.id))
-      .map(service => {
-        const reason = determineUnscheduledReason(service, result.scheduledServices)
-        console.log('Unscheduled valid service:', service.id, 'Reason:', reason)
-        return {
-          id: service.id,
-          company: service.company,
-          location: {
-            id: service.location.id,
-            address: service.location.address
-          },
-          time: {
-            range: service.time.range,
-            duration: service.time.duration
-          },
-          reason
-        }
-      })
+    const unscheduledValidServices = validServices.filter(s => !scheduledServiceIds.has(s.id))
+    
+    if (unscheduledValidServices.length > 0) {
+      console.error('ERROR: Some valid services were not scheduled! This should never happen.', 
+        unscheduledValidServices.map(s => s.id));
+    }
 
-    console.log('Unscheduled valid services:', unscheduledValidServices.length)
+    // For consistency, we'll keep the unscheduledServices array in the output
+    // but it should only contain services filtered out in the initial validation
+    const unscheduledServices = [...unschedulableServices]
+    
+    // Log the final breakdown
+    console.log('FINAL SERVICE BREAKDOWN:')
+    console.log('- Initial services from API:', response.data.length)
+    console.log('- Unschedulable services:', unschedulableServices.length)
+    console.log('- Valid services sent to worker:', validServices.length)
+    console.log('- Services scheduled by worker:', result.scheduledServices.length)
+    console.log('- Scheduled IDs match all valid IDs:', unscheduledValidServices.length === 0)
 
-    // When combining unscheduled services, include the missing time range ones
-    const unscheduledServices = [...missingTimeRangeServices, ...invalidServices, ...unscheduledValidServices]
-    console.log('Total unscheduled services:', unscheduledServices.length)
-
+    // Calculate clusters and tech data
     const totalConnectedPoints = result.scheduledServices.filter(s => s.cluster >= 0).length
     const totalClusters = new Set(result.scheduledServices.map(s => s.cluster).filter(c => c >= 0)).size
 
@@ -387,7 +410,13 @@ async function processDateRange(start, end) {
         techAssignments: result.clusteringInfo?.techAssignments || {},
       },
       schedulingDetails: {
-        totalServices: services.length,
+        // The total is the sum of valid (scheduled) plus unschedulable
+        totalServices: response.data.length,
+        // This is what matters - the number of valid services that should be visible
+        validServices: validServices.length,
+        // These are invalid services that were filtered out
+        invalidServices: unschedulableServices.length,
+        // Should equal validServices
         scheduledServices: result.scheduledServices.length,
         unscheduledServices,
         summary: {

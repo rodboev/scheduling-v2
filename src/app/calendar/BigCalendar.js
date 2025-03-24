@@ -112,6 +112,7 @@ export default function BigCalendar() {
       const currentDateStr = dayjs(date).format('YYYY-MM-DD')
       const nextDateStr = dayjs(date).add(1, 'day').format('YYYY-MM-DD')
       
+      // Calculate these directly to ensure accuracy
       const visibleServices = assignedServices.filter(service => 
         dayjs(service.start).format('YYYY-MM-DD') === currentDateStr
       )
@@ -143,6 +144,7 @@ export default function BigCalendar() {
           startFormatted: dayjs(service.start).format('YYYY-MM-DD HH:mm'),
           end: service.end,
           endFormatted: dayjs(service.end).format('YYYY-MM-DD HH:mm'),
+          originalService: service,
           techId: service.techId,
           // Reference to the shift's first service on current day (if exists)
           relatedShiftService: firstServiceInShift ? {
@@ -154,19 +156,36 @@ export default function BigCalendar() {
         }
       })
       
-      // Log invisible services in a separate, more prominent log
+      // Get unscheduled services array from schedulingDetails and log it properly
+      const unscheduledServicesArray = schedulingDetails?.unscheduledServices || []
+      console.log('Unassigned services:', unscheduledServicesArray.length > 0 ? unscheduledServicesArray : 'None')
       console.log('Invisible services:', invisibleServicesDetails)
+      
+      // Count services directly from filtering the assignedServices
+      const nextDayCount = assignedServices.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === nextDateStr
+      ).length
+      
+      // Calculate valid services based on what's actually assigned
+      const validServicesCount = assignedServices.length
+      
+      // Calculate total including unscheduled
+      const totalServicesCount = validServicesCount + unscheduledServicesArray.length
       
       console.log('Services debug:', {
         currentDate: currentDateStr,
         nextDate: nextDateStr,
-        initialTotal: totalServices,
-        validServices: totalServices - unscheduledServices,
-        unscheduledServices,
+        initialTotal: totalServicesCount,
+        validServices: validServicesCount,
+        unscheduledCount: unscheduledServicesArray.length,
         assignedTotal: assignedServices.length,
         visible: visibleServices.length,
         invisible: invisibleServices.length,
-        nextDay: nextDayServices.length
+        nextDay: nextDayServices.length,
+        // Add check that invisible === invisible directly counted
+        invisibleMatchesCount: invisibleServices.length === (assignedServices.length - visibleServices.length),
+        // Check that next day count matches what's in invisibles
+        nextDayMatchesInvisible: nextDayServices.length === nextDayCount
       })
     }
     
@@ -176,16 +195,68 @@ export default function BigCalendar() {
   // Create custom toolbar component
   const customToolbar = useCallback(
     toolbar => {
-      const validServices = totalServices - unscheduledServices
-      const renderedServices = renderedServicesCount
-      const notVisibleCount = validServices - renderedServices
+      // Create a comprehensive debug log to help diagnose count mismatches
+      console.log('DETAILED COUNT DEBUGGING:', {
+        // Raw counts
+        totalServices,
+        assignedServicesLength: assignedServices?.length || 0,
+        unscheduledServicesCount: schedulingDetails?.unscheduledServices?.length || 0,
+        
+        // Scheduling details from API
+        schedulingDetailsTotal: schedulingDetails?.totalServices,
+        schedulingDetailsValid: schedulingDetails?.validServices,
+        schedulingDetailsInvalid: schedulingDetails?.invalidServices,
+        
+        // Directly calculated counts
+        visibleCount: assignedServices?.filter(service => 
+          dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).format('YYYY-MM-DD')
+        ).length || 0,
+        nextDayCount: assignedServices?.filter(service => 
+          dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).add(1, 'day').format('YYYY-MM-DD')
+        ).length || 0
+      })
+      
+      // 1. Total Services = All services from the API (valid + invalid)
+      const totalServicesCount = schedulingDetails?.totalServices || totalServices;
+      
+      // 2. Valid Services = Only those that passed validation and were sent to scheduler
+      const validServicesCount = schedulingDetails?.validServices || assignedServices?.length || 0;
+      
+      // 3. Visible Services = Valid services visible in current day view
+      const visibleServicesCount = assignedServices?.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).format('YYYY-MM-DD')
+      ).length || 0;
+      
+      // 4. Next Day Services = Valid services scheduled for next day (not visible in current day view)
+      const nextDayCount = assignedServices?.filter(service => 
+        dayjs(service.start).format('YYYY-MM-DD') === dayjs(date).add(1, 'day').format('YYYY-MM-DD')
+      ).length || 0;
+      
+      // Verify the counts are consistent
+      console.log('COUNT VERIFICATION:', {
+        validEqualsAssigned: validServicesCount === assignedServices?.length,
+        visiblePlusNextDayEqualsValid: (visibleServicesCount + nextDayCount) === validServicesCount,
+        totalEqualsValidPlusInvalid: totalServicesCount === (validServicesCount + (schedulingDetails?.invalidServices || 0))
+      });
+      
+      // Calculate unique tech counts
+      const techCount = resources?.length || 0
+      
+      // Count unique original tech codes from service.tech.code
+      const pestPacTechCodes = new Set()
+      assignedServices?.forEach(service => {
+        if (service.tech?.code) {
+          pestPacTechCodes.add(service.tech.code)
+        }
+      })
+      const pestPacTechCount = pestPacTechCodes.size
       
       const label = (
         <>
           {toolbar.label}
           {!isScheduling && totalServices > 0 && (
             <span className="ml-10 text-gray-500">
-              {`${validServices}/${totalServices} valid, ${renderedServices} visible ${notVisibleCount > 0 ? `(${notVisibleCount} on next day)` : ''}`}
+              {`${validServicesCount}/${totalServicesCount} valid, ${visibleServicesCount} visible ${nextDayCount > 0 ? `(${nextDayCount} on next day)` : ''}, in ${techCount} techs (${pestPacTechCount} in PestPac)`}
             </span>
           )}
         </>
@@ -214,7 +285,7 @@ export default function BigCalendar() {
         </div>
       )
     },
-    [isScheduling, totalServices, unscheduledServices, renderedServicesCount, view]
+    [isScheduling, totalServices, view, assignedServices, resources, schedulingDetails, date]
   )
 
   const calendarComponents = useMemo(
@@ -224,12 +295,6 @@ export default function BigCalendar() {
     }),
     [eventComponent, customToolbar]
   )
-
-  // Add click capture handler
-  const handleClickCapture = useCallback(e => {
-    e.stopPropagation()
-    e.preventDefault()
-  }, [])
 
   return (
     <div className="flex h-screen">
