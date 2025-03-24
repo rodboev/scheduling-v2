@@ -131,6 +131,9 @@ function shouldServiceOccur(scheduleString, date) {
     return false
   }
 
+  // Check if the character at the calculated position is '1'
+  const shouldOccur = scheduleString.charAt(scheduleIndex) === '1'
+  
   return shouldOccur
 }
 
