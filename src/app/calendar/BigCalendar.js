@@ -6,6 +6,7 @@ import Logo from '@/app/components/Logo'
 import ProgressBar from '@/app/components/ProgressBar'
 import Service from '@/app/components/Service'
 import { Button } from '@/app/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
 import { useCalendar } from '@/app/hooks/useCalendar'
 import { useSchedule } from '@/app/hooks/useSchedule'
 import { DEFAULT_DATE } from '@/app/utils/constants'
@@ -26,6 +27,7 @@ const localizer = createDayjsLocalizer(dayjs)
 export default function BigCalendar() {
   const defaultDate = dayjs(DEFAULT_DATE).toDate()
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now())
+  const [techPercentage, setTechPercentage] = useState('100') // Default tech percentage
 
   const { date, view, currentViewRange, handleView, handleNavigate, handleRangeChange } =
     useCalendar(defaultDate)
@@ -251,6 +253,50 @@ export default function BigCalendar() {
       })
       const pestPacTechCount = pestPacTechCodes.size
       
+      // Calculate services coverage based on tech percentage
+      const calculateServiceCoverage = () => {
+        if (!resources || !assignedServices || resources.length === 0 || assignedServices.length === 0) {
+          return { servicesCount: 0, servicesPercentage: 0 }
+        }
+        
+        // 1. Count services per tech across all assigned services (not just visible ones)
+        const techServicesMap = {}
+        
+        // Count all assigned services for the calculation, not just visible ones
+        assignedServices.forEach(service => {
+          if (service.techId) {
+            techServicesMap[service.techId] = (techServicesMap[service.techId] || 0) + 1
+          }
+        })
+        
+        // 2. Sort techs by service count (most services first)
+        const sortedTechs = Object.entries(techServicesMap)
+          .sort((a, b) => b[1] - a[1])
+          .map(([techId]) => techId)
+        
+        // 3. Take the specified percentage of techs
+        const selectedPercentage = parseInt(techPercentage, 10)
+        const techsToInclude = Math.max(1, Math.ceil((selectedPercentage / 100) * sortedTechs.length))
+        const includedTechIds = sortedTechs.slice(0, techsToInclude)
+        
+        // 4. Count all services covered by the included techs (not just visible ones)
+        const coveredServices = assignedServices.filter(service => 
+          includedTechIds.includes(service.techId)
+        )
+        
+        // 5. Calculate percentage of services covered
+        const servicesCount = coveredServices.length
+        const servicesPercentage = (servicesCount / assignedServices.length) * 100
+        
+        return { 
+          servicesCount, 
+          servicesPercentage: Math.round(servicesPercentage), 
+          techsIncluded: techsToInclude 
+        }
+      }
+      
+      const { servicesCount, servicesPercentage, techsIncluded } = calculateServiceCoverage()
+      
       const label = (
         <>
           {toolbar.label}
@@ -262,30 +308,74 @@ export default function BigCalendar() {
         </>
       )
       
+      // Create percentage options from 50% to 100% in 5% increments
+      const percentageOptions = []
+      for (let i = 50; i <= 100; i += 5) {
+        percentageOptions.push(i.toString())
+      }
+      
       return (
-        <div className="rbc-toolbar">
-          <span className="rbc-btn-group">
-            <button type="button" onClick={() => toolbar.onNavigate('PREV')}>Back</button>
-            <button type="button" onClick={() => toolbar.onNavigate('TODAY')}>Today</button>
-            <button type="button" onClick={() => toolbar.onNavigate('NEXT')}>Next</button>
-          </span>
-          <span className="rbc-toolbar-label ml-20">{label}</span>
-          <span className="rbc-btn-group">
-            {toolbar.views.map(view => (
-              <button
-                key={view}
-                type="button"
-                className={`capitalize ${view === toolbar.view ? 'rbc-active' : ''}`}
-                onClick={() => toolbar.onView(view)}
-              >
-                {view}
-              </button>
-            ))}
-          </span>
+        <div className="flex flex-col">
+          <div className="rbc-toolbar">
+            <span className="rbc-btn-group">
+              <button type="button" onClick={() => toolbar.onNavigate('PREV')}>Back</button>
+              <button type="button" onClick={() => toolbar.onNavigate('TODAY')}>Today</button>
+              <button type="button" onClick={() => toolbar.onNavigate('NEXT')}>Next</button>
+            </span>
+            <span className="rbc-toolbar-label ml-20">{label}</span>
+            <span className="rbc-btn-group">
+              {toolbar.views.map(view => (
+                <button
+                  key={view}
+                  type="button"
+                  className={`capitalize ${view === toolbar.view ? 'rbc-active' : ''}`}
+                  onClick={() => toolbar.onView(view)}
+                >
+                  {view}
+                </button>
+              ))}
+            </span>
+          </div>
+          
+          {!isScheduling && validServicesCount > 0 && (
+            <div className="flex items-center justify-center text-sm text-gray-600 mt-1 mb-1">
+              <span>
+                Of {validServicesCount} services, {servicesCount} ({servicesPercentage}%) can be serviced with 
+              </span>
+              <span className="mx-1">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className="w-20 h-7 text-xs"
+                    >
+                      {techPercentage}%
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-28 p-0">
+                    <div className="flex flex-col">
+                      {percentageOptions.map(percentage => (
+                        <button
+                          key={percentage}
+                          className={`px-2 py-1 text-left text-sm hover:bg-gray-100 ${percentage === techPercentage ? 'bg-gray-100' : ''}`}
+                          onClick={() => setTechPercentage(percentage)}
+                        >
+                          {percentage}%
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </span>
+              <span>
+                {techsIncluded} techs
+              </span>
+            </div>
+          )}
         </div>
       )
     },
-    [isScheduling, totalServices, view, assignedServices, resources, schedulingDetails, date]
+    [isScheduling, totalServices, view, assignedServices, resources, schedulingDetails, date, techPercentage]
   )
 
   const calendarComponents = useMemo(
