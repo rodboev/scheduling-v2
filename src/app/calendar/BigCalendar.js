@@ -322,7 +322,53 @@ export default function BigCalendar() {
               <button type="button" onClick={() => toolbar.onNavigate('TODAY')}>Today</button>
               <button type="button" onClick={() => toolbar.onNavigate('NEXT')}>Next</button>
             </span>
-            <span className="rbc-toolbar-label ml-20">{label}</span>
+            <span className="rbc-toolbar-label ml-20">
+              {label}
+              {!isScheduling && validServicesCount > 0 && (
+                <div className="flex items-center justify-center text-gray-600 mt-1">
+                  <span>
+                    Of {validServicesCount} services, {servicesCount} ({servicesPercentage}%) can be serviced with 
+                  </span>
+                  <span className="mx-1">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button 
+                          className="h-7 bg-white text-black border-2 border-blue-500 hover:bg-gray-100 hover:border-blue-600 px-2 inline-flex items-center space-x-1 rounded shadow-sm"
+                          style={{ display: 'inline-flex', whiteSpace: 'nowrap' }}
+                        >
+                          <span>{techPercentage}%</span>
+                          <svg 
+                            className="h-3 w-3" 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            viewBox="0 0 20 20" 
+                            fill="currentColor" 
+                            aria-hidden="true"
+                          >
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-20 p-0 shadow-md">
+                        <div className="flex flex-col">
+                          {percentageOptions.map(percentage => (
+                            <button
+                              key={percentage}
+                              className={`px-1 py-1 text-center text-sm hover:bg-gray-100 ${percentage === techPercentage ? 'bg-gray-100 font-medium' : ''}`}
+                              onClick={() => setTechPercentage(percentage)}
+                            >
+                              {percentage}%
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </span>
+                  <span>
+                    {techsIncluded} techs
+                  </span>
+                </div>
+              )}
+            </span>
             <span className="rbc-btn-group">
               {toolbar.views.map(view => (
                 <button
@@ -336,42 +382,6 @@ export default function BigCalendar() {
               ))}
             </span>
           </div>
-          
-          {!isScheduling && validServicesCount > 0 && (
-            <div className="flex items-center justify-center text-sm text-gray-600 mt-1 mb-1">
-              <span>
-                Of {validServicesCount} services, {servicesCount} ({servicesPercentage}%) can be serviced with 
-              </span>
-              <span className="mx-1">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button 
-                      variant="outline" 
-                      className="w-20 h-7 text-xs"
-                    >
-                      {techPercentage}%
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-28 p-0">
-                    <div className="flex flex-col">
-                      {percentageOptions.map(percentage => (
-                        <button
-                          key={percentage}
-                          className={`px-2 py-1 text-left text-sm hover:bg-gray-100 ${percentage === techPercentage ? 'bg-gray-100' : ''}`}
-                          onClick={() => setTechPercentage(percentage)}
-                        >
-                          {percentage}%
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </span>
-              <span>
-                {techsIncluded} techs
-              </span>
-            </div>
-          )}
         </div>
       )
     },
